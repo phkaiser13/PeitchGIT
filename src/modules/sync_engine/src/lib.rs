@@ -24,10 +24,21 @@ use tokio::runtime::Runtime;
 mod sync;
 
 // --- FFI Boilerplate (Types, Context, Logger) ---
-#[repr(C)] pub enum GitphStatus { Success = 0, ErrorExecFailed = -5, /* ... */ }
-#[repr(C)] pub enum GitphLogLevel { Info, Error, /* ... */ }
+#[repr(C)]
+pub enum GitphStatus {
+    Success = 0,
+    ErrorExecFailed = -5, /* ... */
+}
+#[repr(C)]
+pub enum GitphLogLevel {
+    Info,
+    Error, /* ... */
+}
 type LogFn = extern "C" fn(GitphLogLevel, *const c_char, *const c_char);
-#[repr(C)] pub struct GitphCoreContext { log: Option<LogFn>, /* ... */ }
+#[repr(C)]
+pub struct GitphCoreContext {
+    log: Option<LogFn>, /* ... */
+}
 
 lazy_static! {
     static ref RUNTIME: Mutex<Runtime> = Mutex::new(Runtime::new().expect("Failed to create Tokio runtime"));
@@ -38,9 +49,16 @@ fn log_to_core(level: GitphLogLevel, message: &str) {
     if let Ok(guard) = CORE_CONTEXT.lock() {
         if let Some(context) = &*guard {
             if let Some(log_fn) = context.log {
+                // It's safe to unwrap here because the module name is a valid C-string literal.
                 let module_name = CString::new("SYNC_ENGINE").unwrap();
-                let msg = CString::new(message).unwrap();
-                log_fn(level, module_name.as_ptr(), msg.as_ptr());
+                // Attempt to create a CString from the message, handling potential null bytes.
+                if let Ok(msg) = CString::new(message) {
+                    log_fn(level, module_name.as_ptr(), msg.as_ptr());
+                } else {
+                    // If the message contains null bytes, log a fallback error message.
+                    let error_msg = CString::new("Error: Log message contained null bytes.").unwrap();
+                    log_fn(GitphLogLevel::Error, module_name.as_ptr(), error_msg.as_ptr());
+                }
             }
         }
     }
@@ -55,32 +73,64 @@ pub struct GitphModuleInfo {
     commands: *const *const c_char,
 }
 
+// Store module information in thread-safe, Rust-native static variables.
+// The null terminator `\0` is included for C compatibility.
 static MODULE_NAME: &[u8] = b"sync_engine\0";
 static MODULE_VERSION: &[u8] = b"1.0.0\0";
 static MODULE_DESC: &[u8] = b"Performs complex, bi-directional repository synchronization.\0";
-static SUPPORTED_COMMANDS: &[*const u8] = &[
-    b"sync-run\0".as_ptr(),
-    b"sync-config\0".as_ptr(),
-    b"sync-status\0".as_ptr(),
-    std::ptr::null(),
+
+// Define supported commands in a Rust-native, thread-safe way.
+static SUPPORTED_COMMANDS: &[&[u8]] = &[
+    b"sync-run\0",
+    b"sync-config\0",
+    b"sync-status\0",
 ];
 
-static MODULE_INFO: GitphModuleInfo = GitphModuleInfo {
-    name: MODULE_NAME.as_ptr() as *const c_char,
-    version: MODULE_VERSION.as_ptr() as *const c_char,
-    description: MODULE_DESC.as_ptr() as *const c_char,
-    commands: SUPPORTED_COMMANDS.as_ptr() as *const *const c_char,
-};
+// Use `lazy_static` to safely initialize the C-compatible struct with raw pointers.
+// This structure will be created once on the first call to `module_get_info`
+// and will live for the entire duration of the program ('static lifetime),
+// ensuring the pointers we return to C are always valid.
+lazy_static! {
+    // This vector holds the C-style list of command pointers. Because it's in a
+    // `lazy_static`, its heap allocation will never be freed, making its internal
+    // pointer stable and safe to share.
+    static ref C_COMMANDS: Vec<*const c_char> = {
+        let mut cmds: Vec<*const c_char> = SUPPORTED_COMMANDS
+            .iter()
+            .map(|s| s.as_ptr() as *const c_char)
+            .collect();
+        // C APIs often expect a null-terminated array of pointers.
+        cmds.push(std::ptr::null());
+        cmds
+    };
+
+    // This is the C-compatible struct that we will expose via the FFI.
+    // It is also in a `lazy_static` to guarantee a 'static lifetime.
+    static ref MODULE_INFO: GitphModuleInfo = GitphModuleInfo {
+        name: MODULE_NAME.as_ptr() as *const c_char,
+        version: MODULE_VERSION.as_ptr() as *const c_char,
+        description: MODULE_DESC.as_ptr() as *const c_char,
+        // We can safely take a pointer to the data inside C_COMMANDS because
+        // C_COMMANDS has a 'static lifetime.
+        commands: C_COMMANDS.as_ptr(),
+    };
+}
 
 // --- FFI Function Implementations ---
 
 #[no_mangle]
 pub extern "C" fn module_get_info() -> *const GitphModuleInfo {
-    &MODULE_INFO
+    // Return a pointer to the lazily initialized, static MODULE_INFO struct.
+    &*MODULE_INFO
 }
 
 #[no_mangle]
 pub extern "C" fn module_init(context: *const GitphCoreContext) -> GitphStatus {
+    // Defensively check for a null context pointer.
+    if context.is_null() {
+        return GitphStatus::ErrorExecFailed;
+    }
+    // This is safe because we are the only writer at init time.
     *CORE_CONTEXT.lock().unwrap() = Some(unsafe { std::ptr::read(context) });
     let _ = RUNTIME.lock().unwrap(); // Eagerly initialize.
     log_to_core(GitphLogLevel::Info, "sync_engine module initialized.");
@@ -89,11 +139,28 @@ pub extern "C" fn module_init(context: *const GitphCoreContext) -> GitphStatus {
 
 #[no_mangle]
 pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphStatus {
+    // Defensive check for null pointer.
+    if argv.is_null() {
+        return GitphStatus::ErrorExecFailed;
+    }
+
     let args: Vec<String> = (0..argc as isize)
-        .map(|i| unsafe { CStr::from_ptr(*argv.offset(i)).to_string_lossy().into_owned() })
+        .map(|i| unsafe {
+            // Ensure the pointer at each index is not null before dereferencing.
+            let arg_ptr = *argv.offset(i);
+            if arg_ptr.is_null() {
+                // Return an empty string for null arguments, or handle as an error.
+                String::new()
+            } else {
+                CStr::from_ptr(arg_ptr).to_string_lossy().into_owned()
+            }
+        })
         .collect();
 
-    if args.is_empty() { return GitphStatus::ErrorExecFailed; }
+    if args.is_empty() || args[0].is_empty() {
+        log_to_core(GitphLogLevel::Error, "Execution failed: No command provided.");
+        return GitphStatus::ErrorExecFailed;
+    }
 
     let command = args[0].as_str();
     let user_args = &args[1..];
