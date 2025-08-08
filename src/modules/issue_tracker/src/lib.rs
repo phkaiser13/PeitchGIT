@@ -108,17 +108,7 @@ unsafe impl Sync for SafeModuleInfo {}
 static MODULE_NAME: &[u8] = b"issue_tracker\0";
 static MODULE_VERSION: &[u8] = b"1.0.0\0";
 static MODULE_DESC: &[u8] = b"Interacts with issue tracking services like GitHub Issues.\0";
-
-// CORRECTION: Define the list of supported commands.
-// REASON: The original `&[*const u8]` is not `Sync` and cannot be in a `static` variable.
-// The fix is to create a `static` array of C-style pointers (`*const c_char`).
-// This array is `Sync` because its size is known at compile time.
-// It points to our static, null-terminated byte strings.
 static CMD_ISSUE_GET: &[u8] = b"issue-get\0";
-static SUPPORTED_COMMANDS_PTRS: [*const c_char; 2] = [
-    CMD_ISSUE_GET.as_ptr() as *const c_char,
-    std::ptr::null(), // The list must be null-terminated for C compatibility.
-];
 
 // Use the `Sync` wrapper for the static variable to satisfy the compiler.
 // This static variable now correctly and safely constructs the C-compatible struct.
@@ -126,8 +116,16 @@ static MODULE_INFO: SafeModuleInfo = SafeModuleInfo(GitphModuleInfo {
     name: MODULE_NAME.as_ptr() as *const c_char,
     version: MODULE_VERSION.as_ptr() as *const c_char,
     description: MODULE_DESC.as_ptr() as *const c_char,
-    // Point to our static array of command pointers.
-    commands: SUPPORTED_COMMANDS_PTRS.as_ptr(),
+    // CORRECTION: Construct the array of pointers inline.
+    // REASON: We cannot have a separate `static` variable for the commands array
+    // because its type (`[*const c_char; N]`) is not `Sync`. By creating the
+    // array literal here, it gets promoted to static memory without needing its
+    // own `static` definition. The `SafeModuleInfo` wrapper then correctly
+    // asserts the thread-safety of the entire structure.
+    commands: &[
+        CMD_ISSUE_GET.as_ptr() as *const c_char,
+        std::ptr::null(), // The list must be null-terminated for C compatibility.
+    ].as_ptr(),
 });
 
 #[no_mangle]

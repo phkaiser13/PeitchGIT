@@ -53,10 +53,10 @@ pub struct GitphCoreContext {
     _print_ui: Option<extern "C" fn()>,
 }
 
-// MELHORIA 1: O `Mutex` em volta do `Runtime` foi removido.
-// RAZÃO: `tokio::runtime::Runtime` já é thread-safe. Seus métodos podem ser
-// chamados de múltiplas threads sem a necessidade de um Mutex externo,
-// o que remove um ponto de contenção e simplifica o código.
+// IMPROVEMENT 1: The `Mutex` around `Runtime` was removed.
+// REASON: `tokio::runtime::Runtime` is already thread-safe. Its methods can be
+// called from multiple threads without needing an external Mutex,
+// which removes a point of contention and simplifies the code.
 lazy_static! {
     static ref RUNTIME: Runtime = Runtime::new().expect("Failed to create Tokio runtime");
     static ref CORE_CONTEXT: Mutex<Option<GitphCoreContext>> = Mutex::new(None);
@@ -83,54 +83,68 @@ pub struct GitphModuleInfo {
     commands: *const *const c_char,
 }
 
-// FIX 1: Criar a estrutura wrapper para garantir `Sync`.
-// RAZÃO: Esta é a solução idiomática para informar ao compilador que os ponteiros
-// brutos dentro de `GitphModuleInfo` são seguros para compartilhamento, pois
-// apontam para dados estáticos e imutáveis.
+// FIX 1: Create the wrapper structure to guarantee `Sync`.
+// REASON: This is the idiomatic solution to inform the compiler that the raw
+// pointers inside `GitphModuleInfo` are safe for sharing because they
+// point to static and immutable data.  1 
 struct SafeModuleInfo(GitphModuleInfo);
 unsafe impl Sync for SafeModuleInfo {}
 
 static MODULE_NAME: &[u8] = b"sync_engine\0";
 static MODULE_VERSION: &[u8] = b"1.0.0\0";
 static MODULE_DESC: &[u8] = b"Performs complex, bi-directional repository synchronization.\0";
-static SUPPORTED_COMMANDS: &[*const u8] = &[
-    b"sync-run\0".as_ptr(),
-    b"sync-config\0".as_ptr(),
-    b"sync-status\0".as_ptr(),
-    std::ptr::null(),
+
+// CORREÇÃO: A definição de `SUPPORTED_COMMANDS` foi reestruturada.
+// RAZÃO: O erro original ocorria porque um array de ponteiros brutos (`*const u8`)
+// não é `Sync`.  4  A solução é definir as strings como `&'static [u8]` (que são `Sync`)
+// e então criar um array estático de ponteiros para esses dados. Isso garante
+// que os ponteiros são para memória estática e imutável, tornando a estrutura
+// segura para compartilhamento entre threads.
+static CMD_SYNC_RUN: &[u8] = b"sync-run\0";
+static CMD_SYNC_CONFIG: &[u8] = b"sync-config\0";
+static CMD_SYNC_STATUS: &[u8] = b"sync-status\0";
+
+static SUPPORTED_COMMANDS: [*const c_char; 4] = [
+    CMD_SYNC_RUN.as_ptr() as *const c_char,
+    CMD_SYNC_CONFIG.as_ptr() as *const c_char,
+    CMD_SYNC_STATUS.as_ptr() as *const c_char,
+    std::ptr::null(), // Null terminator for the C-style array of strings
 ];
 
-// FIX 2: Usar o wrapper `SafeModuleInfo` para a variável estática.
+// FIX 2: Use the `SafeModuleInfo` wrapper for the static variable.
 static MODULE_INFO: SafeModuleInfo = SafeModuleInfo(GitphModuleInfo {
     name: MODULE_NAME.as_ptr() as *const c_char,
     version: MODULE_VERSION.as_ptr() as *const c_char,
     description: MODULE_DESC.as_ptr() as *const c_char,
-    commands: SUPPORTED_COMMANDS.as_ptr() as *const *const c_char,
+    // Now we use the pointer to our well-defined static array.
+    commands: SUPPORTED_COMMANDS.as_ptr(),
 });
 
 // --- FFI Function Implementations ---
 
 #[no_mangle]
 pub extern "C" fn module_get_info() -> *const GitphModuleInfo {
-    // FIX 3: Retornar um ponteiro para o dado interno do wrapper.
+    // FIX 3: Return a pointer to the inner data of the wrapper.
     &MODULE_INFO.0
 }
 
 #[no_mangle]
 pub extern "C" fn module_init(context: *const GitphCoreContext) -> GitphStatus {
-    // MELHORIA 2: Tratamento de erro robusto para o Mutex.
-    // RAZÃO: Evita um `panic` na fronteira FFI se o Mutex estiver "envenenado",
-    // o que é um comportamento indefinido.
+    // IMPROVEMENT 2: Robust error handling for the Mutex.
+    // REASON: Avoids a `panic` at the FFI boundary if the Mutex is "poisoned",
+    // which is undefined behavior.
     if context.is_null() {
         return GitphStatus::ErrorInitFailed;
     }
     if let Ok(mut guard) = CORE_CONTEXT.lock() {
+        // This is unsafe because we are dereferencing a raw pointer from C.
+        // We trust the C caller to provide a valid pointer.
         *guard = Some(unsafe { std::ptr::read(context) });
     } else {
         return GitphStatus::ErrorInitFailed;
     }
 
-    // Eagerly initialize a referência ao runtime.
+    // Eagerly initialize the reference to the runtime.
     let _ = &*RUNTIME;
     log_to_core(GitphLogLevel::Info, "sync_engine module initialized.");
     GitphStatus::Success
@@ -138,6 +152,8 @@ pub extern "C" fn module_init(context: *const GitphCoreContext) -> GitphStatus {
 
 #[no_mangle]
 pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphStatus {
+    // This is unsafe because we are dereferencing raw pointers from C.
+    // We trust the C caller to provide valid, null-terminated strings.
     let args: Vec<String> = (0..argc as isize)
         .map(|i| unsafe { CStr::from_ptr(*argv.offset(i)).to_string_lossy().into_owned() })
         .collect();
@@ -147,16 +163,16 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphS
         return GitphStatus::ErrorInvalidArgs;
     }
 
-    let command = args[0].as_str();
-    // MELHORIA 3: Clonar os argumentos para o bloco async.
-    // RAZÃO: Garante que os dados passados para o bloco `async` tenham um tempo de
-    // vida `'static`, evitando erros de compilação relacionados a lifetimes.
+    let command = args 0 .as_str();
+    // IMPROVEMENT 3: Clone the arguments for the async block.
+    // REASON: Ensures that the data passed to the `async` block has a `'static`
+    // lifetime, avoiding compilation errors related to lifetimes.
     let user_args = args[1..].to_vec();
 
     let result = RUNTIME.block_on(async {
         match command {
             "sync-run" => sync::handle_run_sync(&user_args).await,
-            // Adicione outros handlers aqui conforme forem implementados
+            // Add other handlers here as they are implemented
             // "sync-config" => sync::handle_config_sync(&user_args).await,
             // "sync-status" => sync::handle_status_sync(&user_args).await,
             _ => Err(format!("Unknown command '{}' for sync_engine", command)),
