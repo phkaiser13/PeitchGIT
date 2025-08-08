@@ -18,7 +18,7 @@
 
 #ifndef TUI_H
 #define TUI_H
-
+#include <stddef.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
