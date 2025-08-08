@@ -1,4 +1,3 @@
----
 
 # 📖 gitph — The Polyglot Git Assistant
 
