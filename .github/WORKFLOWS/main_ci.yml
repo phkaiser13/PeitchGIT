@@ -1,18 +1,5 @@
-# Copyright (C) 2025 Pedro Henrique
-# main_ci.yml - GitHub Actions workflow for Continuous Integration.
-#
-# This workflow automates the build and test process for the gitph project
-# on every push and pull request to the main branch.
-#
-# It uses a build matrix to test the compilation across multiple operating
-# systems (Linux, Windows, macOS), ensuring the polyglot architecture is
-# consistently functional on all supported platforms.
-#
-# SPDX-License-Identifier: GPL-3.0-or-later
-
 name: CI Build & Test
 
-# Triggers the workflow on push or pull request events for the "main" branch
 on:
   push:
     branches: [ "main" ]
@@ -21,31 +8,27 @@ on:
 
 jobs:
   build:
-    # Use a strategy matrix to run the job on different operating systems
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
-    # The OS to run the job on, based on the matrix
     runs-on: ${{ matrix.os }}
     name: Build on ${{ matrix.os }}
 
     steps:
-      # Step 1: Check out the repository code
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Step 2: Set up the Go environment (needed for Go modules)
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.18' # Based on your go.mod files
+          go-version: '1.18'
 
-      # Step 3: Set up the Rust toolchain (needed for Rust modules)
       - name: Setup Rust
-        uses: actions/setup-rust-toolchain@v1
+        uses: actions/setup-rust@v1
+        with:
+          rust-version: stable
 
-      # Step 4: Install system dependencies (platform-specific)
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -56,29 +39,27 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install cmake lua curl
 
-      # For Windows, we use vcpkg to manage C/C++ libraries like lua and curl
       - name: Setup Vcpkg (Windows)
         if: runner.os == 'Windows'
         uses: microsoft/vcpkg-action@v5
+        id: vcpkg
         with:
           vcpkg-version: 'latest'
           pkgs: lua,curl
 
-      # Step 5: Configure the project with CMake
-      # For Windows, we need to point CMake to the vcpkg toolchain file
-      - name: Configure CMake
+      - name: Configure CMake (Windows)
+        if: runner.os == 'Windows'
         run: >
           cmake -S . -B build
-          -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
+          -DCMAKE_TOOLCHAIN_FILE=${{ steps.vcpkg.outputs.vcpkgRoot }}/scripts/buildsystems/vcpkg.cmake
 
-      # Step 6: Build the entire project
-      # This will compile C/C++, Rust, and Go components as defined in CMakeLists.txt
+      - name: Configure CMake (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: cmake -S . -B build
+
       - name: Build Project
         run: cmake --build build --parallel
 
-      # Step 7: Run Tests (Placeholder)
-      # In a real project, you would execute your test suite here.
       - name: Run tests
         run: |
           echo "No automated tests configured yet. Build successful."
-          # Example: ./build/bin/gitph --run-tests
