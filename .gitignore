@@ -1,0 +1,77 @@
+# === C / C++ ===
+*.o
+*.obj
+*.so
+*.a
+*.lib
+*.dll
+*.exe
+*.out
+*.log
+*.gch
+*.pch
+*.dSYM/
+*.stackdump
+*.map
+*.dep
+*.mod
+*.suo
+*.idb
+*.pdb
+*.ilk
+
+# Build dirs
+/build/
+/bin/
+/debug/
+/release/
+
+# Compilers
+.vscode/
+*.code-workspace
+
+# === Rust ===
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# === Lua ===
+*.luac
+*.out
+*.bak
+*.log
+*.tmp
+luarocks.lock
+
+# === Golang ===
+/bin/
+/pkg/
+/vendor/
+/dist/
+*.exe
+*.test
+*.out
+
+# IDEs / Editors
+*.swp
+*~
+*.tmp
+*.bak
+*.sublime-workspace
+*.sublime-project
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# === Common backup/temp files ===
+*.old
+*.orig
+*.save
+*.backup
+
+# === OS-specific ===
+.DS_Store
+ehthumbs.db
+Icon?
+Desktop.ini
