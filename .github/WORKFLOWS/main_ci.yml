@@ -1,1 +1,127 @@
 
+# Copyright (C) 2025 Pedro Henrique
+# main_ci.yml - Workflow de Integração Contínua para o projeto gitph.
+#
+# Este workflow automatiza o processo de build e release da aplicação.
+# Ele garante que o projeto compila corretamente em um ambiente limpo
+# e cria pacotes de distribuição automaticamente quando uma nova versão é marcada.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+name: Build e Release do gitph
+
+# Gatilhos do workflow:
+on:
+  push:
+    branches: [ "main" ] # Executa quando há um push para a branch main
+    tags:
+      - 'v*'          # Executa quando uma tag como v1.0.0 é criada
+  pull_request:
+    branches: [ "main" ] # Executa em pull requests para a main
+
+jobs:
+  # Job principal de build que compila e verifica o projeto
+  build:
+    name: Build e Teste
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Clona o repositório
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      # 2. Instala as dependências de sistema (C/C++, Lua, Curl)
+      #    Comando retirado diretamente do script de setup.
+      - name: Instalar dependências do sistema
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake liblua5.4-dev libcurl4-openssl-dev
+
+      # 3. Configura o ambiente Go
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.18' # Versão especificada nos arquivos go.mod
+
+      # 4. Configura o ambiente Rust (com cache)
+      - name: Setup Rust
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      # 5. Configura e compila o projeto usando CMake em modo Release
+      #    Comandos baseados no script de build.sh
+      - name: Configurar CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Compilar Projeto
+        run: cmake --build build --parallel
+
+      # 6. Salva os artefatos de build para o job de release poder usá-los
+      - name: Upload dos artefatos de build
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitph-build-artifacts
+          path: |
+            build/bin/
+            src/plugins/
+            LICENSE
+
+  # Job de release que só executa quando uma tag é criada
+  release:
+    name: Criar Release
+    needs: build # Depende do sucesso do job de build
+    runs-on: ubuntu-latest
+    # A condição 'if' garante que este job só execute para tags
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      # 1. Clona o repositório
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      # 2. Baixa os artefatos compilados pelo job de build
+      - name: Download dos artefatos de build
+        uses: actions/download-artifact@v4
+        with:
+          name: gitph-build-artifacts
+          path: build/
+
+      # 3. Empacota os arquivos de release usando o script
+      #    O script release.sh já monta a estrutura correta.
+      - name: Empacotar para Release
+        run: |
+          mkdir -p build-release/bin
+          cp -r build/bin/* build-release/bin/
+          cp -r build/plugins build-release/
+          cp build/LICENSE build-release/
+          
+          # Determina a versão a partir da tag do Git
+          VERSION=${{ github.ref_name }}
+          RELEASE_NAME="gitph-${VERSION}-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
+          
+          # Cria o diretório final e move os arquivos
+          mkdir -p "release/${RELEASE_NAME}"
+          mv build-release/bin/* "release/${RELEASE_NAME}/"
+          mv build-release/plugins "release/${RELEASE_NAME}/"
+          mv build-release/LICENSE "release/${RELEASE_NAME}/"
+          
+          # Tira informações de debug dos binários para reduzir tamanho
+          strip "release/${RELEASE_NAME}/gitph"
+          strip "release/${RELEASE_NAME}/modules/"*
+          
+          # Cria o arquivo .tar.gz
+          (cd release && tar -czf "${RELEASE_NAME}.tar.gz" "${RELEASE_NAME}")
+          echo "RELEASE_PATH=release/${RELEASE_NAME}.tar.gz" >> $GITHUB_ENV
+
+      # 4. Cria a Release no GitHub e faz o upload do pacote .tar.gz
+      - name: Publicar Release no GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.RELEASE_PATH }}
+          # O corpo da release pode ser preenchido automaticamente com as últimas mudanças
+          generate_release_notes: true
