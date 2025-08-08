@@ -44,6 +44,9 @@ file(GLOB_RECURSE CORE_HEADERS "src/core/*.h" "src/libs/libcommon/*.h" "src/ipc/
 # 3. Build the main gitph executable
 add_executable(gitph ${CORE_SOURCES} ${CORE_HEADERS})
 
+#commiting here>
+target_include_directories(gitph PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
 # 4. Link the core executable with its dependencies
 # CORREÇÃO 2: Usar as variáveis padrão definidas pelo FindLua.cmake (LUA_LIBRARIES).
 target_link_libraries(gitph

@@ -18,7 +18,10 @@
 
 #ifndef TUI_H
 #define TUI_H
-#include <stddef.h>
+
+#include <stdbool.h> // Para o tipo bool
+#include <stddef.h>  // Para o tipo size_t
+
 #ifdef __cplusplus
 extern "C" {
 #endif
