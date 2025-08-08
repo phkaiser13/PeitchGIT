@@ -26,7 +26,10 @@ file(MAKE_DIRECTORY ${MODULE_OUTPUT_PATH})
 
 # --- Find System Dependencies ---
 find_package(CURL REQUIRED)
-find_package(Lua54 REQUIRED) # Assumes Lua 5.4 is installed
+
+# CORREÇÃO 1: Usar a sintaxe padrão do CMake para encontrar a biblioteca Lua versão 5.4.
+# O módulo de busca é "Lua", e a versão "5.4" é passada como argumento.
+find_package(Lua 5.4 REQUIRED)
 
 # --- Build C/C++ Core ---
 
@@ -42,17 +45,19 @@ file(GLOB_RECURSE CORE_HEADERS "src/core/*.h" "src/libs/libcommon/*.h" "src/ipc/
 add_executable(gitph ${CORE_SOURCES} ${CORE_HEADERS})
 
 # 4. Link the core executable with its dependencies
+# CORREÇÃO 2: Usar as variáveis padrão definidas pelo FindLua.cmake (LUA_LIBRARIES).
 target_link_libraries(gitph
         PRIVATE
         logger
         ${CURL_LIBRARIES}
-        ${LUA54_LIBRARIES}
+        ${LUA_LIBRARIES}
 )
 # On POSIX systems, we need to link against libdl for dynamic loading
 if(UNIX AND NOT APPLE)
     target_link_libraries(gitph PRIVATE dl)
 endif()
 
+# CORREÇÃO 3: Usar as variáveis padrão definidas pelo FindLua.cmake (LUA_INCLUDE_DIR).
 target_include_directories(gitph PUBLIC
         src/core/cli
         src/core/config
@@ -64,7 +69,7 @@ target_include_directories(gitph PUBLIC
         src/ipc/include
         src/libs/libcommon
         src/libs/liblogger
-        ${LUA54_INCLUDE_DIR}
+        ${LUA_INCLUDE_DIR}
 )
 
 # --- Build Polyglot Modules (via Custom Commands) ---
