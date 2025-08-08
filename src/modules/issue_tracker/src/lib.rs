@@ -26,41 +26,17 @@ use tokio::runtime::Runtime;
 mod issue_service;
 
 // --- C API Data Structure Definitions (matching gitph_core_api.h) ---
-#[repr(C)]
-pub enum GitphStatus {
-    Success = 0,
-    ErrorGeneral = -1,
-    ErrorInvalidArgs = -2,
-    ErrorNotFound = -3,
-    ErrorInitFailed = -4,
-    ErrorExecFailed = -5,
-}
-
-#[repr(C)]
-pub enum GitphLogLevel {
-    Debug,
-    Info,
-    Warn,
-    Error,
-    Fatal,
-}
-
+#[repr(C)] pub enum GitphStatus { Success = 0, ErrorExecFailed = -5, /* ... */ }
+#[repr(C)] pub enum GitphLogLevel { Info, Error, /* ... */ }
 type LogFn = extern "C" fn(GitphLogLevel, *const c_char, *const c_char);
-
-#[repr(C)]
-// Adding `Copy` and `Clone` to make handling easier, especially with `ptr::read`.
-#[derive(Copy, Clone)]
-pub struct GitphCoreContext {
-    log: Option<LogFn>,
-    _get_config_value: Option<extern "C" fn()>,
-    _print_ui: Option<extern "C" fn()>,
-}
+#[repr(C)] pub struct GitphCoreContext { log: Option<LogFn>, /* ... */ }
 
 // --- Global State Management ---
 
 // A global, thread-safe Tokio runtime.
 lazy_static! {
-    static ref RUNTIME: Runtime = Runtime::new().expect("Failed to create Tokio runtime");
+    static ref RUNTIME: Mutex<Runtime> =
+        Mutex::new(Runtime::new().expect("Failed to create Tokio runtime"));
 }
 
 // Global, thread-safe storage for the context from the C core.
@@ -91,90 +67,53 @@ pub struct GitphModuleInfo {
     commands: *const *const c_char,
 }
 
-// This wrapper is necessary because GitphModuleInfo contains raw pointers,
-// making it not `Sync`. By wrapping it and implementing `unsafe impl Sync`,
-// we assert to the compiler that we guarantee thread-safe access. This holds
-// true because the pointers within will only ever point to other 'static,
-// read-only data, which is inherently thread-safe.
-struct SafeModuleInfo(GitphModuleInfo);
-unsafe impl Sync for SafeModuleInfo {}
-
-
-// --- Static Module Information ---
-
-// Define module metadata as static, null-terminated byte slices.
-// This ensures they live for the entire program duration ('static) and are stored
-// in the read-only data section of the binary.
 static MODULE_NAME: &[u8] = b"issue_tracker\0";
 static MODULE_VERSION: &[u8] = b"1.0.0\0";
 static MODULE_DESC: &[u8] = b"Interacts with issue tracking services like GitHub Issues.\0";
-static CMD_ISSUE_GET: &[u8] = b"issue-get\0";
+static SUPPORTED_COMMANDS: &[*const u8] = &[
+    b"issue-get\0".as_ptr(),
+    std::ptr::null(),
+];
 
-// Use the `Sync` wrapper for the static variable to satisfy the compiler.
-// This static variable now correctly and safely constructs the C-compatible struct.
-static MODULE_INFO: SafeModuleInfo = SafeModuleInfo(GitphModuleInfo {
+static MODULE_INFO: GitphModuleInfo = GitphModuleInfo {
     name: MODULE_NAME.as_ptr() as *const c_char,
     version: MODULE_VERSION.as_ptr() as *const c_char,
     description: MODULE_DESC.as_ptr() as *const c_char,
-    // CORRECTION: Construct the array of pointers inline.
-    // REASON: We cannot have a separate `static` variable for the commands array
-    // because its type (`[*const c_char; N]`) is not `Sync`. By creating the
-    // array literal here, it gets promoted to static memory without needing its
-    // own `static` definition. The `SafeModuleInfo` wrapper then correctly
-    // asserts the thread-safety of the entire structure.
-    commands: &[
-        CMD_ISSUE_GET.as_ptr() as *const c_char,
-        std::ptr::null(), // The list must be null-terminated for C compatibility.
-    ].as_ptr(),
-});
+    commands: SUPPORTED_COMMANDS.as_ptr() as *const *const c_char,
+};
 
 #[no_mangle]
 pub extern "C" fn module_get_info() -> *const GitphModuleInfo {
-    // Return a pointer to the inner, C-compatible data structure.
-    &MODULE_INFO.0
+    &MODULE_INFO
 }
 
 #[no_mangle]
 pub extern "C" fn module_init(context: *const GitphCoreContext) -> GitphStatus {
-    if context.is_null() {
-        // Cannot log here as we have no context.
-        return GitphStatus::ErrorInitFailed;
-    }
     // Store the context and ensure the runtime is initialized.
-    if let Ok(mut guard) = CORE_CONTEXT.lock() {
-        // `ptr::read` safely copies the data from the C pointer.
-        *guard = Some(unsafe { std::ptr::read(context) });
-    } else {
-        // Mutex was poisoned, a panic occurred while it was locked.
-        return GitphStatus::ErrorInitFailed;
-    }
-
-    // Eagerly initialize the runtime by referencing it.
-    let _ = &*RUNTIME;
+    *CORE_CONTEXT.lock().unwrap() = Some(unsafe { std::ptr::read(context) });
+    let _ = RUNTIME.lock().unwrap(); // Eagerly initialize the runtime.
     log_to_core(GitphLogLevel::Info, "issue_tracker module initialized.");
     GitphStatus::Success
 }
 
 #[no_mangle]
 pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphStatus {
-    // Safely parse arguments from C into a Vec<String>.
     let args: Vec<String> = (0..argc as isize)
         .map(|i| unsafe { CStr::from_ptr(*argv.offset(i)).to_string_lossy().into_owned() })
         .collect();
 
-    if args.is_empty() {
-        log_to_core(GitphLogLevel::Error, "Execution called with no arguments.");
-        return GitphStatus::ErrorInvalidArgs;
-    }
+    if args.is_empty() { return GitphStatus::ErrorExecFailed; }
 
     let command = args[0].as_str();
-    // Clone user_args to give it a 'static lifetime for the async block.
-    let user_args = args[1..].to_vec();
+    let user_args = &args[1..];
 
-    // Execute the async logic on the global runtime and block until it completes.
-    let result = RUNTIME.block_on(async {
+    // Get a handle to the runtime.
+    let runtime = RUNTIME.lock().unwrap();
+
+    // Execute the async logic on the runtime and block until it completes.
+    let result = runtime.block_on(async {
         match command {
-            "issue-get" => issue_service::handle_get_issue(&user_args).await,
+            "issue-get" => issue_service::handle_get_issue(user_args).await,
             _ => Err(format!("Unknown command '{}'", command)),
         }
     });
@@ -182,8 +121,8 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphS
     match result {
         Ok(_) => GitphStatus::Success,
         Err(e) => {
-            let error_message = format!("Command failed: {}", e);
-            log_to_core(GitphLogLevel::Error, &error_message);
+            log_to_core(GitphLogLevel::Error, &format!("Command failed: {}", e));
+            eprintln!("[gitph ERROR] {}", e);
             GitphStatus::ErrorExecFailed
         }
     }
