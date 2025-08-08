@@ -108,24 +108,26 @@ static MODULE_NAME: &[u8] = b"git_ops\0";
 static MODULE_VERSION: &[u8] = b"1.0.0\0";
 static MODULE_DESC: &[u8] = b"Provides fundamental Git commands like add, commit, push.\0";
 
-// This array of pointers is also not Sync by default.
-// It's safe for the same reason: it's static, read-only, and points to static data.
-static SUPPORTED_COMMANDS: &[*const u8] = &[
-    b"SND\0".as_ptr(),
-    b"rls\0".as_ptr(),
-    b"psor\0".as_ptr(),
-    b"cnb\0".as_ptr(),
-    b"cb\0".as_ptr(),
-    b"status\0".as_ptr(),
-    std::ptr::null(), // Null terminator for the array
+// Criamos um array estático de ponteiros para os nossos comandos.
+// Este array em si terá um tempo de vida 'static.
+static SUPPORTED_COMMANDS_PTRS: &[*const c_char] = &[
+    b"SND\0".as_ptr() as *const c_char,
+    b"rls\0".as_ptr() as *const c_char,
+    b"psor\0".as_ptr() as *const c_char,
+    b"cnb\0".as_ptr() as *const c_char,
+    b"cb\0".as_ptr() as *const c_char,
+    b"status\0".as_ptr() as *const c_char,
+    std::ptr::null(), // Terminador nulo para o array, conforme o padrão C.
 ];
 
-// Now, we can safely create the static MODULE_INFO inside our `Sync` wrapper.
+// Agora, podemos criar com segurança o MODULE_INFO estático dentro do nosso wrapper `Sync`.
+// O campo `commands` agora aponta para o nosso array de ponteiros estático.
 static MODULE_INFO: SafeModuleInfo = SafeModuleInfo(GitphModuleInfo {
     name: MODULE_NAME.as_ptr() as *const c_char,
     version: MODULE_VERSION.as_ptr() as *const c_char,
     description: MODULE_DESC.as_ptr() as *const c_char,
-    commands: SUPPORTED_COMMANDS.as_ptr() as *const *const c_char,
+    // O ponteiro para o array de ponteiros é seguro para ser compartilhado.
+    commands: SUPPORTED_COMMANDS_PTRS.as_ptr(),
 });
 
 #[no_mangle]
