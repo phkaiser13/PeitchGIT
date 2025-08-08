@@ -56,7 +56,7 @@ pub fn handle_status() -> CommandResult {
 ///
 /// NOTE: This is a simplified version. A real-world implementation would need
 /// to prompt the user for a commit message and intelligently determine the
--/// remote and branch.
+/// remote and branch.
 pub fn handle_send() -> CommandResult {
     log_to_core(GitphLogLevel::Info, "Handling 'SND' command.");
 
