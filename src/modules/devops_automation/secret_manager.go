@@ -15,11 +15,11 @@
 package main
 
 import (
+	"C"
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"os/exec"
-	"strings"
 )
 
 // VaultSecretResponse defines the structure of the JSON output from the
