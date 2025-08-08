@@ -14,6 +14,10 @@
 
 package main
 
+/*
+#include "../../ipc/include/gitph_core_api.h"
+*/
+
 import (
 	"C"
 	"bytes"
