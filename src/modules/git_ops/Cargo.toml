@@ -1,0 +1,31 @@
+# Copyright (C) 2025 Pedro Henrique
+# Cargo.toml - Rust project manifest for the git_ops module.
+#
+# This file configures the Rust build for the `git_ops` module. It defines
+# essential metadata, dependencies, and, most importantly, the crate type.
+#
+# The `[lib]` section with `crate-type = ["cdylib"]` is the key to our
+# polyglot architecture. It instructs the Rust compiler (rustc) to produce a
+# C-compatible dynamic library (.so on Linux, .dll on Windows), which can be
+# loaded by our C core's module loader.
+#
+# Dependencies:
+# - `libc`: Provides C-compatible types (like `c_char`) necessary for FFI.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[package]
+name = "git_ops"
+version = "0.1.0"
+edition = "2021"
+authors = ["Pedro Henrique <seu-email@exemplo.com>"]
+description = "A gitph module for fundamental Git operations."
+
+[lib]
+# This is the crucial part for FFI. It creates a C-style dynamic library.
+crate-type = ["cdylib"]
+
+[dependencies]
+# `libc` is essential for interacting with C code, providing definitions
+# for C types like `c_char`, `c_int`, etc.
+libc = "0.2"
