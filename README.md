@@ -1,7 +1,7 @@
 
-# 📖 gitph — The Polyglot Git Assistant
+# 📖 Ph Git (peight git) — The Polyglot Git Assistant
 
-**gitph** is a modern and extensible command-line interface (CLI) tool designed to streamline and supercharge your Git and DevOps workflows. Built on a unique **polyglot architecture**, it leverages the raw performance of **C/C++** and **Rust**, the concurrency of **Go**, and the scripting flexibility of **Lua** to deliver a high-performance, customizable experience.
+**ph GIt** is a modern and extensible command-line interface (CLI) tool designed to streamline and supercharge your Git and DevOps workflows. Built on a unique **polyglot architecture**, it leverages the raw performance of **C/C++** and **Rust**, the concurrency of **Go**, and the scripting flexibility of **Lua** to deliver a high-performance, customizable experience.
 
 ---
 
