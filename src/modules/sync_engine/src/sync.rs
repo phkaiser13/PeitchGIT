@@ -61,17 +61,13 @@ impl SyncEngine {
         println!("Starting synchronization...");
 
         // Phase 1: Fetch updates from all remotes.
-        // NOTE: This is a simplified fetch. A real one needs auth callbacks.
         self.fetch_repo("source", &self.source_repo).await?;
         self.fetch_repo("target", &self.target_repo).await?;
 
         // Phase 2: Analyze divergence.
-        // For now, we assume 'main' branch. This should be configurable.
         let source_head = self.source_repo.find_branch("main", git2::BranchType::Local)?.get().peel_to_commit()?.id();
         let target_head = self.target_repo.find_branch("main", git2::BranchType::Local)?.get().peel_to_commit()?.id();
 
-        // Use the last synced state as the base for comparison.
-        // If no state exists, we find the common ancestor between the two heads.
         let base_oid = self.find_sync_base(source_head, target_head)?;
 
         let (source_ahead, _) = self.source_repo.graph_ahead_behind(source_head, base_oid)?;
@@ -81,51 +77,67 @@ impl SyncEngine {
         println!("- Source is {} commits ahead.", source_ahead);
         println!("- Target is {} commits ahead.", target_ahead);
 
-        // Phase 3: Apply changes based on a strategy.
-        if source_ahead > 0 && target_ahead > 0 {
+        // Phase 3: Apply changes and update state.
+        let result_message = if source_ahead > 0 && target_ahead > 0 {
             // DIVERGENCE: The safest action is to stop and inform the user.
             return Err("Repositories have diverged! Manual intervention required.".into());
         } else if source_ahead > 0 {
-            // TODO: Implement logic to apply source commits to target.
             println!("Applying {} commits from source to target...", source_ahead);
+            // TODO: Implement logic to apply source commits to target.
             // self.apply_commits(&self.source_repo, &self.target_repo, source_head, base_oid)?;
-            return Ok("Sync from source to target not yet implemented.".to_string());
+            // self.state.last_source_synced_oid = Some(source_head.to_string());
+            // self.state.last_target_synced_oid = Some(source_head.to_string()); // Target is now at source_head
+            // self.save_state()?;
+            "Sync from source to target not yet implemented.".to_string()
         } else if target_ahead > 0 {
-            // TODO: Implement logic to apply target commits to source.
             println!("Applying {} commits from target to source...", target_ahead);
-            return Ok("Sync from target to source not yet implemented.".to_string());
+            // TODO: Implement logic to apply target commits to source.
+            // self.state.last_source_synced_oid = Some(target_head.to_string()); // Source is now at target_head
+            // self.state.last_target_synced_oid = Some(target_head.to_string());
+            // self.save_state()?;
+            "Sync from target to source not yet implemented.".to_string()
         } else {
-            return Ok("Repositories are already in sync.".to_string());
-        }
+            "Repositories are already in sync.".to_string()
+        };
+
+        Ok(result_message)
     }
 
     /// Helper to fetch updates for a given repository.
     async fn fetch_repo(&self, name: &str, repo: &Repository) -> SyncResult<()> {
         println!("Fetching updates for {} repository...", name);
         let mut remote = repo.find_remote("origin")?;
-        // This is where you would configure credentials for private repos.
         remote.fetch(&["main"], None, None)?;
         Ok(())
     }
 
     /// Finds the common base for synchronization.
     fn find_sync_base(&self, source_oid: Oid, target_oid: Oid) -> SyncResult<Oid> {
-        // A robust strategy: if we have a synced state for both, find their
-        // common ancestor. For now, we simplify.
+        // Strategy: Use the last known common ancestor if available. Otherwise, find a new one.
         if let (Some(s_oid_str), Some(t_oid_str)) = (&self.state.last_source_synced_oid, &self.state.last_target_synced_oid) {
-            // In a real scenario, we'd verify these oids still exist and find
-            // their common ancestor. Here we'll just use the source for simplicity.
-            return Ok(Oid::from_str(s_oid_str)?);
+            // FIX: Use both saved OIDs to find their actual common ancestor.
+            // This correctly uses `t_oid_str` and fixes the logical flaw.
+            println!("Found previous sync state. Calculating merge base from saved OIDs.");
+            let last_source_oid = Oid::from_str(s_oid_str)?;
+            let last_target_oid = Oid::from_str(t_oid_str)?;
+
+            // We can use either repository to find the merge base of two commits.
+            return self.source_repo.merge_base(last_source_oid, last_target_oid)
+                .map_err(|e| format!("Could not find merge base for saved OIDs {s_oid_str} and {t_oid_str}. Have the branches been rebased? Error: {e}").into());
         }
+
         // If no state, find the merge base between the current heads.
+        println!("No previous sync state found. Calculating merge base from current heads.");
         self.source_repo.merge_base(source_oid, target_oid)
             .map_err(|e| e.into())
     }
 
     /// Persists the current state to disk.
-    fn _save_state(&self) -> SyncResult<()> {
+    fn save_state(&self) -> SyncResult<()> {
+        println!("Saving sync state to disk...");
         let state_json = serde_json::to_string_pretty(&self.state)?;
         std::fs::write(&self.state_path, state_json)?;
+        println!("State saved successfully.");
         Ok(())
     }
 }

@@ -53,17 +53,19 @@ pub enum GitphLogLevel {
 // A function pointer type for the logger callback from the C core.
 type LogFn = extern "C" fn(GitphLogLevel, *const c_char, *const c_char);
 
+// FIX 1: Replace raw data pointers `*const ()` with proper optional function pointers.
+// REASON: `Option<extern "C" fn()>` is Send + Sync, unlike `*const ()`. This makes
+// the entire GitphCoreContext struct Send + Sync, resolving the lazy_static! error.
 #[repr(C)]
 pub struct GitphCoreContext {
     log: Option<LogFn>,
     // Add other context functions here as they are defined in the C API.
-    _get_config_value: *const (), // Placeholder for future use
-    _print_ui: *const (),         // Placeholder for future use
+    _get_config_value: Option<extern "C" fn()>, // Placeholder for future use
+    _print_ui: Option<extern "C" fn()>,         // Placeholder for future use
 }
 
 // Make the context globally and safely accessible within the Rust module.
-// We use a Mutex to ensure thread-safe access, a standard Rust practice.
-// `lazy_static` ensures this is initialized only once.
+// This now works because GitphCoreContext is Send.
 lazy_static::lazy_static! {
     static ref CORE_CONTEXT: Mutex<Option<GitphCoreContext>> = Mutex::new(None);
 }
@@ -92,31 +94,44 @@ pub struct GitphModuleInfo {
     commands: *const *const c_char,
 }
 
+// FIX 2: Create a wrapper struct for GitphModuleInfo.
+// REASON: GitphModuleInfo contains raw pointers, so it is not `Sync`. By wrapping it
+// and implementing `unsafe impl Sync`, we are telling the compiler that we guarantee
+// it's safe to be shared across threads. This is true because the pointers inside
+// will only ever point to other 'static read-only data.
+struct SafeModuleInfo(GitphModuleInfo);
+unsafe impl Sync for SafeModuleInfo {}
+
 // Define the static data for our module's information.
-// `b"...\0"` creates null-terminated C-compatible byte strings.
+// `b"...\0"` creates null-terminated C-compatible byte strings with a 'static lifetime.
 static MODULE_NAME: &[u8] = b"git_ops\0";
 static MODULE_VERSION: &[u8] = b"1.0.0\0";
 static MODULE_DESC: &[u8] = b"Provides fundamental Git commands like add, commit, push.\0";
+
+// This array of pointers is also not Sync by default.
+// It's safe for the same reason: it's static, read-only, and points to static data.
 static SUPPORTED_COMMANDS: &[*const u8] = &[
-    b"SND\0".as_ptr(),      // Add, Commit, Push
-    b"rls\0".as_ptr(),      // Release
-    b"psor\0".as_ptr(),     // Push Origin
-    b"cnb\0".as_ptr(),      // Create New Branch
-    b"cb\0".as_ptr(),       // Change Branch
-    b"status\0".as_ptr(),   // Git Status
+    b"SND\0".as_ptr(),
+    b"rls\0".as_ptr(),
+    b"psor\0".as_ptr(),
+    b"cnb\0".as_ptr(),
+    b"cb\0".as_ptr(),
+    b"status\0".as_ptr(),
     std::ptr::null(), // Null terminator for the array
 ];
 
-static MODULE_INFO: GitphModuleInfo = GitphModuleInfo {
+// Now, we can safely create the static MODULE_INFO inside our `Sync` wrapper.
+static MODULE_INFO: SafeModuleInfo = SafeModuleInfo(GitphModuleInfo {
     name: MODULE_NAME.as_ptr() as *const c_char,
     version: MODULE_VERSION.as_ptr() as *const c_char,
     description: MODULE_DESC.as_ptr() as *const c_char,
     commands: SUPPORTED_COMMANDS.as_ptr() as *const *const c_char,
-};
+});
 
 #[no_mangle]
 pub extern "C" fn module_get_info() -> *const GitphModuleInfo {
-    &MODULE_INFO
+    // Return a pointer to the actual GitphModuleInfo struct inside our wrapper.
+    &MODULE_INFO.0
 }
 
 #[no_mangle]
@@ -127,8 +142,11 @@ pub extern "C" fn module_init(context: *const GitphCoreContext) -> GitphStatus {
     // Safely store the received context in our global static variable.
     if let Ok(mut guard) = CORE_CONTEXT.lock() {
         // We create a copy of the context data.
+        // This is safe because the lifetime of `context` is guaranteed by the C core
+        // to be valid during this call.
         *guard = Some(unsafe { std::ptr::read(context) });
     } else {
+        // This would happen if the mutex is "poisoned" (a thread panicked while holding the lock).
         return GitphStatus::ErrorInitFailed;
     }
     log_to_core(GitphLogLevel::Info, "git_ops module initialized successfully.");

@@ -18,6 +18,19 @@ package main
 // These includes are processed by cgo.
 #include <stdlib.h>
 #include "../../ipc/include/gitph_core_api.h"
+
+// FIX 1: Create a C helper function to call the function pointer.
+// REASON: Calling function pointers from Go directly can be syntactically messy.
+// This C helper encapsulates the logic of safely calling the function pointer,
+// making the Go code cleaner. It receives the function pointer (fn) and its
+// arguments, and then executes the call within C. This resolves the "undefined name"
+// error because we are no longer incorrectly exporting a Go function for this task.
+static inline void call_log_fn_wrapper(PFN_log fn, GitphLogLevel level, const char* module, const char* msg) {
+    // Check if the function pointer is not null before calling it.
+    if (fn != NULL) {
+        fn(level, module, msg);
+    }
+}
 */
 import "C" // This import enables cgo.
 
@@ -62,15 +75,16 @@ func logToCore(level C.GitphLogLevel, message string) {
 	defer C.free(unsafe.Pointer(moduleNameC))
 	defer C.free(unsafe.Pointer(messageC))
 
-	C.call_log_fn(coreContext.log, level, moduleNameC, messageC)
+	// FIX 2: Call the new C wrapper function.
+	// REASON: We now call the simple, well-defined C function from our preamble,
+	// passing the function pointer `coreContext.log` as an argument. This is the
+	// correct and clean way to interact with the C function pointer.
+	C.call_log_fn_wrapper(coreContext.log, level, moduleNameC, messageC)
 }
 
-// This is a necessary C wrapper to call the function pointer from Go.
-//export call_log_fn
-func call_log_fn(fn C.PFN_log, level C.GitphLogLevel, module *C.char, msg *C.char) {
-	fn(level, module, msg)
-}
-
+// FIX 3: The incorrect Go implementation of `call_log_fn` has been removed.
+// REASON: It was the source of the logical error and is no longer needed,
+// as its role is now correctly handled by the C helper `call_log_fn_wrapper`.
 
 // --- C-compatible API Implementation ---
 
@@ -94,7 +108,7 @@ func module_exec(argc C.int, argv **C.char) C.GitphStatus {
 	// Convert C's argc/argv to a Go slice of strings for idiomatic handling.
 	// This requires unsafe pointer arithmetic.
 	argsSlice := (*[1 << 30]*C.char)(unsafe.Pointer(argv))[:argc:argc]
-	args := make([]string, argc)
+	args := make([]string, int(argc)) // Use int(argc) for better Go compatibility
 	for i, s := range argsSlice {
 		args[i] = C.GoString(s)
 	}
@@ -110,9 +124,13 @@ func module_exec(argc C.int, argv **C.char) C.GitphStatus {
 	var err error
 	switch command {
 	case "srp":
-		// Delegate to the handler function which contains the actual logic.
-		// We will create this file and function next.
-		err = handleSetRepository(args[1:])
+		if len(args) < 2 {
+			err = fmt.Errorf("command 'srp' requires at least one argument")
+		} else {
+			// Delegate to the handler function which contains the actual logic.
+			// We will create this file and function next.
+			err = handleSetRepository(args[1:])
+		}
 	default:
 		err = fmt.Errorf("unknown command '%s' for api_client module", command)
 	}
@@ -142,3 +160,12 @@ func module_cleanup() {
 
 // A main function is required for a `c-shared` library build, even if empty.
 func main() {}
+
+// Dummy handler function to make the code compilable.
+func handleSetRepository(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("no repository provided")
+	}
+	logToCore(C.LOG_LEVEL_INFO, fmt.Sprintf("Repository set to: %s", args[0]))
+	return nil
+}
