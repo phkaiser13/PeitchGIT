@@ -38,6 +38,7 @@ pub enum GitphLogLevel {
 }
 type LogFn = extern "C" fn(GitphLogLevel, *const c_char, *const c_char);
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct GitphCoreContext {
     log: Option<LogFn>, /* ... */
 }
@@ -85,6 +86,19 @@ pub struct GitphModuleInfo {
     commands: *const *const c_char,
 }
 
+// A wrapper struct to hold the C-compatible info.
+// We will implement Sync for this wrapper to tell the compiler it's safe
+// for multi-threaded access, under the condition that its contents are
+// truly static and read-only.
+struct SyncGitphModuleInfo(GitphModuleInfo);
+
+// SAFETY: This is safe because we guarantee that the data pointed to by the
+// fields of `GitphModuleInfo` within this struct has a 'static lifetime
+// and is read-only. The strings are from static byte literals, and the
+// command list pointer comes from a `lazy_static` Vec that is never modified
+// after creation.
+unsafe impl Sync for SyncGitphModuleInfo {}
+
 // Store module information in thread-safe, Rust-native static variables.
 // The null terminator `\0` is included for C compatibility.
 static MODULE_NAME: &[u8] = b"issue_tracker\0";
@@ -92,46 +106,45 @@ static MODULE_VERSION: &[u8] = b"1.0.0\0";
 static MODULE_DESC: &[u8] = b"Interacts with issue tracking services like GitHub Issues.\0";
 
 // Define supported commands in a Rust-native, thread-safe way.
-static SUPPORTED_COMMANDS: &[&[u8]] = &[
-    b"issue-get\0",
-];
+static SUPPORTED_COMMANDS: &[&[u8]] = &[b"issue-get\0"];
 
-// Use `lazy_static` to safely initialize the C-compatible struct with raw pointers.
-// This structure will be created once on the first call to `module_get_info`
-// and will live for the entire duration of the program ('static lifetime),
-// ensuring the pointers we return to C are always valid.
 lazy_static! {
-    // This vector holds the C-style list of command pointers. Because it's in a
-    // `lazy_static`, its heap allocation will never be freed, making its internal
-    // pointer stable and safe to share.
-    static ref C_COMMANDS: Vec<*const c_char> = {
-        let mut cmds: Vec<*const c_char> = SUPPORTED_COMMANDS
-            .iter()
-            .map(|s| s.as_ptr() as *const c_char)
-            .collect();
-        // C APIs often expect a null-terminated array of pointers.
-        cmds.push(std::ptr::null());
-        cmds
-    };
+    // This single static variable holds all our module metadata.
+    // It's wrapped in `SyncGitphModuleInfo` for which we've implemented `Sync`,
+    // assuring the compiler of its thread-safety.
+    static ref STATIC_MODULE_INFO: SyncGitphModuleInfo = {
+        // This vector holds the C-style list of command pointers. Because it's in a
+        // `lazy_static`, its heap allocation will never be freed, making its internal
+        // pointer stable and safe to share.
+        static C_COMMANDS: Vec<*const c_char> = {
+            let mut cmds: Vec<*const c_char> = SUPPORTED_COMMANDS
+                .iter()
+                .map(|s| s.as_ptr() as *const c_char)
+                .collect();
+            // C APIs often expect a null-terminated array of pointers.
+            cmds.push(std::ptr::null());
+            cmds
+        };
 
-    // This is the C-compatible struct that we will expose via the FFI.
-    // It is also in a `lazy_static` to guarantee a 'static lifetime.
-    static ref MODULE_INFO: GitphModuleInfo = GitphModuleInfo {
-        name: MODULE_NAME.as_ptr() as *const c_char,
-        version: MODULE_VERSION.as_ptr() as *const c_char,
-        description: MODULE_DESC.as_ptr() as *const c_char,
-        // We can safely take a pointer to the data inside C_COMMANDS because
-        // C_COMMANDS has a 'static lifetime.
-        commands: C_COMMANDS.as_ptr(),
+        // Now, construct the GitphModuleInfo struct using pointers to our
+        // static data.
+        let info = GitphModuleInfo {
+            name: MODULE_NAME.as_ptr() as *const c_char,
+            version: MODULE_VERSION.as_ptr() as *const c_char,
+            description: MODULE_DESC.as_ptr() as *const c_char,
+            // The pointer to the command list is stable and 'static.
+            commands: C_COMMANDS.as_ptr(),
+        };
+
+        // Finally, wrap it in our Sync-enabled type.
+        SyncGitphModuleInfo(info)
     };
 }
 
 #[no_mangle]
 pub extern "C" fn module_get_info() -> *const GitphModuleInfo {
-    // Return a pointer to the lazily initialized, static MODULE_INFO struct.
-    // The `&*` dereferences the lazy_static wrapper to get the struct, then
-    // takes a raw pointer to it.
-    &*MODULE_INFO
+    // Return a pointer to the inner GitphModuleInfo struct.
+    &STATIC_MODULE_INFO.0
 }
 
 #[no_mangle]
@@ -141,7 +154,7 @@ pub extern "C" fn module_init(context: *const GitphCoreContext) -> GitphStatus {
     if context.is_null() {
         return GitphStatus::ErrorExecFailed;
     }
-    *CORE_CONTEXT.lock().unwrap() = Some(unsafe { std::ptr::read(context) });
+    *CORE_CONTEXT.lock().unwrap() = Some(unsafe { *context });
     let _ = RUNTIME.lock().unwrap(); // Eagerly initialize the runtime.
     log_to_core(GitphLogLevel::Info, "issue_tracker module initialized.");
     GitphStatus::Success
