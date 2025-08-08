@@ -30,17 +30,17 @@ jobs:
           rust-version: stable
 
       - name: Install dependencies (Linux)
-        if: runner.os == 'Linux'
+        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake liblua5.4-dev libcurl4-openssl-dev
 
       - name: Install dependencies (macOS)
-        if: runner.os == 'macOS'
+        if: matrix.os == 'macos-latest'
         run: brew install cmake lua curl
 
       - name: Setup Vcpkg (Windows)
-        if: runner.os == 'Windows'
+        if: matrix.os == 'windows-latest'
         uses: microsoft/vcpkg-action@v5
         id: vcpkg
         with:
@@ -48,18 +48,18 @@ jobs:
           pkgs: lua,curl
 
       - name: Configure CMake (Windows)
-        if: runner.os == 'Windows'
-        run: >
-          cmake -S . -B build
-          -DCMAKE_TOOLCHAIN_FILE=${{ steps.vcpkg.outputs.vcpkgRoot }}/scripts/buildsystems/vcpkg.cmake
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_TOOLCHAIN_FILE=${{ steps.vcpkg.outputs.vcpkg-root }}/scripts/buildsystems/vcpkg.cmake
 
       - name: Configure CMake (Linux/macOS)
-        if: runner.os != 'Windows'
+        if: matrix.os != 'windows-latest'
         run: cmake -S . -B build
 
       - name: Build Project
         run: cmake --build build --parallel
 
       - name: Run tests
-        run: |
-          echo "No automated tests configured yet. Build successful."
+        run: echo "No automated tests configured yet. Build successful."
