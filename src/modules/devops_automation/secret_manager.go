@@ -17,9 +17,8 @@ package main
 /*
 #include "../../ipc/include/gitph_core_api.h"
 */
-
+import "C" // Esta linha deve vir IMEDIATAMENTE após o comentário.
 import (
-	"C"
 	"bytes"
 	"encoding/json"
 	"fmt"
