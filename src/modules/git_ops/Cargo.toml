@@ -29,3 +29,4 @@ crate-type = ["cdylib"]
 # `libc` is essential for interacting with C code, providing definitions
 # for C types like `c_char`, `c_int`, etc.
 libc = "0.2"
+lazy_static = "1.4.0"

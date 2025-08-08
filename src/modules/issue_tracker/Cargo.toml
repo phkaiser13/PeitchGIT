@@ -32,6 +32,7 @@ crate-type = ["cdylib"]
 [dependencies]
 libc = "0.2"
 lazy_static = "1.4"
+async-trait = "0.1.77"
 
 # The async runtime
 tokio = { version = "1", features = ["full"] }
