@@ -62,17 +62,17 @@ endif()
 
 # CORREÇÃO 3: Usar as variáveis padrão definidas pelo FindLua.cmake (LUA_INCLUDE_DIR).
 target_include_directories(gitph PUBLIC
-        src/core/cli
-        src/core/config
-        src/core/main
-        src/core/module_loader
-        src/core/platform
-        src/core/scripting
-        src/core/ui
-        src/ipc/include
-        src/libs/libcommon
-        src/libs/liblogger
-        ${LUA_INCLUDE_DIR}
+    ${CMAKE_SOURCE_DIR}/src/core/cli
+    ${CMAKE_SOURCE_DIR}/src/core/config
+    ${CMAKE_SOURCE_DIR}/src/core/main
+    ${CMAKE_SOURCE_DIR}/src/core/module_loader
+    ${CMAKE_SOURCE_DIR}/src/core/platform
+    ${CMAKE_SOURCE_DIR}/src/core/scripting
+    ${CMAKE_SOURCE_DIR}/src/core/ui
+    ${CMAKE_SOURCE_DIR}/src/ipc/include
+    ${CMAKE_SOURCE_DIR}/src/libs/libcommon
+    ${CMAKE_SOURCE_DIR}/src/libs/liblogger
+    ${LUA_INCLUDE_DIR}
 )
 
 # --- Build Polyglot Modules (via Custom Commands) ---
