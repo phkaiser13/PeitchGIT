@@ -15,25 +15,20 @@
 package main
 
 /*
-// These includes are processed by cgo.
 #include <stdlib.h>
 #include "../../ipc/include/gitph_core_api.h"
 
-// FIX 1: Create a C helper function to call the function pointer.
-// REASON: Calling function pointers from Go directly can be syntactically messy.
-// This C helper encapsulates the logic of safely calling the function pointer,
-// making the Go code cleaner. It receives the function pointer (fn) and its
-// arguments, and then executes the call within C. This resolves the "undefined name"
-// error because we are no longer incorrectly exporting a Go function for this task.
-static inline void call_log_fn_wrapper(PFN_log fn, GitphLogLevel level, const char* module, const char* msg) {
-    // Check if the function pointer is not null before calling it.
+// FIX: A assinatura da função foi corrigida para usar o tipo de ponteiro de função
+// explícito, em vez do typedef 'PFN_log' que não existe.
+// O tipo é "um ponteiro para uma função que não retorna nada e aceita
+// GitphLogLevel, const char*, e const char*".
+static inline void call_log_fn(void (*fn)(GitphLogLevel, const char*, const char*), GitphLogLevel level, const char* module, const char* msg) {
     if (fn != NULL) {
         fn(level, module, msg);
     }
 }
 */
-import "C" // This import enables cgo.
-
+import "C"
 import (
 	"fmt"
 	"unsafe"
