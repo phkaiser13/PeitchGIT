@@ -110,7 +110,7 @@ static MODULE_DESC: &[u8] = b"Provides fundamental Git commands like add, commit
 
 // Criamos um array estático de ponteiros para os nossos comandos.
 // Este array em si terá um tempo de vida 'static.
-static SUPPORTED_COMMANDS_PTRS: &[*const c_char] = &[
+const SUPPORTED_COMMANDS_PTRS: &[*const c_char] = &[
     b"SND\0".as_ptr() as *const c_char,
     b"rls\0".as_ptr() as *const c_char,
     b"psor\0".as_ptr() as *const c_char,
