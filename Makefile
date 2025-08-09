@@ -1,69 +1,76 @@
 # Copyright (C) 2025 Pedro Henrique
-# Makefile - A user-friendly convenience wrapper for CMake.
+# Makefile - Um wrapper conveniente e amigável para o CMake.
 #
-# This Makefile does not contain any build logic itself. It serves as a facade,
-# providing simple, memorable commands that translate into the more verbose
-# commands required to operate CMake correctly.
+# Este Makefile não contém lógica de compilação. Ele serve como uma fachada,
+# fornecendo comandos simples e memoráveis que se traduzem nos comandos
+# mais verbosos necessários para operar o CMake corretamente.
 #
-# This improves the developer experience, especially on POSIX systems.
+# Isto melhora a experiência do desenvolvedor, especialmente em sistemas POSIX.
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-# --- Variables ---
-CMAKE_BUILD_DIR := build
+# --- Variáveis ---
+# Permite ao utilizador sobrepor o comando cmake (ex: make CMAKE=cmake3)
+CMAKE ?= cmake
+# Diretório de compilação
+BUILD_DIR := build
+# Nome do executável final
 EXECUTABLE_NAME := gitph
-EXECUTABLE_PATH := ${CMAKE_BUILD_DIR}/bin/${EXECUTABLE_NAME}
+# Caminho para o executável
+EXECUTABLE_PATH := ${BUILD_DIR}/bin/${EXECUTABLE_NAME}
 
-# Phony targets do not represent files.
-.PHONY: all build configure clean run install help
+# Alvos Phony não representam ficheiros.
+.PHONY: all build configure clean rebuild run install help
 
-# --- Targets ---
+# --- Alvos ---
 
-# Default target
+# Alvo por defeito: simplesmente constrói o projeto.
 all: build
 
-# Configure and build the entire project.
-build: ${EXECUTABLE_PATH}
+# Configura o projeto se ainda não estiver configurado.
+# A existência do Makefile gerado pelo CMake é usada como um marcador.
+configure: ${BUILD_DIR}/Makefile
 
-# The main build dependency chain.
-${EXECUTABLE_PATH}: ${CMAKE_BUILD_DIR}/Makefile
-	@echo "--- Building Project ---"
-	@${CMAKE_COMMAND} --build ${CMAKE_BUILD_DIR}
+${BUILD_DIR}/Makefile: CMakeLists.txt
+	@echo "--- A configurar o projeto com CMake ---"
+	@${CMAKE} -S . -B ${BUILD_DIR}
 
-# Run CMake to configure the project and generate the native build system.
-${CMAKE_BUILD_DIR}/Makefile: CMakeLists.txt
-	@echo "--- Configuring Project with CMake ---"
-	@${CMAKE_COMMAND} -S . -B ${CMAKE_BUILD_DIR}
+# Constrói o projeto. Depende da configuração primeiro.
+build: configure
+	@echo "--- A compilar o projeto ---"
+	@${CMAKE} --build ${BUILD_DIR} --parallel
 
-# A separate configure target for explicit configuration.
-configure: ${CMAKE_BUILD_DIR}/Makefile
-
-# Clean up all build artifacts.
+# Limpa todos os artefactos de compilação.
 clean:
-	@echo "--- Cleaning Build Artifacts ---"
-	@rm -rf ${CMAKE_BUILD_DIR}
+	@echo "--- A limpar os artefactos de compilação ---"
+	@rm -rf ${BUILD_DIR} release
 
-# Build and run the application.
+# Limpa e reconstrói tudo do zero.
+rebuild: clean all
+
+# Constrói e executa a aplicação com quaisquer argumentos passados.
+# Exemplo: make run ARGS="--version"
 run: build
-	@echo "--- Running gitph ---"
-	@${EXECUTABLE_PATH}
+	@echo "--- A executar o gitph ---"
+	@${EXECUTABLE_PATH} ${ARGS}
 
-# Install the application using the rules defined in CMake.
+# Instala a aplicação usando as regras definidas no CMake.
 install: build
-	@echo "--- Installing gitph ---"
-	@${CMAKE_COMMAND} --install ${CMAKE_BUILD_DIR}
+	@echo "--- A instalar o gitph ---"
+	@${CMAKE} --install ${BUILD_DIR}
 
-# Display help information.
+# Exibe informações de ajuda.
 help:
-	@echo "gitph Makefile Wrapper"
-	@echo "----------------------"
-	@echo "Usage: make [target]"
+	@echo "Wrapper Makefile do gitph"
+	@echo "-------------------------"
+	@echo "Uso: make [alvo]"
 	@echo ""
-	@echo "Targets:"
-	@echo "  all        (Default) Configure and build the entire project."
-	@echo "  build      Build the project if already configured."
-	@echo "  configure  Run CMake to generate the build system."
-	@echo "  run        Build and execute the main application."
-	@echo "  install    Install the application to the configured directory."
-	@echo "  clean      Remove all build artifacts."
-	@echo "  help       Show this help message."
+	@echo "Alvos:"
+	@echo "  all        (Padrão) Configura se necessário e constrói o projeto."
+	@echo "  build      Constrói o projeto se já estiver configurado."
+	@echo "  configure  Executa o CMake para gerar o sistema de compilação."
+	@echo "  rebuild    Limpa todos os ficheiros de compilação e reconstrói."
+	@echo "  run        Constrói e executa a aplicação principal. Use ARGS=\"...\" para passar argumentos."
+	@echo "  install    Instala a aplicação no diretório configurado."
+	@echo "  clean      Remove todos os artefactos de compilação."
+	@echo "  help       Mostra esta mensagem de ajuda."
