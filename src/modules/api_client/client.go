@@ -22,7 +22,7 @@ package main
 // explícito, em vez do typedef 'PFN_log' que não existe.
 // O tipo é "um ponteiro para uma função que não retorna nada e aceita
 // GitphLogLevel, const char*, e const char*".
-static inline void call_log_fn(void (*fn)(GitphLogLevel, const char*, const char*), GitphLogLevel level, const char* module, const char* msg) {
+static inline void call_log_fn_wrapper(void (*fn)(GitphLogLevel, const char*, const char*), GitphLogLevel level, const char* module, const char* msg) {
     if (fn != NULL) {
         fn(level, module, msg);
     }
@@ -77,7 +77,7 @@ func logToCore(level C.GitphLogLevel, message string) {
 	C.call_log_fn_wrapper(coreContext.log, level, moduleNameC, messageC)
 }
 
-// FIX 3: The incorrect Go implementation of `call_log_fn` has been removed.
+// FIX 3: The incorrect Go implementation of `call_log_fn_wrapper` has been removed.
 // REASON: It was the source of the logical error and is no longer needed,
 // as its role is now correctly handled by the C helper `call_log_fn_wrapper`.
 
