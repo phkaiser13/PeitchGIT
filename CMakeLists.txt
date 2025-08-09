@@ -146,7 +146,7 @@ add_library(ci_cd_visualizer SHARED src/modules/ci_cd_manager/visualizer/Pipelin
 target_include_directories(ci_cd_visualizer PUBLIC
     ${CMAKE_SOURCE_DIR}/src/ipc/include
     # Descomente a linha abaixo se o nlohmann/json estiver em src/libs
-    # ${CMAKE_SOURCE_DIR}/src/libs
+    ${CMAKE_SOURCE_DIR}/src/libs
 )
 # O visualizador precisa de aceder ao logger
 target_link_libraries(ci_cd_visualizer PRIVATE logger)
