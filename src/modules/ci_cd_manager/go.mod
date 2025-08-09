@@ -11,6 +11,8 @@
 //         *
 //         * SPDX-License-Identifier: GPL-3.0-or-later */
 
-        module gitph/modules/ci_cd_manager
+module gitph/modules/ci_cd_manager
 
-        go 1.18
+go 1.18
+
+require gopkg.in/yaml.v3 v3.0.1

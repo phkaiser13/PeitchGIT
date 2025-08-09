@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"unsafe"
 
 	"gopkg.in/yaml.v3"
 )
@@ -37,9 +36,9 @@ type WorkflowStep struct {
 }
 
 type WorkflowJob struct {
-	Name  string         `yaml:"-"    json:"name"` // Name is the key in the YAML map
-	RunsOn string        `yaml:"runs-on" json:"runs_on"`
-	Steps []WorkflowStep `yaml:"steps"   json:"steps"`
+	Name   string         `yaml:"-"    json:"name"` // Name is the key in the YAML map
+	RunsOn string         `yaml:"runs-on" json:"runs_on"`
+	Steps  []WorkflowStep `yaml:"steps"   json:"steps"`
 }
 
 type Workflow struct {
@@ -47,12 +46,13 @@ type Workflow struct {
 	Jobs map[string]WorkflowJob `yaml:"jobs" json:"jobs"`
 }
 
-//export ParseWorkflowToJSON
 // ParseWorkflowToJSON reads the YAML file at the given path, parses it,
 // and returns a JSON string representing the workflow.
 //
 // CONTRACT: The returned `*C.char` is allocated by Go and MUST be freed
 // by the C/C++ caller using `free()`. A NULL return value indicates an error.
+//
+//export ParseWorkflowToJSON
 func ParseWorkflowToJSON(filepath *C.char) *C.char {
 	// Convert C string to Go string
 	goFilepath := C.GoString(filepath)

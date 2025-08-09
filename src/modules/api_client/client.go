@@ -18,10 +18,7 @@ package main
 #include <stdlib.h>
 #include "../../ipc/include/gitph_core_api.h"
 
-// FIX: A assinatura da função foi corrigida para usar o tipo de ponteiro de função
-// explícito, em vez do typedef 'PFN_log' que não existe.
-// O tipo é "um ponteiro para uma função que não retorna nada e aceita
-// GitphLogLevel, const char*, e const char*".
+// C-wrapper to safely call the function pointer from Go.
 static inline void call_log_fn_wrapper(void (*fn)(GitphLogLevel, const char*, const char*), GitphLogLevel level, const char* module, const char* msg) {
     if (fn != NULL) {
         fn(level, module, msg);
@@ -35,15 +32,15 @@ import (
 )
 
 // --- Module Info Globals ---
-// We define these as globals to ensure they have a stable memory address
+// These are defined as globals to ensure they have a stable memory address
 // that can be safely returned to C. C.CString allocates memory that C must
 // manage, so we do it once and let it live for the duration of the app.
 var (
 	moduleName        = C.CString("api_client")
-	moduleVersion     = C.CString("1.0.0")
-	moduleDescription = C.CString("Client for interacting with Git provider APIs (GitHub, etc.)")
+	moduleVersion     = C.CString("1.1.0") // Version bumped for refactor
+	moduleDescription = C.CString("Client for interacting with Git provider APIs (e.g., GitHub)")
 	supportedCommands = []*C.char{
-		C.CString("srp"), // Set Repository
+		C.CString("srp"), // Set RePository
 		nil,              // Null terminator for the C array
 	}
 	moduleInfo = C.GitphModuleInfo{
@@ -60,36 +57,27 @@ var coreContext *C.GitphCoreContext
 // logToCore is a helper function to safely call the logger from the C core.
 func logToCore(level C.GitphLogLevel, message string) {
 	if coreContext == nil || coreContext.log == nil {
-		// Fallback if logger is not available
 		fmt.Printf("LOG CORE (fallback): %s\n", message)
 		return
 	}
 	moduleNameC := C.CString("API_CLIENT")
 	messageC := C.CString(message)
-	// Defer the free to ensure it's called even if the function panics.
 	defer C.free(unsafe.Pointer(moduleNameC))
 	defer C.free(unsafe.Pointer(messageC))
 
-	// FIX 2: Call the new C wrapper function.
-	// REASON: We now call the simple, well-defined C function from our preamble,
-	// passing the function pointer `coreContext.log` as an argument. This is the
-	// correct and clean way to interact with the C function pointer.
+	// Call the C wrapper, which is the safest way to handle function pointers.
 	C.call_log_fn_wrapper(coreContext.log, level, moduleNameC, messageC)
 }
-
-// FIX 3: The incorrect Go implementation of `call_log_fn_wrapper` has been removed.
-// REASON: It was the source of the logical error and is no longer needed,
-// as its role is now correctly handled by the C helper `call_log_fn_wrapper`.
 
 // --- C-compatible API Implementation ---
 
 //export module_get_info
-func module_get_info() *C.GitphModuleInfo {
+func modulegetinfo() *C.GitphModuleInfo {
 	return &moduleInfo
 }
 
 //export module_init
-func module_init(context *C.GitphCoreContext) C.GitphStatus {
+func moduleinit(context *C.GitphCoreContext) C.GitphStatus {
 	if context == nil {
 		return C.GITPH_ERROR_INIT_FAILED
 	}
@@ -99,33 +87,25 @@ func module_init(context *C.GitphCoreContext) C.GitphStatus {
 }
 
 //export module_exec
-func module_exec(argc C.int, argv **C.char) C.GitphStatus {
+func moduleexec(argc C.int, argv **C.char) C.GitphStatus {
 	// Convert C's argc/argv to a Go slice of strings for idiomatic handling.
-	// This requires unsafe pointer arithmetic.
-	argsSlice := (*[1 << 30]*C.char)(unsafe.Pointer(argv))[:argc:argc]
-	args := make([]string, int(argc)) // Use int(argc) for better Go compatibility
-	for i, s := range argsSlice {
-		args[i] = C.GoString(s)
-	}
-
+	args := cArgsToSlice(argc, argv)
 	if len(args) == 0 {
-		logToCore(C.LOG_LEVEL_ERROR, "Execution called with no arguments.")
+		logToCore(C.LOG_LEVEL_ERROR, "Execution called with no command.")
 		return C.GITPH_ERROR_INVALID_ARGS
 	}
 
 	command := args[0]
-	logToCore(C.LOG_LEVEL_DEBUG, fmt.Sprintf("Executing command: %s", command))
+	commandArgs := args[1:]
+	logToCore(C.LOG_LEVEL_DEBUG, fmt.Sprintf("Dispatching command: %s", command))
 
 	var err error
 	switch command {
 	case "srp":
-		if len(args) < 2 {
-			err = fmt.Errorf("command 'srp' requires at least one argument")
-		} else {
-			// Delegate to the handler function which contains the actual logic.
-			// We will create this file and function next.
-			err = handleSetRepository(args[1:])
-		}
+		// For now, we hardcode the GitHub provider.
+		// In the future, this could be determined by a config file.
+		var provider ApiProvider = NewGitHubHandler()
+		err = setRepository(provider, commandArgs)
 	default:
 		err = fmt.Errorf("unknown command '%s' for api_client module", command)
 	}
@@ -139,10 +119,9 @@ func module_exec(argc C.int, argv **C.char) C.GitphStatus {
 }
 
 //export module_cleanup
-func module_cleanup() {
+func modulecleanup() {
 	logToCore(C.LOG_LEVEL_INFO, "api_client module cleaned up.")
-	// In a real application, we might close persistent network connections here.
-	// We also free the C strings we allocated for the module info.
+	// Free the C strings we allocated for the module info.
 	C.free(unsafe.Pointer(moduleName))
 	C.free(unsafe.Pointer(moduleVersion))
 	C.free(unsafe.Pointer(moduleDescription))
@@ -153,14 +132,16 @@ func module_cleanup() {
 	}
 }
 
+// cArgsToSlice converts C-style argc/argv to a Go slice of strings.
+func cArgsToSlice(argc C.int, argv **C.char) []string {
+	// This unsafe conversion creates a Go slice header that points to the C array.
+	argsSlice := (*[1 << 30]*C.char)(unsafe.Pointer(argv))[:argc:argc]
+	args := make([]string, int(argc))
+	for i, s := range argsSlice {
+		args[i] = C.GoString(s)
+	}
+	return args
+}
+
 // A main function is required for a `c-shared` library build, even if empty.
 func main() {}
-
-// Dummy handler function to make the code compilable.
-func handleSetRepository(args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("no repository provided")
-	}
-	logToCore(C.LOG_LEVEL_INFO, fmt.Sprintf("Repository set to: %s", args[0]))
-	return nil
-}
