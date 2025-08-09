@@ -72,12 +72,12 @@ func logToCore(level C.GitphLogLevel, message string) {
 // --- C-compatible API Implementation ---
 
 //export module_get_info
-func modulegetinfo() *C.GitphModuleInfo {
+func module_get_info() *C.GitphModuleInfo {
 	return &moduleInfo
 }
 
 //export module_init
-func moduleinit(context *C.GitphCoreContext) C.GitphStatus {
+func module_init(context *C.GitphCoreContext) C.GitphStatus {
 	if context == nil {
 		return C.GITPH_ERROR_INIT_FAILED
 	}
@@ -87,7 +87,7 @@ func moduleinit(context *C.GitphCoreContext) C.GitphStatus {
 }
 
 //export module_exec
-func moduleexec(argc C.int, argv **C.char) C.GitphStatus {
+func module_exec(argc C.int, argv **C.char) C.GitphStatus {
 	// Convert C's argc/argv to a Go slice of strings for idiomatic handling.
 	args := cArgsToSlice(argc, argv)
 	if len(args) == 0 {
@@ -119,7 +119,7 @@ func moduleexec(argc C.int, argv **C.char) C.GitphStatus {
 }
 
 //export module_cleanup
-func modulecleanup() {
+func module_cleanup() {
 	logToCore(C.LOG_LEVEL_INFO, "api_client module cleaned up.")
 	// Free the C strings we allocated for the module info.
 	C.free(unsafe.Pointer(moduleName))
