@@ -28,9 +28,10 @@ file(MAKE_DIRECTORY ${MODULE_OUTPUT_PATH})
 find_package(CURL REQUIRED)
 find_package(Lua 5.4 REQUIRED)
 # Adiciona o pkg-config para ajudar a encontrar bibliotecas como a Lua
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(LUA lua5.4)
-
+if(UNIX)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(LUA lua5.4)
+endif()
 
 # --- Compilar o Núcleo C/C++ ---
 
