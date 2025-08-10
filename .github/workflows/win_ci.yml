@@ -17,66 +17,73 @@ on:
   pull_request:
     branches: [ "main" ]
 
-# Define a localização do vcpkg para ser usada entre os jobs
-env:
-  VCPKG_ROOT: ${{ github.workspace }}/vcpkg
-  VCPKG_DEFAULT_TRIPLET: x64-windows
-
 jobs:
   build:
     name: Build e Teste (Windows)
     runs-on: windows-latest
 
     steps:
-      - name: Checkout do código
+      - name: Checkout do código do projeto
         uses: actions/checkout@v4
-
-      # 1. Instala e configura o vcpkg
-      - name: Instalar vcpkg
-        uses: lukka/run-vcpkg@v11
         with:
-          vcpkgDirectory: ${{ env.VCPKG_ROOT }}
-          vcpkgTriplet: ${{ env.VCPKG_DEFAULT_TRIPLET }}
-          # Lista de dependências C/C++ necessárias
-          vcpkgJsonGlob: '**/vcpkg.json' # Recomendado para projetos maiores
-          vcpkgPackages: lua,libcurl,nlohmann-json
+          path: main
 
-      # 2. Configura o ambiente Go
+      # 1. Clona o vcpkg para um diretório conhecido
+      - name: Checkout do vcpkg
+        uses: actions/checkout@v4
+        with:
+          repository: 'microsoft/vcpkg'
+          path: vcpkg
+      
+      # 2. Executa o bootstrap para compilar o vcpkg e instala as dependências
+      - name: Instalar dependências com vcpkg
+        shell: powershell
+        run: |
+          cd vcpkg
+          ./bootstrap-vcpkg.bat
+          ./vcpkg.exe install curl:x64-windows lua:x64-windows nlohmann-json:x64-windows
+          cd ..
+
+      # 3. Configura o ambiente Go
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      # 3. Configura o ambiente Rust
+      # 4. Configura o ambiente Rust (com cache)
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Define o diretório de trabalho para que o cache funcione corretamente
+          # já que nosso projeto não está na raiz.
+          working-directory: main
 
-      # 4. Configura o CMake usando o toolchain do vcpkg
-      #    O toolchain do vcpkg automatiza a localização de todas as bibliotecas.
+      # 5. Configura o CMake usando o toolchain do vcpkg
       - name: Configurar CMake
+        shell: powershell
         run: |
+          $VCPKG_TOOLCHAIN_FILE = "${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          cd main
           cmake -S . -B build `
             -G "Visual Studio 17 2022" `
-            -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
-
-      # 5. Compila o projeto
-      #    O --config Release é importante para geradores multi-configuração como o Visual Studio.
+            -DCMAKE_TOOLCHAIN_FILE=$VCPKG_TOOLCHAIN_FILE
+      
+      # 6. Compila o projeto
       - name: Compilar Projeto
-        run: cmake --build build --config Release --parallel
+        run: cmake --build main/build --config Release --parallel
 
-      # 6. Salva os artefatos de build para o job de release
-      #    Os binários no Windows ficam dentro de um subdiretório com o nome da configuração (ex: Release)
+      # 7. Salva os artefatos de build para o job de release
       - name: Upload dos artefatos de build
         uses: actions/upload-artifact@v4
         with:
           name: gitph-build-artifacts-windows
           path: |
-            build/bin/Release/
-            src/plugins/
-            LICENSE
+            main/build/bin/Release/
+            main/src/plugins/
+            main/LICENSE
 
   release:
     name: Criar Release (Windows)
@@ -85,45 +92,34 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
-      - name: Checkout do código
-        uses: actions/checkout@v4
-
       - name: Download dos artefatos de build
         uses: actions/download-artifact@v4
         with:
           name: gitph-build-artifacts-windows
           path: artifacts/
 
-      # Empacota os arquivos em um .zip, que é o padrão para Windows
       - name: Empacotar para Release
         shell: powershell
         run: |
-          # Determina a versão e o nome do pacote
           $VERSION = "${{ github.ref_name }}"
-          $ARCH = "x86_64" # Arquitetura padrão para runners do GitHub
+          $ARCH = "x86_64"
           $RELEASE_NAME = "gitph-${VERSION}-windows-${ARCH}"
           $RELEASE_DIR = "release/${RELEASE_NAME}"
           
-          # Cria a estrutura de diretórios para o release
           New-Item -ItemType Directory -Force -Path "${RELEASE_DIR}/modules" | Out-Null
           
-          # Copia os arquivos dos artefatos para a estrutura final
           Copy-Item -Path "artifacts/Release/*" -Destination $RELEASE_DIR -Force
           Copy-Item -Path "artifacts/plugins/*" -Destination "${RELEASE_DIR}/modules" -Recurse -Force
           Copy-Item -Path "artifacts/LICENSE" -Destination $RELEASE_DIR -Force
           
-          # Remove os módulos do parser/visualizer da pasta raiz (eles já estão em /modules)
-          Remove-Item -Path "${RELEASE_DIR}/ci_cd_parser.dll", "${RELEASE_DIR}/ci_cd_visualizer.dll" -ErrorAction SilentlyContinue
+          # Remove DLLs que já estão na pasta de módulos para não duplicar
+          Remove-Item -Path "${RELEASE_DIR}/ci_cd_parser.dll", "${RELEASE_DIR}/ci_cd_visualizer.dll", "${RELEASE_DIR}/git_ops.dll", "${RELEASE_DIR}/sync_engine.dll", "${RELEASE_DIR}/issue_tracker.dll" -ErrorAction SilentlyContinue
 
-          # Cria o arquivo .zip
-          echo "Criando o pacote .zip..."
           $ZIP_PATH = "release/${RELEASE_NAME}.zip"
           Compress-Archive -Path "${RELEASE_DIR}/*" -DestinationPath $ZIP_PATH
           
-          # Exporta o caminho do .zip para o próximo passo
           echo "RELEASE_PATH=${ZIP_PATH}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      # Publica o .zip na release do GitHub
       - name: Publicar Release no GitHub
         uses: softprops/action-gh-release@v2
         with:
