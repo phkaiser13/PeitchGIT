@@ -15,7 +15,7 @@
  * - Abstracting file system path separators.
  * - Providing the correct file extension for shared libraries (.dll vs .so).
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #ifndef PLATFORM_H
 #define PLATFORM_H

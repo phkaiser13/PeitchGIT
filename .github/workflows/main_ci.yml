@@ -5,7 +5,7 @@
 # Ele garante que o projeto compila corretamente em um ambiente limpo
 # e cria pacotes de distribuição automaticamente quando uma nova versão é marcada.
 #
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: Apache-2.0
 
 name: Build e Release do gitph
 

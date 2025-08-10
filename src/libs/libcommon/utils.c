@@ -8,7 +8,7 @@
  * The implementations prioritize safety, clarity, and efficiency, forming a
  * reliable foundation for the rest of the C-based components of the application.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #include "utils.h"
 #include "platform/platform.h" // For PATH_SEPARATOR

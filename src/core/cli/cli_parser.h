@@ -11,7 +11,7 @@
  * from `main` for commands like `gitph SND`, and from the `tui` module, which
  * simulates a command-line call to execute an action selected from the menu.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #ifndef CLI_PARSER_H
 #define CLI_PARSER_H

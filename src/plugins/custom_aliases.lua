@@ -8,7 +8,7 @@
 -- This illustrates the flexibility of the scripting engine: tailoring
 -- the tool to fit the user's personal workflow.
 --
--- SPDX-License-Identifier: GPL-3.0-or-later
+-- SPDX-License-Identifier: Apache-2.0
 
 -- Log to the gitph log file to confirm the plugin was loaded.
 gitph.log("INFO", "custom_aliases.lua plugin loaded.")

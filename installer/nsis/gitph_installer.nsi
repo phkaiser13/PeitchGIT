@@ -9,7 +9,7 @@
 ; (`installer_main.exe`) silently in the background. This combines the robust
 ; environment setup logic written in C with a professional GUI wrapper.
 ;
-; SPDX-License-Identifier: GPL-3.0-or-later
+; SPDX-License-Identifier: Apache-2.0
 
 !include "MUI2.nsh"
 

@@ -12,7 +12,7 @@
 // 3. Efficiency: The binary wire format is compact and fast to parse.
 // 4. Schema Evolution: New fields can be added without breaking older clients.
 //
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: Apache-2.0
 
 // Specifies that we are using the proto3 syntax, which is the modern standard.
 syntax = "proto3";

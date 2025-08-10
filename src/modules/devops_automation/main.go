@@ -10,7 +10,7 @@
  * It also provides a toolbox of helper functions for different process
  * execution strategies (streaming vs. capturing).
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 package main
 

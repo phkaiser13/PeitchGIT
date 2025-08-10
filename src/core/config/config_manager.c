@@ -13,7 +13,7 @@
  * - Collision resolution using separate chaining (linked lists).
  * - A thorough cleanup mechanism to prevent memory leaks.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #include "config_manager.h"
 #include "libs/liblogger/Logger.h" // For logging parsing warnings

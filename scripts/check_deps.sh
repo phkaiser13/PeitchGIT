@@ -5,7 +5,7 @@
 # This script checks for the presence of compilers and tools required
 # to build the gitph project from source.
 #
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: Apache-2.0
 
 set -e
 echo "--- [GITPH] Checking for required build dependencies ---"

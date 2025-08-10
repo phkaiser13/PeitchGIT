@@ -7,7 +7,7 @@
 #
 # Isto melhora a experiência do desenvolvedor, especialmente em sistemas POSIX.
 #
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: Apache-2.0
 
 # --- Variáveis ---
 # Permite ao utilizador sobrepor o comando cmake (ex: make CMAKE=cmake3)

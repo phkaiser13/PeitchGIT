@@ -5,7 +5,7 @@ REM
 REM This script orchestrates the build process by calling CMake to configure
 REM the project and then to compile all C/C++/Go/Rust components.
 REM
-REM SPDX-License-Identifier: GPL-3.0-or-later
+REM SPDX-License-Identifier: Apache-2.0
 
 REM --- Variables ---
 SET BUILD_DIR=build

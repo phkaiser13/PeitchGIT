@@ -11,7 +11,7 @@
  * module is responsible for handling a specific command, which is essential
  * for the CLI dispatcher and the TUI.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #ifndef LOADER_H
 #define LOADER_H

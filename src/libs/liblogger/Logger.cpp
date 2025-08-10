@@ -11,7 +11,7 @@
  * static local variable in `get_instance()`, which is a clean and thread-safe
  * approach in modern C++.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #include "Logger.h"
 #include <iostream>

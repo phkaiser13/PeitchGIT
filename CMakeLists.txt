@@ -6,7 +6,7 @@
 # nativas para Rust (cargo) e Go (go build), e ligar tudo numa
 # aplicação distribuível.
 #
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: Apache-2.0
 
 cmake_minimum_required(VERSION 3.15)
 

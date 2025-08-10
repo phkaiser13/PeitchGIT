@@ -12,7 +12,7 @@
  * handle all memory management for the internal data model, making the code
  * safe and leak-free.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #include "PipelineVisualizer.h"
 #include <iostream>

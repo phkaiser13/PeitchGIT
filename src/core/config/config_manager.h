@@ -11,7 +11,7 @@
  * specific values, and clean up resources upon exit. This centralization
  * prevents configuration logic from being scattered throughout the codebase.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #ifndef CONFIG_MANAGER_H
 #define CONFIG_MANAGER_H

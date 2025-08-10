@@ -10,7 +10,7 @@
  * to the Git object database, allowing for sophisticated analysis that would
  * be impossible by just wrapping the `git` CLI.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};

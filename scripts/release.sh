@@ -6,7 +6,7 @@
 # all necessary binaries, modules, and plugins into a clean structure, and
 # creating a compressed tarball for distribution.
 #
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: Apache-2.0
 
 set -e
 

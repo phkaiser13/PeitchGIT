@@ -14,7 +14,7 @@
  * A C-style wrapper function, `visualize_pipeline_from_json`, is also declared
  * to serve as the entry point for the C core, bridging the C and C++ worlds.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #ifndef PIPELINE_VISUALIZER_H
 #define PIPELINE_VISUALIZER_H

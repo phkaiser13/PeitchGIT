@@ -11,7 +11,7 @@
  * logic in the wrapper) makes the code cleaner, easier to test, and more
  * maintainable.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 use crate::git_wrapper; // Import our git wrapper module
 use crate::log_to_core; // Import the logging helper from lib.rs

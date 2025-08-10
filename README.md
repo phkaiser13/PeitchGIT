@@ -195,4 +195,4 @@ Please feel free to open an issue for any bugs or feature requests using our tem
 
 ## 📜 License
 
-Distributed under the GNU General Public License v3.0 or later. See `LICENSE` for more information.
+Distributed under the Apache-2.0. See `LICENSE` for more information.

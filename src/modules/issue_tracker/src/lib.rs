@@ -11,7 +11,7 @@
  * async business logic and wait for its completion, effectively translating
  * the async operation into a sync result for the C core.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 // FFI/C compatibility
 use libc::{c_char, c_int};

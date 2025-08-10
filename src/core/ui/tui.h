@@ -14,7 +14,7 @@
  * The TUI module relies on the platform abstraction layer for screen
  * manipulation and the module loader to dynamically build its menu options.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #ifndef TUI_H
 #define TUI_H

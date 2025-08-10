@@ -15,7 +15,7 @@
  * This file should only be included in the build process when compiling on a
  * Windows target.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 // This preprocessor directive ensures the code is only compiled on Windows.
 #ifdef _WIN32

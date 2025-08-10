@@ -11,7 +11,7 @@
  * with the Lua stack, pulling arguments and pushing return values. This
  * provides a powerful yet controlled way for users to extend the application.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #include "lua_bridge.h"
 #include "libs/liblogger/Logger.h"

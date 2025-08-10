@@ -18,7 +18,7 @@
  * the application's control flow, delegating specialized logic to their
  * respective modules.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,7 +46,7 @@
 static void print_version(void) {
     printf("gitph version %s\n", GITPH_VERSION);
     printf("Copyright (C) 2025 Pedro Henrique / phkaiser13\n");
-    printf("License: GPL-3.0-or-later\n");
+    printf("License: Apache-2.0\n");
 }
 
 /**

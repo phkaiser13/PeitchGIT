@@ -17,7 +17,7 @@
  * - Managing a global state, such as the context received from the core,
  *   in a thread-safe manner using a Mutex.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 // Import libc for C-compatible types
 use libc::{c_char, c_int};

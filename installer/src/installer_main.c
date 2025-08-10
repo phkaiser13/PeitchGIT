@@ -12,7 +12,7 @@
  * It is written in pure C with platform-specific code to ensure maximum
  * compatibility and low-level control over the system environment.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #include <stdio.h>
 #include <stdlib.h>

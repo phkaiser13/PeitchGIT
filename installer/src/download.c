@@ -10,7 +10,7 @@
  * file and for displaying a real-time progress bar, providing a professional
  * and user-friendly experience during potentially long operations.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #include <stdio.h>
 #include <curl/curl.h> // Assumes libcurl development headers are available

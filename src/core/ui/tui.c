@@ -17,7 +17,7 @@
  *    command to the `cli_dispatch_command` function. This promotes code reuse
  *    and keeps the TUI's responsibility focused on presentation.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #include "tui.h"
 #include "platform/platform.h"

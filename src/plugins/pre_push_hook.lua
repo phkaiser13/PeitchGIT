@@ -9,7 +9,7 @@
 -- allowing teams to enforce policies (e.g., linting, commit message
 -- format) before code reaches the remote.
 --
--- SPDX-License-Identifier: GPL-3.0-or-later
+-- SPDX-License-Identifier: Apache-2.0
 
 gitph.log("INFO", "pre_push_hook.lua plugin loaded.")
 

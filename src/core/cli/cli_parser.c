@@ -13,7 +13,7 @@
  * extensible, as adding new commands only requires adding a new module, with
  * no changes needed in this file.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #include "cli_parser.h"
 #include "module_loader/loader.h"

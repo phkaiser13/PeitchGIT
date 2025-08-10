@@ -15,7 +15,7 @@
  *   `logger_cleanup`) using `extern "C"`. This is the bridge that allows the
  *   C core and other non-C++ modules to use the logger seamlessly.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #ifndef LOGGER_H
 #define LOGGER_H

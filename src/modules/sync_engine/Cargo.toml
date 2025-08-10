@@ -15,7 +15,7 @@
 # - `serde`: For serializing and deserializing the persistent state of the
 #   sync engine, allowing it to remember its progress between runs.
 #
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: Apache-2.0
 
 [package]
 name = "sync_engine"

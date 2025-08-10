@@ -10,7 +10,7 @@
  * declarations that might be specifically related to the application's
  * startup and shutdown orchestration logic contained within `main.c`.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #ifndef MAIN_H
 #define MAIN_H

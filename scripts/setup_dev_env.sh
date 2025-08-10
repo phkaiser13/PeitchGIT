@@ -5,7 +5,7 @@
 # This script detects the package manager on common POSIX systems and tries
 # to install the required libraries and toolchains for building gitph.
 #
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: Apache-2.0
 
 set -e
 echo "--- [GITPH] Setting up development environment ---"

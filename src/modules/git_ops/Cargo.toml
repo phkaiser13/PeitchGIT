@@ -12,7 +12,7 @@
 # Dependencies:
 # - `libc`: Provides C-compatible types (like `c_char`) necessary for FFI.
 #
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: Apache-2.0
 
 [package]
 name = "git_ops"

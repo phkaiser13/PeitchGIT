@@ -11,7 +11,7 @@
  * directly in a simple scripting language. This is a key feature for making
  * gitph highly customizable.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #ifndef LUA_BRIDGE_H
 #define LUA_BRIDGE_H

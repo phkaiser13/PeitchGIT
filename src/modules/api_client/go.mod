@@ -12,7 +12,7 @@
 //         * This is the foundational file for any Go project and is the first step
 //         * in building our network client module.
 //         *
-//         * SPDX-License-Identifier: GPL-3.0-or-later */
+//         * SPDX-License-Identifier: Apache-2.0 */
 
         module gitph/modules/api_client
 

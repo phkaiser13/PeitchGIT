@@ -10,7 +10,7 @@
  * Every function is designed with safety as the primary concern, including
  * rigorous error checking and clear documentation regarding memory ownership.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #ifndef LIBCOMMON_UTILS_H
 #define LIBCOMMON_UTILS_H

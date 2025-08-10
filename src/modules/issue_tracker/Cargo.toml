@@ -17,7 +17,7 @@
 #   fast JSON serialization and deserialization in Rust.
 # - `lazy_static`: To safely manage global static data like the core context.
 #
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: Apache-2.0
 
 [package]
 name = "issue_tracker"

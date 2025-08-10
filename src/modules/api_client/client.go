@@ -10,7 +10,7 @@
  * manages the lifecycle of the module, and dispatches incoming commands to
  * the appropriate Go functions that contain the actual business logic.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 package main
 

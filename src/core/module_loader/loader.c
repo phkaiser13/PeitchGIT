@@ -15,7 +15,7 @@
  * 6. Create a core context and call the module's `module_init` function.
  * 7. If initialization succeeds, the module is added to a global registry.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #include "loader.h"
 #include "platform/platform.h"      // For MODULE_EXTENSION

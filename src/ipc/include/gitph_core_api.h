@@ -19,7 +19,7 @@
  * 5. Before the application exits, it calls `module_cleanup` for graceful
  *    shutdown and resource deallocation within the module.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 #ifndef GITPH_CORE_API_H
 #define GITPH_CORE_API_H

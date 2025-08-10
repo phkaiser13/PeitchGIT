@@ -11,7 +11,7 @@
  * `sync` module, which contains the actual state machine and Git object
  * database manipulation logic.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 use libc::{c_char, c_int};
 use std::ffi::{CStr, CString};

@@ -18,7 +18,7 @@
  *   `git_add()` that can be composed into more complex workflows in the
  *   `commands.rs` module.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 use std::process::{Command, Stdio};
 use std::io::{Write};

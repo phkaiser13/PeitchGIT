@@ -9,7 +9,7 @@
  * language-agnostic data interchange format. This decouples the Go parser
  * from the C++ visualizer, requiring them only to agree on the JSON schema.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 package main
 

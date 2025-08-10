@@ -9,7 +9,7 @@
  * This design decouples the command logic from the specifics of any single
  * API (like GitHub's), making the module highly extensible and maintainable.
  *
- * SPDX-License-Identifier: GPL-3.0-or-later */
+ * SPDX-License-Identifier: Apache-2.0 */
 
 use serde::Deserialize;
 
