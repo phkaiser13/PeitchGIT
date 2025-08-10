@@ -31,6 +31,17 @@ import (
 	"unsafe"
 )
 
+// --- ALTERAÇÃO 1: Constantes Go para os níveis de log ---
+// Mapeamos os enums C para constantes Go. Isso permite que outros arquivos .go
+// no mesmo pacote usem esses valores sem precisar importar "C" diretamente.
+const (
+	logLevelDebug = C.LOG_LEVEL_DEBUG
+	logLevelInfo  = C.LOG_LEVEL_INFO
+	logLevelWarn  = C.LOG_LEVEL_WARN
+	logLevelError = C.LOG_LEVEL_ERROR
+	logLevelFatal = C.LOG_LEVEL_FATAL
+)
+
 // --- Module Info Globals ---
 // These are defined as globals to ensure they have a stable memory address
 // that can be safely returned to C. C.CString allocates memory that C must
@@ -54,8 +65,9 @@ var (
 // coreContext holds the function pointers passed from the C core.
 var coreContext *C.GitphCoreContext
 
-// logToCore is a helper function to safely call the logger from the C core.
-func logToCore(level C.GitphLogLevel, message string) {
+// --- ALTERAÇÃO 2: A assinatura de logToCore agora usa `int` nativo do Go ---
+// Isso abstrai o tipo C, tornando a função segura para ser chamada de qualquer lugar no pacote Go.
+func logToCore(level int, message string) {
 	if coreContext == nil || coreContext.log == nil {
 		fmt.Printf("LOG CORE (fallback): %s\n", message)
 		return
@@ -65,8 +77,8 @@ func logToCore(level C.GitphLogLevel, message string) {
 	defer C.free(unsafe.Pointer(moduleNameC))
 	defer C.free(unsafe.Pointer(messageC))
 
-	// Call the C wrapper, which is the safest way to handle function pointers.
-	C.call_log_fn_wrapper(coreContext.log, level, moduleNameC, messageC)
+	// A conversão para o tipo C acontece aqui, de forma segura, dentro deste arquivo.
+	C.call_log_fn_wrapper(coreContext.log, C.GitphLogLevel(level), moduleNameC, messageC)
 }
 
 // --- C-compatible API Implementation ---
@@ -82,7 +94,8 @@ func module_init(context *C.GitphCoreContext) C.GitphStatus {
 		return C.GITPH_ERROR_INIT_FAILED
 	}
 	coreContext = context
-	logToCore(C.LOG_LEVEL_INFO, "api_client module initialized successfully.")
+	// --- ALTERAÇÃO 3: Usar a nova constante Go ---
+	logToCore(logLevelInfo, "api_client module initialized successfully.")
 	return C.GITPH_SUCCESS
 }
 
@@ -91,13 +104,15 @@ func module_exec(argc C.int, argv **C.char) C.GitphStatus {
 	// Convert C's argc/argv to a Go slice of strings for idiomatic handling.
 	args := cArgsToSlice(argc, argv)
 	if len(args) == 0 {
-		logToCore(C.LOG_LEVEL_ERROR, "Execution called with no command.")
+		// --- ALTERAÇÃO 4: Usar a nova constante Go ---
+		logToCore(logLevelError, "Execution called with no command.")
 		return C.GITPH_ERROR_INVALID_ARGS
 	}
 
 	command := args[0]
 	commandArgs := args[1:]
-	logToCore(C.LOG_LEVEL_DEBUG, fmt.Sprintf("Dispatching command: %s", command))
+	// --- ALTERAÇÃO 5: Usar a nova constante Go ---
+	logToCore(logLevelDebug, fmt.Sprintf("Dispatching command: %s", command))
 
 	var err error
 	switch command {
@@ -111,7 +126,8 @@ func module_exec(argc C.int, argv **C.char) C.GitphStatus {
 	}
 
 	if err != nil {
-		logToCore(C.LOG_LEVEL_ERROR, fmt.Sprintf("Command failed: %v", err))
+		// --- ALTERAÇÃO 6: Usar a nova constante Go ---
+		logToCore(logLevelError, fmt.Sprintf("Command failed: %v", err))
 		return C.GITPH_ERROR_EXEC_FAILED
 	}
 
@@ -120,7 +136,8 @@ func module_exec(argc C.int, argv **C.char) C.GitphStatus {
 
 //export module_cleanup
 func module_cleanup() {
-	logToCore(C.LOG_LEVEL_INFO, "api_client module cleaned up.")
+	// --- ALTERAÇÃO 7: Usar a nova constante Go ---
+	logToCore(logLevelInfo, "api_client module cleaned up.")
 	// Free the C strings we allocated for the module info.
 	C.free(unsafe.Pointer(moduleName))
 	C.free(unsafe.Pointer(moduleVersion))

@@ -12,7 +12,6 @@
 
 package main
 
-import "C"
 import (
 	"encoding/json"
 	"fmt"
@@ -67,7 +66,8 @@ func NewGitHubHandler() *GitHubHandler {
 // generic RepoInfo struct.
 func (h *GitHubHandler) FetchRepoInfo(user, repo string) (*RepoInfo, error) {
 	url := fmt.Sprintf(gitHubAPIEndpoint, user, repo)
-	logToCore(C.LOG_LEVEL_DEBUG, fmt.Sprintf("Querying GitHub API: %s", url))
+	// --- CORREÇÃO: Usando a constante Go em vez do tipo C ---
+	logToCore(logLevelDebug, fmt.Sprintf("Querying GitHub API: %s", url))
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -135,6 +135,7 @@ func setRepository(provider ApiProvider, args []string) error {
 	fmt.Printf("URL:           %s\n", repoInfo.URL)
 	fmt.Println("------------------------")
 
-	logToCore(C.LOG_LEVEL_INFO, fmt.Sprintf("Successfully fetched info for %s", repoInfo.FullName))
+	// --- CORREÇÃO: Usando a constante Go em vez do tipo C ---
+	logToCore(logLevelInfo, fmt.Sprintf("Successfully fetched info for %s", repoInfo.FullName))
 	return nil
 }
