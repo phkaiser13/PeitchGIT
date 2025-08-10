@@ -122,7 +122,7 @@ GitphStatus lua_bridge_init(void) {
 
     // 3. Scan and load all scripts from the "plugins" directory
     const char* plugin_dir = "plugins";
-    char log_buffer[512];
+char log_buffer[2048]; // was 512
 
 #ifdef PLATFORM_WINDOWS
     char search_path[MAX_PATH];
