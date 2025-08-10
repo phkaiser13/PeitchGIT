@@ -1,147 +1,123 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
-# Ubuntu-Like_ci.yml - Workflow de Integração Contínua para o projeto gitph.
+# main_ci.yml - Workflow de Integração Contínua para o projeto gitph.
 #
-# Este workflow automatiza o processo de build e release da aplicação em múltiplas
-# arquiteturas para sistemas baseados em Debian/Ubuntu.
+# Este workflow automatiza o processo de build e release da aplicação.
+# Ele garante que o projeto compila corretamente em um ambiente limpo
+# e cria pacotes de distribuição automaticamente quando uma nova versão é marcada.
 #
 # SPDX-License-Identifier: Apache-2.0
 
-name: Build e Release Multi-Arquitetura Ubuntu-like (Linux)
+name: Build e Release do gitph
 
+# Gatilhos do workflow:
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main" ] # Executa quando há um push para a branch main
     tags:
-      - 'v*'
+      - 'v*'          # Executa quando uma tag como v1.0.0 é criada
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main" ] # Executa em pull requests para a main
 
 jobs:
+  # Job principal de build que compila e verifica o projeto
   build:
-    name: Build em ${{ matrix.name }}
+    name: Build e Teste
     runs-on: ubuntu-latest
-    
-    # A matriz define as diferentes configurações para cada arquitetura
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: "Ubuntu (x86_64)"
-            arch: "amd64"
-            platform: "x86_64-linux-gnu"
-          - name: "Ubuntu (aarch64)"
-            arch: "arm64"
-            platform: "aarch64-linux-gnu"
-          - name: "Ubuntu (i386)"
-            arch: "i386"
-            platform: "i686-linux-gnu" # O nome da toolchain para i386 pode ser i686
 
     steps:
+      # 1. Clona o repositório
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      # Configura o QEMU para permitir a execução de binários de outras arquiteturas
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      # 2. Instala as dependências de sistema (C/C++, Lua, Curl)
+      #    CORREÇÃO: Adicionado 'pkg-config' para que o CMake possa encontrar as bibliotecas (como a Lua)
+      - name: Instalar dependências do sistema
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake pkg-config liblua5.4-dev libcurl4-openssl-dev nlohmann-json3-dev
 
-      # Instala as dependências de sistema para a arquitetura alvo
-      - name: Instalar dependências de cross-compilação
-        run: |
-          sudo apt-get update
-          # Adiciona a arquitetura estrangeira ao dpkg
-          sudo dpkg --add-architecture ${{ matrix.arch }}
-          # Instala as ferramentas de compilação base e as de cross-compilação
-          sudo apt-get install -y build-essential cmake pkg-config gcc-${{ matrix.platform }} g++-${{ matrix.platform }}
-          # Instala as bibliotecas para a arquitetura alvo
-          sudo apt-get install -y liblua5.4-dev:${{ matrix.arch }} libcurl4-openssl-dev:${{ matrix.arch }} nlohmann-json3-dev
-
+      # 3. Configura o ambiente Go
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.21' # Usando uma versão mais recente do Go. Ajuste se o seu go.mod exigir 1.18.
 
+      # 4. Configura o ambiente Rust (com cache integrado)
+      #    MELHORIA: Usando uma action específica para Rust que simplifica o cache.
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          # Adiciona o target para cross-compilação do Rust
-          targets: ${{ matrix.platform }}
       - uses: Swatinem/rust-cache@v2
 
-      # Cria um arquivo de toolchain para o CMake para forçar a cross-compilação
-      - name: Criar arquivo de Toolchain do CMake
-        run: |
-          echo "set(CMAKE_SYSTEM_NAME Linux)" > toolchain.cmake
-          echo "set(CMAKE_SYSTEM_PROCESSOR ${{ matrix.arch }})" >> toolchain.cmake
-          echo "set(CMAKE_C_COMPILER ${{ matrix.platform }}-gcc)" >> toolchain.cmake
-          echo "set(CMAKE_CXX_COMPILER ${{ matrix.platform }}-g++)" >> toolchain.cmake
-          echo "set(CMAKE_FIND_ROOT_PATH /usr/${{ matrix.platform }})" >> toolchain.cmake
-          echo "set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)" >> toolchain.cmake
-          echo "set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)" >> toolchain.cmake
-          echo "set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)" >> toolchain.cmake
-
-      - name: Configurar CMake com Toolchain
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake
+      # 5. Configura e compila o projeto usando CMake em modo Release
+      - name: Configurar CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Compilar Projeto
         run: cmake --build build --parallel
 
-      - name: Preparar artefatos para upload
-        shell: bash
-        run: |
-          ARTIFACT_DIR="artifacts"
-          mkdir -p "$ARTIFACT_DIR/modules"
-          cp build/bin/* "$ARTIFACT_DIR/"
-          cp -r src/plugins/* "$ARTIFACT_DIR/modules/"
-          cp LICENSE "$ARTIFACT_DIR/"
-
+      # 6. Salva os artefatos de build para o job de release poder usá-los
       - name: Upload dos artefatos de build
         uses: actions/upload-artifact@v4
         with:
-          name: gitph-build-artifacts-linux-${{ matrix.arch }}
-          path: artifacts/
+          name: gitph-build-artifacts
+          path: |
+            build/bin/
+            src/plugins/
+            LICENSE
 
+  # Job de release que só executa quando uma tag é criada
   release:
     name: Criar Release
-    needs: build
+    needs: build # Depende do sucesso do job de build
     runs-on: ubuntu-latest
+    # A condição 'if' garante que este job só execute para tags
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
-      - name: Download de todos os artefatos de build
+      # 1. Clona o repositório (necessário para ter o contexto do Git)
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      # 2. Baixa os artefatos compilados pelo job de build
+      - name: Download dos artefatos de build
         uses: actions/download-artifact@v4
         with:
+          name: gitph-build-artifacts
           path: artifacts/
-      
+
+      # 3. Empacota os arquivos de release
+      #    MELHORIA: Script simplificado para ser mais robusto e direto.
       - name: Empacotar para Release
         run: |
-          # Loop através de cada diretório de artefato baixado
-          for DIR in artifacts/gitph-build-artifacts-linux-*; do
-            ARCH=$(basename "$DIR" | sed 's/gitph-build-artifacts-linux-//')
-            VERSION="${{ github.ref_name }}"
-            RELEASE_NAME="gitph-${VERSION}-linux-${ARCH}"
-            
-            echo "Empacotando $RELEASE_NAME..."
-            
-            # Cria a estrutura de diretório final
-            mkdir -p "release/${RELEASE_NAME}"
-            mv "${DIR}"/* "release/${RELEASE_NAME}/"
-            
-            # Remove símbolos de debug
-            echo "Removendo símbolos de debug para ${ARCH}..."
-            strip --strip-unneeded "release/${RELEASE_NAME}/gitph"
-            find "release/${RELEASE_NAME}/modules" -type f -name "*.so" -exec strip --strip-unneeded {} +
-            
-            # Cria o arquivo .tar.gz
-            (cd release && tar -czf "${RELEASE_NAME}.tar.gz" "${RELEASE_NAME}")
-          done
+          # Determina a versão a partir da tag do Git e o nome do pacote
+          VERSION=${{ github.ref_name }}
+          RELEASE_NAME="gitph-${VERSION}-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
           
-          # Exporta a lista de pacotes para o próximo passo
-          echo "RELEASE_ASSETS=$(ls release/*.tar.gz | tr '\n' ' ')" >> $GITHUB_ENV
+          # Cria a estrutura de diretórios final diretamente
+          mkdir -p "release/${RELEASE_NAME}/modules"
+          
+          # Copia os arquivos para a estrutura final
+          cp -r artifacts/bin/* "release/${RELEASE_NAME}/"
+          cp -r artifacts/plugins/* "release/${RELEASE_NAME}/modules/"
+          cp artifacts/LICENSE "release/${RELEASE_NAME}/"
+          
+          # Tira informações de debug dos binários para reduzir tamanho
+          # Usando 'find' para ser mais seguro caso não hajam módulos
+          echo "Removendo símbolos de debug..."
+          strip --strip-unneeded "release/${RELEASE_NAME}/gitph"
+          find "release/${RELEASE_NAME}/modules" -type f -name "*.so" -exec strip --strip-unneeded {} +
+          
+          # Cria o arquivo .tar.gz
+          echo "Criando o pacote .tar.gz..."
+          (cd release && tar -czf "${RELEASE_NAME}.tar.gz" "${RELEASE_NAME}")
+          
+          # Exporta o caminho do pacote para o próximo passo
+          echo "RELEASE_PATH=release/${RELEASE_NAME}.tar.gz" >> $GITHUB_ENV
 
+      # 4. Cria a Release no GitHub e faz o upload do pacote .tar.gz
       - name: Publicar Release no GitHub
         uses: softprops/action-gh-release@v2
         with:
-          # Anexa todos os pacotes .tar.gz criados
-          files: ${{ env.RELEASE_ASSETS }}
+          files: ${{ env.RELEASE_PATH }}
+          # O corpo da release é preenchido automaticamente com as últimas mudanças
           generate_release_notes: true
