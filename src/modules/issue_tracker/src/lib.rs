@@ -1,15 +1,15 @@
 /* Copyright (C) 2025 Pedro Henrique / phkaiser13
- * lib.rs - FFI bridge and async entry point for the issue_tracker module.
+ * lib.rs - FFI bridge and async entry point for the sync_engine module.
  *
- * This file serves as the FFI layer, bridging the synchronous C world with
- * the asynchronous Rust world of this module. It implements the gitph API
- * contract and handles the crucial task of managing the Tokio async runtime.
+ * This file serves as the crucial FFI layer between the synchronous C core
+ * and the highly complex, asynchronous Rust logic of the synchronization
+ * engine. It upholds the established pattern of using a global Tokio runtime
+ * to execute and block on async tasks, presenting a simple, synchronous
+ * face to the outside world while leveraging modern async performance internally.
  *
- * The core design pattern here is to create a single, static Tokio runtime
- * that lives for the duration of the application. When a C function like
- * `module_exec` is called, it uses `runtime.block_on()` to execute the
- * async business logic and wait for its completion, effectively translating
- * the async operation into a sync result for the C core.
+ * It is responsible solely for argument translation and dispatching to the
+ * `sync` module, which contains the actual state machine and Git object
+ * database manipulation logic.
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
@@ -29,6 +29,8 @@ mod issue_service;
 #[repr(C)]
 pub enum GitphStatus {
     Success = 0,
+    ErrorInvalidArgs = -2,
+    ErrorInitFailed = -4,
     ErrorExecFailed = -5,
 }
 #[repr(C)]
@@ -40,27 +42,27 @@ pub enum GitphLogLevel {
     Fatal,
 }
 type LogFn = extern "C" fn(GitphLogLevel, *const c_char, *const c_char);
+
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct GitphCoreContext {
     log: Option<LogFn>,
 }
 
 // --- Global State Management ---
 lazy_static! {
-    static ref RUNTIME: Mutex<Runtime> =
-        Mutex::new(Runtime::new().expect("Failed to create Tokio runtime"));
-}
-lazy_static! {
+    // ✅ CORREÇÃO: O Runtime DEVE estar dentro de um Mutex para ser compartilhado
+    // e para que o método .lock() exista.
+    static ref RUNTIME: Mutex<Runtime> = Mutex::new(Runtime::new().expect("Failed to create Tokio runtime"));
+
+    // O contexto também, pois é inicializado depois
     static ref CORE_CONTEXT: Mutex<Option<GitphCoreContext>> = Mutex::new(None);
 }
 
 // Helper for logging back to the C core.
 fn log_to_core(level: GitphLogLevel, message: &str) {
     if let Ok(guard) = CORE_CONTEXT.lock() {
-        if let Some(context) = &*guard {
+        if let Some(context) = guard.as_ref() {
             if let Some(log_fn) = context.log {
-                // It's fine to create this CString here; it's short-lived.
                 let module_name = CString::new("ISSUE_TRACKER").unwrap();
                 if let Ok(msg) = CString::new(message) {
                     log_fn(level, module_name.as_ptr(), msg.as_ptr());
@@ -83,90 +85,91 @@ pub struct GitphModuleInfo {
     commands: *const *const c_char,
 }
 
-// --- CORREÇÃO 1: Wrapper para garantir Sync ---
-// Criamos um wrapper e dizemos explicitamente ao compilador que é seguro.
 struct SafeModuleInfo(GitphModuleInfo);
 unsafe impl Sync for SafeModuleInfo {}
 
-// --- CORREÇÃO 2: Usar dados verdadeiramente estáticos ---
 static MODULE_NAME: &[u8] = b"issue_tracker\0";
 static MODULE_VERSION: &[u8] = b"1.0.0\0";
 static MODULE_DESC: &[u8] = b"Interacts with issue tracking services like GitHub Issues.\0";
 
-// Definimos um array estático de ponteiros terminados por nulo.
-static SUPPORTED_COMMANDS: [*const c_char; 2] = [
+const SUPPORTED_COMMANDS_PTRS: &[*const c_char] = &[
     b"issue-get\0".as_ptr() as *const c_char,
     std::ptr::null(),
 ];
 
-// Agora o nosso `lazy_static` apenas contém dados que são `Sync`.
-lazy_static! {
-    static ref MODULE_INFO: SafeModuleInfo = SafeModuleInfo(GitphModuleInfo {
-        name: MODULE_NAME.as_ptr() as *const c_char,
-        version: MODULE_VERSION.as_ptr() as *const c_char,
-        description: MODULE_DESC.as_ptr() as *const c_char,
-        commands: SUPPORTED_COMMANDS.as_ptr(),
-    });
-}
+static MODULE_INFO: SafeModuleInfo = SafeModuleInfo(GitphModuleInfo {
+    name: MODULE_NAME.as_ptr() as *const c_char,
+    version: MODULE_VERSION.as_ptr() as *const c_char,
+    description: MODULE_DESC.as_ptr() as *const c_char,
+    commands: SUPPORTED_COMMANDS_PTRS.as_ptr(),
+});
 
 #[no_mangle]
 pub extern "C" fn module_get_info() -> *const GitphModuleInfo {
-    // Retornamos um ponteiro bruto para os dados estáticos.
-    &MODULE_INFO.0 as *const GitphModuleInfo
+    &MODULE_INFO.0
 }
 
 #[no_mangle]
 pub extern "C" fn module_init(context: *const GitphCoreContext) -> GitphStatus {
     if context.is_null() {
-        return GitphStatus::ErrorExecFailed;
+        return GitphStatus::ErrorInitFailed;
     }
-    unsafe {
-        *CORE_CONTEXT.lock().unwrap() = Some(*context);
+    if let Ok(mut guard) = CORE_CONTEXT.lock() {
+        *guard = Some(unsafe { std::ptr::read(context) });
+    } else {
+        // O Mutex está "poisoned" (envenenado)
+        return GitphStatus::ErrorInitFailed;
     }
-    let _ = RUNTIME.lock().unwrap();
+
+    // Força a inicialização do lazy_static RUNTIME de forma idiomática.
+    {
+        let _guard = RUNTIME.lock().unwrap();
+        // O lock é mantido até o fim deste bloco e depois liberado.
+        // Isso satisfaz o compilador e garante a inicialização.
+    }
+
     log_to_core(GitphLogLevel::Info, "issue_tracker module initialized.");
     GitphStatus::Success
 }
 
 #[no_mangle]
 pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphStatus {
-    if argv.is_null() {
-        return GitphStatus::ErrorExecFailed;
+    if argv.is_null() || argc < 1 {
+        log_to_core(GitphLogLevel::Error, "Execution called with no arguments.");
+        return GitphStatus::ErrorInvalidArgs;
     }
 
     let args: Vec<String> = (0..argc as isize)
         .map(|i| unsafe {
             let arg_ptr = *argv.offset(i);
-            if arg_ptr.is_null() {
-                String::new()
-            } else {
-                CStr::from_ptr(arg_ptr).to_string_lossy().into_owned()
-            }
+            CStr::from_ptr(arg_ptr).to_string_lossy().into_owned()
         })
         .collect();
-
-    if args.is_empty() || args[0].is_empty() {
-        log_to_core(GitphLogLevel::Error, "Execution failed: No command provided.");
-        return GitphStatus::ErrorExecFailed;
-    }
 
     let command = args[0].as_str();
     let user_args = &args[1..];
 
+    // Agora .lock() existe porque RUNTIME é um Mutex<Runtime>
     let runtime = RUNTIME.lock().unwrap();
 
     let result = runtime.block_on(async {
         match command {
             "issue-get" => issue_service::handle_get_issue(user_args).await,
-            _ => Err(format!("Unknown command '{}'", command)),
+            _ => {
+                let err_msg = format!("Unknown command '{}' for issue_tracker module", command);
+                // Logar o erro aqui é uma boa prática
+                log_to_core(GitphLogLevel::Error, &err_msg);
+                Err(err_msg)
+            }
         }
     });
 
     match result {
         Ok(_) => GitphStatus::Success,
         Err(e) => {
-            log_to_core(GitphLogLevel::Error, &format!("Command failed: {}", e));
-            eprintln!("[gitph ERROR] {}", e);
+            // O log do erro já pode ter sido feito dentro do match, mas podemos logar de novo
+            // para garantir que a falha final seja registrada.
+            log_to_core(GitphLogLevel::Error, &format!("Command execution failed: {}", e));
             GitphStatus::ErrorExecFailed
         }
     }
