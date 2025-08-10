@@ -28,14 +28,12 @@ jobs:
         with:
           path: main
 
-      # 1. Clona o vcpkg para um diretório conhecido
       - name: Checkout do vcpkg
         uses: actions/checkout@v4
         with:
           repository: 'microsoft/vcpkg'
           path: vcpkg
       
-      # 2. Executa o bootstrap para compilar o vcpkg e instala as dependências
       - name: Instalar dependências com vcpkg
         shell: powershell
         run: |
@@ -44,38 +42,32 @@ jobs:
           ./vcpkg.exe install curl:x64-windows lua:x64-windows nlohmann-json:x64-windows
           cd ..
 
-      # 3. Configura o ambiente Go
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      # 4. Configura o ambiente Rust (com cache)
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
         with:
-          # Define o diretório de trabalho para que o cache funcione corretamente
-          # já que nosso projeto não está na raiz.
           working-directory: main
 
-      # 5. Configura o CMake usando o toolchain do vcpkg
+      # --- CORREÇÃO APLICADA AQUI ---
+      # O comando cmake agora é executado da raiz, com caminhos explícitos
+      # para a origem (-S) e o build (-B), e o toolchain é passado diretamente.
       - name: Configurar CMake
         shell: powershell
         run: |
-          $VCPKG_TOOLCHAIN_FILE = "${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake"
-          cd main
-          cmake -S . -B build `
+          cmake -S main -B main/build `
             -G "Visual Studio 17 2022" `
-            -DCMAKE_TOOLCHAIN_FILE=$VCPKG_TOOLCHAIN_FILE
+            -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
       
-      # 6. Compila o projeto
       - name: Compilar Projeto
         run: cmake --build main/build --config Release --parallel
 
-      # 7. Salva os artefatos de build para o job de release
       - name: Upload dos artefatos de build
         uses: actions/upload-artifact@v4
         with:
