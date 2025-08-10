@@ -1,45 +1,65 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
-# win_ci.yml - Workflow de Integração Contínua para Windows
+# build_and_release_windows.yml - Workflow de CI/CD para Windows (x64, x86, ARM64)
 #
-# Este workflow automatiza o processo de build e release da aplicação no Windows.
-# Ele usa o gerenciador de pacotes vcpkg para instalar as dependências C/C++
-# de forma robusta e se integra com o CMake para compilar todos os componentes.
+# Este workflow automatiza a compilação, o teste e a publicação da aplicação gitph no Windows.
+# Ele emprega uma estratégia de matriz para abranger múltiplas arquiteturas e usa o vcpkg
+# para um gerenciamento de dependências C/C++ robusto.
 #
 # SPDX-License-Identifier: Apache-2.0
 
-name: Build e Release do gitph (Windows)
+name: Build e Release Multi-Arquitetura (Windows)
 
 on:
   push:
     branches: [ "main" ]
     tags:
-      - 'v*'
+      - 'v*' # Aciona o job de release
   pull_request:
     branches: [ "main" ]
 
 jobs:
   build:
-    name: Build e Teste (Windows)
-    runs-on: windows-latest
+    name: Build em ${{ matrix.name }}
+    # A estratégia de matriz executa este job para cada combinação de configuração.
+    strategy:
+      fail-fast: false # Garante que todos os jobs da matriz rodem, mesmo que um falhe.
+      matrix:
+        include:
+          - name: "Windows x64"
+            os: windows-latest
+            arch: x64
+            vcpkg_triplet: x64-windows
+            cmake_platform: x64
+          - name: "Windows x86"
+            os: windows-latest
+            arch: x86
+            vcpkg_triplet: x86-windows
+            cmake_platform: Win32
+          - name: "Windows ARM64"
+            os: windows-latest-arm64
+            arch: arm64
+            vcpkg_triplet: arm64-windows
+            cmake_platform: ARM64
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout do código do projeto
         uses: actions/checkout@v4
-        with:
-          path: main
 
       - name: Checkout do vcpkg
         uses: actions/checkout@v4
         with:
           repository: 'microsoft/vcpkg'
           path: vcpkg
-      
-      - name: Instalar dependências com vcpkg
+
+      - name: Instalar dependências C++ com vcpkg
         shell: powershell
         run: |
           cd vcpkg
           ./bootstrap-vcpkg.bat
-          ./vcpkg.exe install curl:x64-windows lua:x64-windows nlohmann-json:x64-windows
+          # Usa o vcpkg_triplet da matriz para instalar para a arquitetura correta
+          ./vcpkg.exe install curl:${{ matrix.vcpkg_triplet }} lua:${{ matrix.vcpkg_triplet }} nlohmann-json:${{ matrix.vcpkg_triplet }}
           cd ..
 
       - name: Setup Go
@@ -51,69 +71,70 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          working-directory: main
+      
+      - name: Cache de dependências Rust
+        uses: Swatinem/rust-cache@v2
 
-      # --- CORREÇÃO APLICADA AQUI ---
-      # O comando cmake agora é executado da raiz, com caminhos explícitos
-      # para a origem (-S) e o build (-B), e o toolchain é passado diretamente.
       - name: Configurar CMake
         shell: powershell
         run: |
-          cmake -S main -B main/build `
+          cmake -S . -B build `
             -G "Visual Studio 17 2022" `
+            -A ${{ matrix.cmake_platform }} `
             -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
-      
-      - name: Compilar Projeto
-        run: cmake --build main/build --config Release --parallel
+
+      - name: Compilar o Projeto (Release)
+        run: cmake --build build --config Release --parallel
+
+      - name: Preparar artefatos para upload
+        shell: powershell
+        run: |
+          $ARTIFACT_DIR = "artifacts"
+          New-Item -ItemType Directory -Force -Path $ARTIFACT_DIR
+          Copy-Item -Path "build/bin/Release/*" -Destination $ARTIFACT_DIR -Force
+          Copy-Item -Path "src/plugins/*" -Destination "$ARTIFACT_DIR/modules" -Recurse -Force
+          Copy-Item -Path "LICENSE" -Destination $ARTIFACT_DIR -Force
 
       - name: Upload dos artefatos de build
         uses: actions/upload-artifact@v4
         with:
-          name: gitph-build-artifacts-windows
-          path: |
-            main/build/bin/Release/
-            main/src/plugins/
-            main/LICENSE
-
-  release:
-    name: Criar Release (Windows)
-    needs: build
-    runs-on: windows-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-
-    steps:
-      - name: Download dos artefatos de build
-        uses: actions/download-artifact@v4
-        with:
-          name: gitph-build-artifacts-windows
+          name: gitph-build-artifacts-windows-${{ matrix.arch }}
           path: artifacts/
 
-      - name: Empacotar para Release
-        shell: powershell
-        run: |
-          $VERSION = "${{ github.ref_name }}"
-          $ARCH = "x86_64"
-          $RELEASE_NAME = "gitph-${VERSION}-windows-${ARCH}"
-          $RELEASE_DIR = "release/${RELEASE_NAME}"
-          
-          New-Item -ItemType Directory -Force -Path "${RELEASE_DIR}/modules" | Out-Null
-          
-          Copy-Item -Path "artifacts/Release/*" -Destination $RELEASE_DIR -Force
-          Copy-Item -Path "artifacts/plugins/*" -Destination "${RELEASE_DIR}/modules" -Recurse -Force
-          Copy-Item -Path "artifacts/LICENSE" -Destination $RELEASE_DIR -Force
-          
-          # Remove DLLs que já estão na pasta de módulos para não duplicar
-          Remove-Item -Path "${RELEASE_DIR}/ci_cd_parser.dll", "${RELEASE_DIR}/ci_cd_visualizer.dll", "${RELEASE_DIR}/git_ops.dll", "${RELEASE_DIR}/sync_engine.dll", "${RELEASE_DIR}/issue_tracker.dll" -ErrorAction SilentlyContinue
+  release:
+    name: Criar Release no GitHub
+    needs: build # Depende da conclusão de todos os jobs da matriz de build
+    runs-on: ubuntu-latest # O job de release pode rodar em Linux para economizar custos
+    if: startsWith(github.ref, 'refs/tags/v') # Só executa quando uma tag 'v*' é criada
 
-          $ZIP_PATH = "release/${RELEASE_NAME}.zip"
-          Compress-Archive -Path "${RELEASE_DIR}/*" -DestinationPath $ZIP_PATH
+    steps:
+      - name: Download de todos os artefatos de build
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/ # O download será para 'artifacts/<artifact-name>/'
           
-          echo "RELEASE_PATH=${ZIP_PATH}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Empacotar para Release
+        shell: bash
+        run: |
+          # Loop através de cada diretório de artefato baixado
+          for ARCH_DIR in artifacts/gitph-build-artifacts-windows-*; do
+            ARCH_NAME=$(basename "$ARCH_DIR" | sed 's/gitph-build-artifacts-windows-//')
+            VERSION="${{ github.ref_name }}"
+            RELEASE_NAME="gitph-${VERSION}-windows-${ARCH_NAME}"
+            
+            echo "Empacotando $RELEASE_NAME..."
+            
+            # Cria o arquivo ZIP a partir do conteúdo do diretório do artefato
+            (cd "$ARCH_DIR" && zip -r "../../${RELEASE_NAME}.zip" .)
+          done
+          
+          # Lista os arquivos ZIP criados para passar para o próximo step
+          ls *.zip
+          echo "RELEASE_ASSETS=$(ls *.zip | tr '\n' ' ')" >> $GITHUB_ENV
 
       - name: Publicar Release no GitHub
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.RELEASE_PATH }}
-          generate_release_notes: true
+          # Anexa todos os arquivos .zip criados como assets da release
+          files: ${{ env.RELEASE_ASSETS }}
+          generate_release_notes: true # Gera notas de release automaticamente
