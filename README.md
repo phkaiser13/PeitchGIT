@@ -9,7 +9,6 @@
   </p>
   <img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg" alt="license" />
   <img src="https://img.shields.io/github/v/release/phkaiser13/peitchgit" alt="release" />
-  <img src="https://img.shields.io/github/actions/workflow/status/phkaiser13/peitchgit/main_ci.yml?branch=main" alt="build status" />
   <img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg" alt="contributions welcome" />
 </div>
 
