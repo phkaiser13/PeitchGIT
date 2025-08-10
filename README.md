@@ -7,7 +7,7 @@
   <p>
     A modern, extensible, and high-performance command-line tool designed to unify and streamline your development lifecycle.
   </p>
-  <img src="https://img.shields.io/badge/license-Apache-2.0-blue.svg" alt="license" />
+<img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="license" />
   <img src="https://img.shields.io/github/v/release/phkaiser13/peitchgit" alt="release" />
   <img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg" alt="contributions welcome" />
 </div>
