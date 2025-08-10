@@ -60,6 +60,7 @@ fn log_to_core(level: GitphLogLevel, message: &str) {
     if let Ok(guard) = CORE_CONTEXT.lock() {
         if let Some(context) = &*guard {
             if let Some(log_fn) = context.log {
+                // It's fine to create this CString here; it's short-lived.
                 let module_name = CString::new("ISSUE_TRACKER").unwrap();
                 if let Ok(msg) = CString::new(message) {
                     log_fn(level, module_name.as_ptr(), msg.as_ptr());
@@ -92,10 +93,10 @@ static MODULE_NAME: &[u8] = b"issue_tracker\0";
 static MODULE_VERSION: &[u8] = b"1.0.0\0";
 static MODULE_DESC: &[u8] = b"Interacts with issue tracking services like GitHub Issues.\0";
 
-// Em vez de um Vec, criamos um array estático de ponteiros para os nossos comandos.
-static SUPPORTED_COMMANDS_PTRS: &[*const c_char] = &[
+// Definimos um array estático de ponteiros terminados por nulo.
+static SUPPORTED_COMMANDS: [*const c_char; 2] = [
     b"issue-get\0".as_ptr() as *const c_char,
-    std::ptr::null(), // Terminador nulo
+    std::ptr::null(),
 ];
 
 // Agora o nosso `lazy_static` apenas contém dados que são `Sync`.
@@ -104,13 +105,14 @@ lazy_static! {
         name: MODULE_NAME.as_ptr() as *const c_char,
         version: MODULE_VERSION.as_ptr() as *const c_char,
         description: MODULE_DESC.as_ptr() as *const c_char,
-        commands: SUPPORTED_COMMANDS_PTRS.as_ptr(),
+        commands: SUPPORTED_COMMANDS.as_ptr(),
     });
 }
 
 #[no_mangle]
 pub extern "C" fn module_get_info() -> *const GitphModuleInfo {
-    &MODULE_INFO.0
+    // Retornamos um ponteiro bruto para os dados estáticos.
+    &MODULE_INFO.0 as *const GitphModuleInfo
 }
 
 #[no_mangle]
@@ -118,7 +120,9 @@ pub extern "C" fn module_init(context: *const GitphCoreContext) -> GitphStatus {
     if context.is_null() {
         return GitphStatus::ErrorExecFailed;
     }
-    *CORE_CONTEXT.lock().unwrap() = Some(unsafe { *context });
+    unsafe {
+        *CORE_CONTEXT.lock().unwrap() = Some(*context);
+    }
     let _ = RUNTIME.lock().unwrap();
     log_to_core(GitphLogLevel::Info, "issue_tracker module initialized.");
     GitphStatus::Success
