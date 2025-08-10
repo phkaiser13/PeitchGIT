@@ -1,8 +1,9 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
-# main_ci_macos.yml - Workflow de Integração Contínua para macOS
+# main_ci_macos.yml - Workflow de Integração Contínua para macOS (Intel e Apple Silicon)
 #
-# Este workflow automatiza o processo de build e release da aplicação no macOS
-# (GitHub Actions runner `macos-latest`).
+# Este workflow automatiza o processo de build e release da aplicação no macOS.
+# Ele garante que o projeto compila corretamente em um ambiente limpo
+# e cria pacotes de distribuição automaticamente quando uma nova versão é marcada.
 #
 # SPDX-License-Identifier: Apache-2.0
 
@@ -25,30 +26,34 @@ jobs:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Instalar dependências (Homebrew)
+      - name: Instalar Homebrew e dependências do sistema
         run: |
-          set -e
+          # Atualiza brew e instala ferramentas necessárias
+          if ! command -v brew >/dev/null 2>&1; then
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            # Ajusta o PATH para brew após instalação (Intel / ARM)
+            echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> $HOME/.zprofile
+            echo 'eval "$(/usr/local/bin/brew shellenv)"' >> $HOME/.zprofile
+            eval "$(/opt/homebrew/bin/brew shellenv || /usr/local/bin/brew shellenv)"
+          fi
           brew update
-          # Dependências que o projeto usa: cmake, pkg-config, lua, openssl, curl, nlohmann-json
-          brew install cmake pkg-config lua openssl curl nlohmann-json || true
+          brew install cmake pkg-config lua openssl curl rust go
 
-      - name: Setup Go
+      - name: Configurar ambiente Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      - name: Setup Rust
+      - name: Configurar ambiente Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-
-      - name: Cache Rust (cargo)
-        uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2
 
       - name: Configurar CMake
-        run: |
-          # Aponta o CMake para o OpenSSL instalado via brew
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR=$(brew --prefix openssl)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_PREFIX_PATH="$(brew --prefix lua)" \
+          -DCMAKE_OSX_ARCHITECTURES="$(uname -m)"
 
       - name: Compilar Projeto
         run: cmake --build build --parallel
@@ -78,37 +83,27 @@ jobs:
           name: gitph-build-artifacts
           path: artifacts/
 
-      - name: Empacotar para Release (macOS)
+      - name: Empacotar para Release
         run: |
-          set -e
           VERSION=${{ github.ref_name }}
           RELEASE_NAME="gitph-${VERSION}-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
-
+          
           mkdir -p "release/${RELEASE_NAME}/modules"
+          cp -r artifacts/bin/* "release/${RELEASE_NAME}/"
+          cp -r artifacts/plugins/* "release/${RELEASE_NAME}/modules/"
+          cp artifacts/LICENSE "release/${RELEASE_NAME}/"
 
-          # Copia artefatos (usa "|| true" para evitar falha caso não existam)
-          cp -r artifacts/bin/* "release/${RELEASE_NAME}/" || true
-          cp -r artifacts/plugins/* "release/${RELEASE_NAME}/modules/" || true
-          cp artifacts/LICENSE "release/${RELEASE_NAME}/" || true
+          echo "Removing debug symbols..."
+          strip --strip-unneeded "release/${RELEASE_NAME}/gitph" || echo "strip failed (maybe unsupported binary format)"
+          find "release/${RELEASE_NAME}/modules" -type f \( -name "*.dylib" -o -name "*.so" \) -exec strip --strip-unneeded {} + || echo "strip failed on modules"
 
-          # Tenta remover símbolos de debug se o 'strip' estiver disponível (macOS usa flags diferentes)
-          if command -v strip >/dev/null 2>&1; then
-            echo "Removendo símbolos de debug (strip)..."
-            # -x remove símbolos locais no macOS
-            strip -x "release/${RELEASE_NAME}/gitph" || true
-            # Plugins em macOS costumam ser .dylib
-            find "release/${RELEASE_NAME}/modules" -type f \( -name "*.dylib" -o -name "*.so" \) -exec strip -x {} + || true
-          fi
-
-          # Gera um pacote .tar.gz (compatível com macOS e Linux)
+          echo "Creating .tar.gz package..."
           (cd release && tar -czf "${RELEASE_NAME}.tar.gz" "${RELEASE_NAME}")
 
           echo "RELEASE_PATH=release/${RELEASE_NAME}.tar.gz" >> $GITHUB_ENV
 
       - name: Publicar Release no GitHub
         uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           files: ${{ env.RELEASE_PATH }}
           generate_release_notes: true
