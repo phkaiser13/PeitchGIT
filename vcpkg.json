@@ -1,9 +1,0 @@
-{
-  "name": "gitph",
-  "version-string": "1.0.0",
-  "dependencies": [
-    "curl",
-    "lua",
-    "nlohmann-json"
-  ]
-}
