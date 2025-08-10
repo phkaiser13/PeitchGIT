@@ -1,69 +1,91 @@
----
 name: "Feature request"
-about: "Propose a new feature or improvement for gitph."
+description: "Propose a new feature or improvement for gitph."
 title: "[FEATURE] "
 labels: ["enhancement", "needs-discussion"]
 assignees: []
----
 
-# Feature Request
+body:
+  - type: input
+    id: summary
+    attributes:
+      label: "Summary"
+      description: "One-line description of the requested feature."
+      placeholder: "Short description (e.g. `support remote templates for hooks`)"
+      required: true
 
-**Summary**
-One-line description of the requested feature.
+  - type: textarea
+    id: problem_statement
+    attributes:
+      label: "Problem statement"
+      description: "Explain the problem this feature solves or the user need it addresses. Include examples of the current friction or limitation."
+      placeholder: "Describe the pain / limitation."
 
----
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: "Proposed solution"
+      description: "Describe the desired behavior in clear, actionable terms. Include mock commands, API shape, CLI flags, or UI flows if relevant."
+      placeholder: |
+        Example:
+        - CLI: `gitph feature <subcommand> --flag`
+        - Expected output / behavior
 
-## Problem statement
-Explain the problem this feature solves or the user need it addresses. Include examples of the current friction or limitation.
+  - type: textarea
+    id: key_use_cases
+    attributes:
+      label: "Key use cases"
+      description: "List concrete scenarios where this feature would be used (user stories)."
+      placeholder: |
+        - As a <role>, I want to <action> so that <benefit>
+        - ...
 
----
+  - type: textarea
+    id: alternatives_considered
+    attributes:
+      label: "Alternatives considered"
+      description: "Short descriptions of other approaches you evaluated and why they were not chosen."
+      placeholder: "Other options and trade-offs."
 
-## Proposed solution
-Describe the desired behavior in clear, actionable terms. Include mock commands, API shape, CLI flags, or UI flows if relevant.
+  - type: textarea
+    id: design_notes
+    attributes:
+      label: "Design / Implementation notes (optional)"
+      description: "Technical considerations, rough implementation plan, integration points or migration concerns."
 
----
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: "Acceptance criteria"
+      description: "What must be true for this feature to be considered complete? Provide measurable criteria."
+      placeholder: |
+        - `gitph <command>` adds X flag and returns Y output
+        - Tests covering behavior A and B are added
+        - Documentation and changelog entry included
 
-## Key use cases
-List 2–4 concrete scenarios where this feature would be used, e.g.:
-- User story 1: "As a ..., I want to ... so that ..."
-- User story 2: "As a ..., I want to ... so that ..."
+  - type: dropdown
+    id: impact_priority
+    attributes:
+      label: "Impact / Priority"
+      description: "Estimate impact and priority to help triage."
+      options:
+        - "High — core workflow improvement"
+        - "Medium — nice-to-have, used by some users"
+        - "Low — minor improvement / cosmetic"
 
----
+  - type: input
+    id: related_issues
+    attributes:
+      label: "Related issues / references"
+      description: "Link any related issues, RFCs, design docs, or external references."
+      placeholder: "e.g., #123, PR #456, design.md"
 
-## Alternatives considered
-Short descriptions of other approaches you evaluated and why they were not chosen.
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: "Additional context / mockups"
+      description: "Attach screenshots, diagrams, or example repos. Add any other notes that will help reviewers or implementers."
 
----
-
-## Design / Implementation notes (optional)
-Technical considerations, rough implementation plan, or integration points (files, modules, commands, APIs). Mention any backwards-compatibility or migration concerns.
-
----
-
-## Acceptance criteria
-What must be true for this feature to be considered complete? Provide 2–5 measurable criteria, for example:
-- `gitph <command>` adds X flag and returns Y output.
-- Tests covering behavior A and B are added.
-- Documentation and changelog entry included.
-
----
-
-## Impact / Priority
-Estimate impact and priority to help triage:
-- [ ] High — core workflow improvement
-- [ ] Medium — nice-to-have, used by some users
-- [ ] Low — minor improvement / cosmetic
-
----
-
-## Related issues / references
-Link any related issues, RFCs, design docs, or external references.
-
----
-
-## Additional context / mockups
-Attach screenshots, diagrams, or example repos. Add any other notes that will help reviewers or implementers.
-
----
-
-**Note:** please avoid including secrets or private data in your example snippets.
+  - type: markdown
+    attributes:
+      value: |
+        **Note:** please avoid including secrets or private data in your example snippets.

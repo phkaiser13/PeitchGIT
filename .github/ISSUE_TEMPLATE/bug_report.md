@@ -1,100 +1,143 @@
----
 name: "Bug report"
-about: "Create a clear, actionable report to help us debug and fix issues in gitph."
+description: "Create a clear, actionable report to help us debug and fix issues in gitph."
 title: "[BUG] "
 labels: ["bug", "triage"]
 assignees: []
----
 
-# Bug Report
+body:
+  - type: input
+    id: summary
+    attributes:
+      label: "Summary"
+      description: "A one-line summary of the bug."
+      placeholder: "Short description (e.g. `gitph push fails with exit code 1`)"
+      value: ""
+      required: true
 
-**Summary**
-A one-line summary of the bug.
+  - type: textarea
+    id: steps_to_reproduce
+    attributes:
+      label: "Steps to reproduce"
+      description: "Provide the minimal, precise steps required to reproduce the issue. Include exact commands when possible."
+      placeholder: |
+        1. Clone repository `X`
+        2. Run: `gitph <command> <args>`
+        3. Observe the error
+      required: true
 
----
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: "Expected behavior"
+      description: "Describe what you expected to happen."
+      placeholder: "What should have happened instead?"
 
-## Steps to reproduce
-Please provide the minimal, precise steps required to reproduce the issue.  
-1. Step one (e.g., open repository `X`)  
-2. Run: `gitph <command> <args>`  
-3. Observe the error
+  - type: textarea
+    id: actual_behavior
+    attributes:
+      label: "Actual behavior"
+      description: "Describe what actually happened. Include error messages, stack traces, and exit codes. Paste full output inside triple backticks if possible."
+      placeholder: "```\n<copy-paste error / stack trace here>\n```"
 
-> If possible, include a minimal repository, a small script, or exact commands that reproduce the problem.
+  - type: textarea
+    id: reproduction_example
+    attributes:
+      label: "Reproduction example / Minimal test case"
+      description: "Optional. Add a minimal repository link, a small script, or exact commands that reproduce the problem."
 
----
+  - type: dropdown
+    id: operating_system
+    attributes:
+      label: "Operating System"
+      description: "OS where the issue occurred."
+      options:
+        - "Windows 11"
+        - "Windows 10"
+        - "Ubuntu 22.04"
+        - "Ubuntu 20.04"
+        - "Debian"
+        - "macOS (Sonoma / Ventura / Monterey)"
+        - "Other"
+      required: true
 
-## Expected behavior
-Describe what you expected to happen.
+  - type: input
+    id: gitph_version
+    attributes:
+      label: "gitph version"
+      description: "Output of `gitph --version` (if available)."
+      placeholder: "e.g., 1.0.0"
 
----
+  - type: dropdown
+    id: installed_from
+    attributes:
+      label: "Installed from"
+      options:
+        - "Homebrew"
+        - "apt / apt-get"
+        - "pip"
+        - "cargo / crates"
+        - "Downloaded release / tarball"
+        - "Built from source"
+        - "Other"
 
-## Actual behavior
-Describe what actually happened, including error messages, stack traces, and exit codes. Paste full output inside a fenced code block:
+  - type: input
+    id: shell_terminal
+    attributes:
+      label: "Shell / Terminal"
+      description: "Shell or terminal used when issue occurred."
+      placeholder: "e.g., bash, zsh, PowerShell"
 
-```
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: "Architecture"
+      options:
+        - "x86_64"
+        - "arm64"
+        - "i386"
+        - "other"
 
-\<copy-paste error / stack trace here>
+  - type: textarea
+    id: helpful_commands
+    attributes:
+      label: "Helpful command outputs"
+      description: "Paste outputs of useful commands (run them and paste results)."
+      placeholder: |
+        gitph --version
+        uname -a
 
-```
+  - type: textarea
+    id: logs_debug
+    attributes:
+      label: "Logs / Debug output"
+      description: "If available, paste logs or run the command with debug logging. For large logs attach files to the issue instead of pasting here."
+      placeholder: "Run `gitph <command> --debug` and paste output here."
 
----
+  - type: dropdown
+    id: severity
+    attributes:
+      label: "Severity / Impact"
+      description: "Helps triage and prioritization."
+      options:
+        - "Blocker — prevents using gitph entirely"
+        - "Major — important functionality broken / no reasonable workaround"
+        - "Minor — partial loss of functionality; workaround exists"
+        - "Trivial — cosmetic or very small issue"
 
-## Reproduction example / Minimal test case
-If applicable, include a short reproducible example (commands, small code snippet, repository link).
+  - type: textarea
+    id: workarounds
+    attributes:
+      label: "Workarounds (if any)"
+      description: "Any temporary fixes or steps that mitigate the issue."
 
----
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: "Additional context"
+      description: "Add any other context, related issues, or notes (e.g., when it started, whether it affects multiple machines/users)."
 
-## Environment
-Please paste output or fill in the fields below:
+  - type: markdown
+    attributes:
+      value: |
+        **Security / Sensitive data note:** please redact any secrets, API tokens, credentials, or personal data. If logs contain sensitive information, attach a sanitized file instead.
 
-- **OS:** (e.g., `Ubuntu 22.04`, `Windows 11`, `macOS 14.5`)  
-- **gitph version:** (e.g., `gitph --version` output)  
-- **Installed from:** (e.g., Homebrew, apt, pip, source, release tarball)  
-- **Shell / Terminal:** (e.g., `bash`, `zsh`, `PowerShell`)  
-- **Architecture:** (e.g., `x86_64`, `arm64`)
-
-Helpful commands you can paste here:
-```
-
-gitph --version
-uname -a
-
-```
-
----
-
-## Logs / Debug output
-If available, run the command with debug logging and paste the output (or attach logs as files). Example:
-```
-
-gitph <command> --debug
-
-```
-
----
-
-## Screenshots / GIFs (optional)
-Attach screenshots or a short GIF showing the issue.
-
----
-
-## Severity / Impact
-Select one (helps prioritization):
-- [ ] Blocker — prevents using gitph entirely
-- [ ] Major — important functionality broken / no reasonable workaround
-- [ ] Minor — partial loss of functionality; workaround exists
-- [ ] Trivial — cosmetic or very small issue
-
----
-
-## Workarounds (if any)
-Describe any temporary fixes or steps that mitigate the issue.
-
----
-
-## Additional context
-Add any other context, related issues, or notes (e.g., when it started, whether it affects multiple machines/users).
-
----
-
-**Security / Sensitive data note:** please redact any secrets, API tokens, credentials, or personal data. If logs contain sensitive information, attach a sanitized file instead.
