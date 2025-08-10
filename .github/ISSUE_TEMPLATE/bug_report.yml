@@ -12,7 +12,7 @@ body:
       label: "Summary"
       description: "A one-line summary of the bug."
       placeholder: "Short description (e.g. `gitph push fails with exit code 1`)"
-      value: ""
+    validations:
       required: true
 
   - type: textarea
@@ -24,6 +24,7 @@ body:
         1. Clone repository `X`
         2. Run: `gitph <command> <args>`
         3. Observe the error
+    validations:
       required: true
 
   - type: textarea
@@ -59,6 +60,7 @@ body:
         - "Debian"
         - "macOS (Sonoma / Ventura / Monterey)"
         - "Other"
+    validations:
       required: true
 
   - type: input
