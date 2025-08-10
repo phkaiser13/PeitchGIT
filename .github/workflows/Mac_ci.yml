@@ -31,6 +31,7 @@ jobs:
           echo "Checking for Xcode Command Line Tools..."
           if ! xcode-select -p >/dev/null 2>&1; then
             echo "Xcode Command Line Tools não estão instaladas - em runners do GitHub Actions já costumam vir pré-instaladas."
+            exit 1
           else
             echo "Xcode Command Line Tools encontradas em: $(xcode-select -p)"
           fi
@@ -39,13 +40,27 @@ jobs:
       - name: Instalar dependências do sistema (Homebrew)
         run: |
           echo "Atualizando Homebrew e instalando dependências..."
-          brew update || true
-          # Pacotes: cmake, pkg-config, lua, nlohmann-json (headers), curl
-          brew install cmake pkg-config lua nlohmann-json curl || true
-          # Verificações rápidas
+          brew update
+          # CORREÇÃO: Removido '|| true' para garantir que o workflow falhe se a instalação não ocorrer.
+          brew install cmake pkg-config lua nlohmann-json curl
+          
+          echo "Verificando instalações..."
           cmake --version
-          pkg-config --version || true
-          lua -v || true
+          pkg-config --version
+          lua -v
+
+      # NOVO PASSO: Configurar variáveis de ambiente para que o CMake encontre as bibliotecas do Homebrew.
+      # Esta é a correção principal para os erros 'library not found' e 'file not found'.
+      - name: Configurar variáveis de ambiente para Homebrew
+        run: |
+          BREW_PREFIX=$(brew --prefix)
+          echo "LDFLAGS=-L${BREW_PREFIX}/lib" >> $GITHUB_ENV
+          echo "CPPFLAGS=-I${BREW_PREFIX}/include" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=${BREW_PREFIX}/lib/pkgconfig" >> $GITHUB_ENV
+          echo "Adicionando variáveis de ambiente:"
+          echo "LDFLAGS=-L${BREW_PREFIX}/lib"
+          echo "CPPFLAGS=-I${BREW_PREFIX}/include"
+          echo "PKG_CONFIG_PATH=${BREW_PREFIX}/lib/pkgconfig"
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -61,7 +76,7 @@ jobs:
       - name: Configurar CMake
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-
+          
       - name: Compilar Projeto
         run: |
           cmake --build build --parallel
@@ -69,7 +84,7 @@ jobs:
       - name: Upload dos artefatos de build
         uses: actions/upload-artifact@v4
         with:
-          name: gitph-build-artifacts
+          name: gitph-build-artifacts-macos
           path: |
             build/bin/
             src/plugins/
@@ -88,14 +103,13 @@ jobs:
       - name: Download dos artefatos de build
         uses: actions/download-artifact@v4
         with:
-          name: gitph-build-artifacts
+          name: gitph-build-artifacts-macos # Nome do artefato deve corresponder ao do job de build
           path: artifacts/
 
       - name: Empacotar para Release
         run: |
           set -euo pipefail
           VERSION=${{ github.ref_name }}
-
           # Normaliza o nome da plataforma (Darwin -> macos)
           OS_NAME=$(uname -s)
           if [ "$OS_NAME" = "Darwin" ]; then
@@ -103,35 +117,31 @@ jobs:
           else
             PLATFORM=$(echo "$OS_NAME" | tr '[:upper:]' '[:lower:]')
           fi
-
           RELEASE_NAME="gitph-${VERSION}-${PLATFORM}-$(uname -m)"
+          
           mkdir -p "release/${RELEASE_NAME}/modules"
-
+          
           # Copia os artefatos para a estrutura final
-          if [ -d "artifacts/bin" ]; then
-            cp -r artifacts/bin/* "release/${RELEASE_NAME}/" || true
-          fi
-          if [ -d "artifacts/plugins" ]; then
-            cp -r artifacts/plugins/* "release/${RELEASE_NAME}/modules/" || true
-          fi
-          cp artifacts/LICENSE "release/${RELEASE_NAME}/" || true
-
+          cp -r artifacts/bin/* "release/${RELEASE_NAME}/"
+          cp -r artifacts/plugins/* "release/${RELEASE_NAME}/modules/"
+          cp artifacts/LICENSE "release/${RELEASE_NAME}/"
+          
           echo "Removendo símbolos de debug quando seguro..."
           # Em macOS o strip pode ter flags diferentes; evitamos quebrar binários nativos.
           if command -v strip >/dev/null 2>&1 && [ "$(uname -s)" != "Darwin" ]; then
-            strip --strip-unneeded "release/${RELEASE_NAME}/gitph" || true
-            find "release/${RELEASE_NAME}/modules" -type f \( -name "*.so" -o -name "*.dylib" \) -exec strip --strip-unneeded {} + || true
+            strip --strip-unneeded "release/${RELEASE_NAME}/gitph"
+            find "release/${RELEASE_NAME}/modules" -type f \( -name "*.so" -o -name "*.dylib" \) -exec strip --strip-unneeded {} +
           else
             echo "Pulando strip no macOS para evitar problemas com binários nativos."
           fi
-
+          
           echo "Criando o pacote .tar.gz..."
           (cd release && tar -czf "${RELEASE_NAME}.tar.gz" "${RELEASE_NAME}")
-
+          
           echo "RELEASE_PATH=release/${RELEASE_NAME}.tar.gz" >> $GITHUB_ENV
 
       - name: Publicar Release no GitHub
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2 # Versão atualizada da action
         with:
           files: ${{ env.RELEASE_PATH }}
           generate_release_notes: true
