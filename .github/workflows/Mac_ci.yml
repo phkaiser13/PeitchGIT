@@ -26,17 +26,9 @@ jobs:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      # CORREÇÃO 1: Adicionado nlohmann-json à lista de dependências.
+      # --- CORREÇÃO 1: Adicionado nlohmann-json à lista ---
       - name: Instalar Homebrew e dependências do sistema
         run: |
-          # Atualiza brew e instala ferramentas necessárias
-          if ! command -v brew >/dev/null 2>&1; then
-            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-            # Ajusta o PATH para brew após instalação (Intel / ARM)
-            echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> $HOME/.zprofile
-            echo 'eval "$(/usr/local/bin/brew shellenv)"' >> $HOME/.zprofile
-            eval "$(/opt/homebrew/bin/brew shellenv || /usr/local/bin/brew shellenv)"
-          fi
           brew update
           brew install cmake pkg-config lua openssl curl rust go nlohmann-json
 
@@ -51,19 +43,13 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
 
-      # CORREÇÃO 2: Ajudando o CMake a encontrar TODAS as dependências do Homebrew.
+      # --- CORREÇÃO 2: Instruindo o CMake sobre onde encontrar as bibliotecas ---
+      # Esta é a parte mais importante. Ela diz ao CMake para olhar nos diretórios do
+      # Homebrew para encontrar lua, curl e nlohmann-json.
       - name: Configurar CMake
         run: |
-          # Exporta variáveis de ambiente para ajudar a encontrar as bibliotecas, especialmente a OpenSSL.
-          export LDFLAGS="-L$(brew --prefix openssl)/lib"
-          export CPPFLAGS="-I$(brew --prefix openssl)/include"
-          
-          # Constrói um CMAKE_PREFIX_PATH com todas as dependências para o find_package.
-          # O ponto e vírgula (;) é o separador de listas do CMake.
-          CMAKE_PREFIX_PATH_ARGS="-DCMAKE_PREFIX_PATH=$(brew --prefix lua);$(brew --prefix curl);$(brew --prefix nlohmann-json)"
-          
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-            ${CMAKE_PREFIX_PATH_ARGS} \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix lua);$(brew --prefix curl);$(brew --prefix nlohmann-json)" \
             -DCMAKE_OSX_ARCHITECTURES="$(uname -m)"
 
       - name: Compilar Projeto
