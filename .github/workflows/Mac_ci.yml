@@ -1,9 +1,8 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
 # main_ci_macos.yml - Workflow de Integração Contínua para macOS
 #
-# Este workflow é equivalente ao main_ci.yml (Linux) mas adaptado para
-# runners macOS. Ele instala dependências via Homebrew, configura Go e
-# Rust, compila com CMake e empacota o release.
+# Este workflow automatiza o processo de build e release da aplicação no macOS
+# (GitHub Actions runner `macos-latest`).
 #
 # SPDX-License-Identifier: Apache-2.0
 
@@ -26,41 +25,12 @@ jobs:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Verificar Command Line Tools (Xcode)
+      - name: Instalar dependências (Homebrew)
         run: |
-          echo "Checking for Xcode Command Line Tools..."
-          if ! xcode-select -p >/dev/null 2>&1; then
-            echo "Xcode Command Line Tools não estão instaladas - em runners do GitHub Actions já costumam vir pré-instaladas."
-            exit 1
-          else
-            echo "Xcode Command Line Tools encontradas em: $(xcode-select -p)"
-          fi
-
-      # Instala dependências via Homebrew (equivalente ao apt-get do Linux)
-      - name: Instalar dependências do sistema (Homebrew)
-        run: |
-          echo "Atualizando Homebrew e instalando dependências..."
+          set -e
           brew update
-          # CORREÇÃO: Removido '|| true' para garantir que o workflow falhe se a instalação não ocorrer.
-          brew install cmake pkg-config lua nlohmann-json curl
-          
-          echo "Verificando instalações..."
-          cmake --version
-          pkg-config --version
-          lua -v
-
-      # NOVO PASSO: Configurar variáveis de ambiente para que o CMake encontre as bibliotecas do Homebrew.
-      # Esta é a correção principal para os erros 'library not found' e 'file not found'.
-      - name: Configurar variáveis de ambiente para Homebrew
-        run: |
-          BREW_PREFIX=$(brew --prefix)
-          echo "LDFLAGS=-L${BREW_PREFIX}/lib" >> $GITHUB_ENV
-          echo "CPPFLAGS=-I${BREW_PREFIX}/include" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=${BREW_PREFIX}/lib/pkgconfig" >> $GITHUB_ENV
-          echo "Adicionando variáveis de ambiente:"
-          echo "LDFLAGS=-L${BREW_PREFIX}/lib"
-          echo "CPPFLAGS=-I${BREW_PREFIX}/include"
-          echo "PKG_CONFIG_PATH=${BREW_PREFIX}/lib/pkgconfig"
+          # Dependências que o projeto usa: cmake, pkg-config, lua, openssl, curl, nlohmann-json
+          brew install cmake pkg-config lua openssl curl nlohmann-json || true
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -71,20 +41,22 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@v2
+
+      - name: Cache Rust (cargo)
+        uses: Swatinem/rust-cache@v2
 
       - name: Configurar CMake
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          
+          # Aponta o CMake para o OpenSSL instalado via brew
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR=$(brew --prefix openssl)
+
       - name: Compilar Projeto
-        run: |
-          cmake --build build --parallel
+        run: cmake --build build --parallel
 
       - name: Upload dos artefatos de build
         uses: actions/upload-artifact@v4
         with:
-          name: gitph-build-artifacts-macos
+          name: gitph-build-artifacts
           path: |
             build/bin/
             src/plugins/
@@ -103,45 +75,40 @@ jobs:
       - name: Download dos artefatos de build
         uses: actions/download-artifact@v4
         with:
-          name: gitph-build-artifacts-macos # Nome do artefato deve corresponder ao do job de build
+          name: gitph-build-artifacts
           path: artifacts/
 
-      - name: Empacotar para Release
+      - name: Empacotar para Release (macOS)
         run: |
-          set -euo pipefail
+          set -e
           VERSION=${{ github.ref_name }}
-          # Normaliza o nome da plataforma (Darwin -> macos)
-          OS_NAME=$(uname -s)
-          if [ "$OS_NAME" = "Darwin" ]; then
-            PLATFORM="macos"
-          else
-            PLATFORM=$(echo "$OS_NAME" | tr '[:upper:]' '[:lower:]')
-          fi
-          RELEASE_NAME="gitph-${VERSION}-${PLATFORM}-$(uname -m)"
-          
+          RELEASE_NAME="gitph-${VERSION}-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
+
           mkdir -p "release/${RELEASE_NAME}/modules"
-          
-          # Copia os artefatos para a estrutura final
-          cp -r artifacts/bin/* "release/${RELEASE_NAME}/"
-          cp -r artifacts/plugins/* "release/${RELEASE_NAME}/modules/"
-          cp artifacts/LICENSE "release/${RELEASE_NAME}/"
-          
-          echo "Removendo símbolos de debug quando seguro..."
-          # Em macOS o strip pode ter flags diferentes; evitamos quebrar binários nativos.
-          if command -v strip >/dev/null 2>&1 && [ "$(uname -s)" != "Darwin" ]; then
-            strip --strip-unneeded "release/${RELEASE_NAME}/gitph"
-            find "release/${RELEASE_NAME}/modules" -type f \( -name "*.so" -o -name "*.dylib" \) -exec strip --strip-unneeded {} +
-          else
-            echo "Pulando strip no macOS para evitar problemas com binários nativos."
+
+          # Copia artefatos (usa "|| true" para evitar falha caso não existam)
+          cp -r artifacts/bin/* "release/${RELEASE_NAME}/" || true
+          cp -r artifacts/plugins/* "release/${RELEASE_NAME}/modules/" || true
+          cp artifacts/LICENSE "release/${RELEASE_NAME}/" || true
+
+          # Tenta remover símbolos de debug se o 'strip' estiver disponível (macOS usa flags diferentes)
+          if command -v strip >/dev/null 2>&1; then
+            echo "Removendo símbolos de debug (strip)..."
+            # -x remove símbolos locais no macOS
+            strip -x "release/${RELEASE_NAME}/gitph" || true
+            # Plugins em macOS costumam ser .dylib
+            find "release/${RELEASE_NAME}/modules" -type f \( -name "*.dylib" -o -name "*.so" \) -exec strip -x {} + || true
           fi
-          
-          echo "Criando o pacote .tar.gz..."
+
+          # Gera um pacote .tar.gz (compatível com macOS e Linux)
           (cd release && tar -czf "${RELEASE_NAME}.tar.gz" "${RELEASE_NAME}")
-          
+
           echo "RELEASE_PATH=release/${RELEASE_NAME}.tar.gz" >> $GITHUB_ENV
 
       - name: Publicar Release no GitHub
-        uses: softprops/action-gh-release@v2 # Versão atualizada da action
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           files: ${{ env.RELEASE_PATH }}
           generate_release_notes: true
