@@ -1,15 +1,12 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
-# macos_ci.yml - Workflow de Integração Contínua para o projeto gitph (versão macOS).
+# main_ci_macos.yml - Workflow de Integração Contínua para macOS
 #
-# Este workflow automatiza o processo de build e release da aplicação para o macOS.
-# Ele garante que o projeto compila corretamente em um ambiente limpo
-# e cria pacotes de distribuição .tar.gz automaticamente quando uma nova versão é marcada.
+# Este workflow automatiza o build e release da aplicação no macOS.
 #
 # SPDX-License-Identifier: Apache-2.0
 
 name: Build e Release do gitph (macOS)
 
-# Gatilhos do workflow (sem alteração):
 on:
   push:
     branches: [ "main" ]
@@ -19,101 +16,86 @@ on:
     branches: [ "main" ]
 
 jobs:
-  # Job principal de build que compila e verifica o projeto no macOS
   build:
-    name: Build e Teste (macOS)
-    runs-on: macos-latest # ALTERAÇÃO: Executando no ambiente macOS mais recente
+    name: Build e Teste no macOS
+    runs-on: macos-latest
 
     steps:
-      # 1. Clona o repositório (multiplataforma)
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      # 2. Instala as dependências de sistema usando Homebrew
-      #    ALTERAÇÃO: 'apt-get' substituído por 'brew'.
+      # Instalar dependências via Homebrew
       - name: Instalar dependências do sistema
-        run: brew install cmake pkg-config lua curl nlohmann-json
+        run: |
+          brew update
+          brew install cmake pkg-config lua curl nlohmann-json
 
-      # 3. Configura o ambiente Go (multiplataforma)
+      # Setup Go
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      # 4. Configura o ambiente Rust (multiplataforma)
+      # Setup Rust
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
 
-      # 5. Configura e compila o projeto usando CMake (multiplataforma)
+      # Configura e compila o projeto usando CMake (Release)
       - name: Configurar CMake
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Compilar Projeto
         run: cmake --build build --parallel
 
-      # 6. Salva os artefatos de build para o job de release
+      # Upload dos artefatos compilados
       - name: Upload dos artefatos de build
         uses: actions/upload-artifact@v4
         with:
-          name: gitph-build-artifacts-macos
+          name: gitph-build-artifacts
           path: |
             build/bin/
             src/plugins/
             LICENSE
 
-  # Job de release que só executa quando uma tag é criada
   release:
-    name: Criar Release (macOS)
-    needs: build # Depende do sucesso do job de build
+    name: Criar Release no macOS
+    needs: build
     runs-on: macos-latest
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
-      # 1. Clona o repositório
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      # 2. Baixa os artefatos compilados pelo job de build
       - name: Download dos artefatos de build
         uses: actions/download-artifact@v4
         with:
-          name: gitph-build-artifacts-macos
+          name: gitph-build-artifacts
           path: artifacts/
 
-      # 3. Empacota os arquivos de release
-      #    O script é quase idêntico ao do Linux, pois ambos usam shell e ferramentas Unix.
       - name: Empacotar para Release
         run: |
-          # Determina a versão e o nome do pacote. 'uname' funciona perfeitamente no macOS.
-          # 'uname -s' retornará 'Darwin'.
           VERSION=${{ github.ref_name }}
           RELEASE_NAME="gitph-${VERSION}-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
-          
-          # Cria a estrutura de diretórios final
+
           mkdir -p "release/${RELEASE_NAME}/modules"
-          
-          # Copia os arquivos para a estrutura final
+
           cp -r artifacts/bin/* "release/${RELEASE_NAME}/"
           cp -r artifacts/plugins/* "release/${RELEASE_NAME}/modules/"
           cp artifacts/LICENSE "release/${RELEASE_NAME}/"
-          
-          # Tira informações de debug dos binários
+
           echo "Removendo símbolos de debug..."
           strip --strip-unneeded "release/${RELEASE_NAME}/gitph"
-          # ALTERAÇÃO: No macOS, bibliotecas dinâmicas são .dylib, não .so
           find "release/${RELEASE_NAME}/modules" -type f -name "*.dylib" -exec strip --strip-unneeded {} +
-          
-          # Cria o arquivo .tar.gz (o comando 'tar' é padrão no macOS)
+
           echo "Criando o pacote .tar.gz..."
           (cd release && tar -czf "${RELEASE_NAME}.tar.gz" "${RELEASE_NAME}")
-          
-          # Exporta o caminho do pacote para o próximo passo
+
           echo "RELEASE_PATH=release/${RELEASE_NAME}.tar.gz" >> $GITHUB_ENV
 
-      # 4. Cria a Release no GitHub e faz o upload do pacote .tar.gz (multiplataforma)
       - name: Publicar Release no GitHub
         uses: softprops/action-gh-release@v2
         with:
