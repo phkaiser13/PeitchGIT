@@ -1,15 +1,12 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
-# windows_ci.yml - Workflow de Integração Contínua para o projeto gitph (versão Windows).
+# main_ci_windows.yml - Workflow de Integração Contínua para Windows
 #
-# Este workflow automatiza o processo de build e release da aplicação para o Windows.
-# Ele garante que o projeto compila corretamente em um ambiente limpo
-# e cria pacotes de distribuição .zip automaticamente quando uma nova versão é marcada.
+# Este workflow automatiza o build e release da aplicação no Windows.
 #
 # SPDX-License-Identifier: Apache-2.0
 
 name: Build e Release do gitph (Windows)
 
-# Gatilhos do workflow (sem alteração):
 on:
   push:
     branches: [ "main" ]
@@ -19,126 +16,102 @@ on:
     branches: [ "main" ]
 
 jobs:
-  # Job principal de build que compila e verifica o projeto no Windows
   build:
-    name: Build e Teste (Windows)
-    runs-on: windows-latest # ALTERAÇÃO: Executando no ambiente Windows mais recente
+    name: Build e Teste no Windows
+    runs-on: windows-latest
 
     steps:
-      # 1. Clona o repositório (multiplataforma)
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      # 2. Instala as dependências de sistema (C/C++, Lua, Curl) usando vcpkg
-      #    Vcpkg é um gerenciador de pacotes da Microsoft para bibliotecas C++.
-      - name: Instalar dependências com vcpkg
+      # Instalação das dependências no Windows (exemplo: via Chocolatey)
+      - name: Instalar dependências via Chocolatey
+        shell: powershell
         run: |
-          # Clona o vcpkg e o prepara para uso
-          git clone https://github.com/Microsoft/vcpkg.git
-          ./vcpkg/bootstrap-vcpkg.bat
-          # Adiciona o vcpkg ao PATH para esta sessão
-          echo "$((Get-Item .).FullName)\vcpkg" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          # Define a variável de ambiente para o toolchain do CMake
-          echo "VCPKG_ROOT=$((Get-Item .).FullName)\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        shell: pwsh # Especifica que os comandos são PowerShell
+          Set-ExecutionPolicy Bypass -Scope Process -Force;
+          iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'));
+          choco install -y cmake visualstudio2019buildtools visualstudio2019-workload-vctools
 
-      - name: Instalar bibliotecas (Lua, Curl, JSON)
-        run: |
-          # Instala as dependências necessárias para a arquitetura x64 do Windows
-          vcpkg install lua:x64-windows curl:x64-windows nlohmann-json:x64-windows
-        shell: pwsh
-
-      # 3. Configura o ambiente Go (multiplataforma)
+      # Setup Go
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      # 4. Configura o ambiente Rust (multiplataforma)
+      # Setup Rust
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
 
-      # 5. Configura o projeto usando CMake em modo Release
-      #    ALTERAÇÃO: Adiciona o toolchain do vcpkg para que o CMake encontre as bibliotecas.
-      - name: Configurar CMake
-        run: |
-          cmake -S . -B build `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
-        shell: pwsh
+      # Configurar e compilar com CMake (Windows)
+      - name: Configurar CMake (Release)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G "Visual Studio 17 2022"
 
-      # 6. Compila o projeto (o comando é multiplataforma)
       - name: Compilar Projeto
-        run: cmake --build build --config Release --parallel
-        shell: pwsh
+        run: cmake --build build --config Release -- /m
 
-      # 7. Salva os artefatos de build para o job de release
-      #    ALTERAÇÃO: O caminho de saída no Windows com o gerador do Visual Studio
-      #    geralmente inclui a configuração (ex: 'build/Release/').
+      # Upload dos artefatos compilados
       - name: Upload dos artefatos de build
         uses: actions/upload-artifact@v4
         with:
-          name: gitph-build-artifacts-windows
+          name: gitph-build-artifacts
           path: |
-            build/Release/ # Binários (.exe, .dll) estarão aqui
+            build\Release\
+            src\plugins\
             LICENSE
 
-  # Job de release que só executa quando uma tag é criada
   release:
-    name: Criar Release (Windows)
-    needs: build # Depende do sucesso do job de build
+    name: Criar Release no Windows
+    needs: build
     runs-on: windows-latest
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
-      # 1. Clona o repositório
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      # 2. Baixa os artefatos compilados pelo job de build
       - name: Download dos artefatos de build
         uses: actions/download-artifact@v4
         with:
-          name: gitph-build-artifacts-windows
-          path: artifacts/
+          name: gitph-build-artifacts
+          path: artifacts\
 
-      # 3. Empacota os arquivos de release em um .zip
-      #    ALTERAÇÃO: Script convertido para PowerShell.
-      - name: Empacotar para Release (ZIP)
-        shell: pwsh
+      - name: Empacotar para Release
+        shell: powershell
         run: |
-          # Determina a versão a partir da tag e o nome do pacote
-          $Version = "${{ github.ref_name }}"
-          $ReleaseName = "gitph-${Version}-windows-x86_64"
+          $VERSION = "${{ github.ref_name }}"
+          $RELEASE_NAME = "gitph-$VERSION-windows-$env:PROCESSOR_ARCHITECTURE".ToLower()
+          $releasePath = "release\$RELEASE_NAME"
           
-          # Cria a estrutura de diretórios final
-          $ReleaseDir = "release/${ReleaseName}"
-          $ModulesDir = "${ReleaseDir}/modules"
-          New-Item -Path $ModulesDir -ItemType Directory -Force
+          # Criar estrutura de diretórios
+          New-Item -ItemType Directory -Force -Path "$releasePath\modules" | Out-Null
           
-          # Copia os arquivos para a estrutura final
-          # O executável principal
-          Copy-Item -Path "artifacts/gitph.exe" -Destination $ReleaseDir
-          # Os plugins (bibliotecas .dll)
-          Copy-Item -Path "artifacts/*.dll" -Destination $ModulesDir
-          # A licença
-          Copy-Item -Path "artifacts/LICENSE" -Destination $ReleaseDir
+          # Copiar arquivos
+          Copy-Item -Path "artifacts\Release\*" -Destination $releasePath -Recurse -Force
+          Copy-Item -Path "artifacts\plugins\*" -Destination "$releasePath\modules" -Recurse -Force
+          Copy-Item -Path "artifacts\LICENSE" -Destination $releasePath -Force
           
-          # NOTA: O comando 'strip' não é usado no Windows. A compilação em modo 'Release'
-          # já otimiza o binário e os símbolos de depuração são gerados em arquivos .pdb
-          # separados, que não são incluídos no pacote.
+          # Remover símbolos de debug (exemplo usando llvm-strip, se disponível)
+          $stripExe = "C:\Program Files\LLVM\bin\llvm-strip.exe"
+          if (Test-Path $stripExe) {
+            Write-Host "Removendo símbolos de debug..."
+            & $stripExe "$releasePath\gitph.exe"
+            Get-ChildItem "$releasePath\modules" -Recurse -Include *.dll | ForEach-Object {
+              & $stripExe $_.FullName
+            }
+          } else {
+            Write-Host "llvm-strip não encontrado, pulando remoção de símbolos."
+          }
           
-          # Cria o arquivo .zip, que é mais comum no Windows
-          $ZipPath = "release/${ReleaseName}.zip"
-          Compress-Archive -Path "$ReleaseDir/*" -DestinationPath $ZipPath
-          
-          # Exporta o caminho do pacote para o próximo passo
-          echo "RELEASE_PATH=$ZipPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # Compactar para ZIP (mais comum em Windows)
+          $zipFile = "release\$RELEASE_NAME.zip"
+          if (Test-Path $zipFile) { Remove-Item $zipFile }
+          Compress-Archive -Path $releasePath\* -DestinationPath $zipFile
 
-      # 4. Cria a Release no GitHub e faz o upload do pacote .zip
+          echo "RELEASE_PATH=$zipFile" >> $env:GITHUB_ENV
+
       - name: Publicar Release no GitHub
         uses: softprops/action-gh-release@v2
         with:
