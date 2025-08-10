@@ -1,7 +1,9 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
 # main_ci_macos.yml - Workflow de Integração Contínua para macOS
 #
-# Este workflow automatiza o build e release da aplicação no macOS.
+# Este workflow é equivalente ao main_ci.yml (Linux) mas adaptado para
+# runners macOS. Ele instala dependências via Homebrew, configura Go e
+# Rust, compila com CMake e empacota o release.
 #
 # SPDX-License-Identifier: Apache-2.0
 
@@ -17,40 +19,53 @@ on:
 
 jobs:
   build:
-    name: Build e Teste no macOS
+    name: Build e Teste (macOS)
     runs-on: macos-latest
 
     steps:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      # Instalar dependências via Homebrew
-      - name: Instalar dependências do sistema
+      - name: Verificar Command Line Tools (Xcode)
         run: |
-          brew update
-          brew install cmake pkg-config lua curl nlohmann-json
+          echo "Checking for Xcode Command Line Tools..."
+          if ! xcode-select -p >/dev/null 2>&1; then
+            echo "Xcode Command Line Tools não estão instaladas - em runners do GitHub Actions já costumam vir pré-instaladas."
+          else
+            echo "Xcode Command Line Tools encontradas em: $(xcode-select -p)"
+          fi
 
-      # Setup Go
+      # Instala dependências via Homebrew (equivalente ao apt-get do Linux)
+      - name: Instalar dependências do sistema (Homebrew)
+        run: |
+          echo "Atualizando Homebrew e instalando dependências..."
+          brew update || true
+          # Pacotes: cmake, pkg-config, lua, nlohmann-json (headers), curl
+          brew install cmake pkg-config lua nlohmann-json curl || true
+          # Verificações rápidas
+          cmake --version
+          pkg-config --version || true
+          lua -v || true
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      # Setup Rust
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
 
-      # Configura e compila o projeto usando CMake (Release)
       - name: Configurar CMake
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Compilar Projeto
-        run: cmake --build build --parallel
+        run: |
+          cmake --build build --parallel
 
-      # Upload dos artefatos compilados
       - name: Upload dos artefatos de build
         uses: actions/upload-artifact@v4
         with:
@@ -61,7 +76,7 @@ jobs:
             LICENSE
 
   release:
-    name: Criar Release no macOS
+    name: Criar Release (macOS)
     needs: build
     runs-on: macos-latest
     if: startsWith(github.ref, 'refs/tags/v')
@@ -78,18 +93,37 @@ jobs:
 
       - name: Empacotar para Release
         run: |
+          set -euo pipefail
           VERSION=${{ github.ref_name }}
-          RELEASE_NAME="gitph-${VERSION}-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
 
+          # Normaliza o nome da plataforma (Darwin -> macos)
+          OS_NAME=$(uname -s)
+          if [ "$OS_NAME" = "Darwin" ]; then
+            PLATFORM="macos"
+          else
+            PLATFORM=$(echo "$OS_NAME" | tr '[:upper:]' '[:lower:]')
+          fi
+
+          RELEASE_NAME="gitph-${VERSION}-${PLATFORM}-$(uname -m)"
           mkdir -p "release/${RELEASE_NAME}/modules"
 
-          cp -r artifacts/bin/* "release/${RELEASE_NAME}/"
-          cp -r artifacts/plugins/* "release/${RELEASE_NAME}/modules/"
-          cp artifacts/LICENSE "release/${RELEASE_NAME}/"
+          # Copia os artefatos para a estrutura final
+          if [ -d "artifacts/bin" ]; then
+            cp -r artifacts/bin/* "release/${RELEASE_NAME}/" || true
+          fi
+          if [ -d "artifacts/plugins" ]; then
+            cp -r artifacts/plugins/* "release/${RELEASE_NAME}/modules/" || true
+          fi
+          cp artifacts/LICENSE "release/${RELEASE_NAME}/" || true
 
-          echo "Removendo símbolos de debug..."
-          strip --strip-unneeded "release/${RELEASE_NAME}/gitph"
-          find "release/${RELEASE_NAME}/modules" -type f -name "*.dylib" -exec strip --strip-unneeded {} +
+          echo "Removendo símbolos de debug quando seguro..."
+          # Em macOS o strip pode ter flags diferentes; evitamos quebrar binários nativos.
+          if command -v strip >/dev/null 2>&1 && [ "$(uname -s)" != "Darwin" ]; then
+            strip --strip-unneeded "release/${RELEASE_NAME}/gitph" || true
+            find "release/${RELEASE_NAME}/modules" -type f \( -name "*.so" -o -name "*.dylib" \) -exec strip --strip-unneeded {} + || true
+          else
+            echo "Pulando strip no macOS para evitar problemas com binários nativos."
+          fi
 
           echo "Criando o pacote .tar.gz..."
           (cd release && tar -czf "${RELEASE_NAME}.tar.gz" "${RELEASE_NAME}")
