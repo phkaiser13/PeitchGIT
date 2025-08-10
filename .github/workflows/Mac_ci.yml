@@ -26,6 +26,7 @@ jobs:
       - name: Checkout do código
         uses: actions/checkout@v4
 
+      # CORREÇÃO 1: Adicionado nlohmann-json à lista de dependências.
       - name: Instalar Homebrew e dependências do sistema
         run: |
           # Atualiza brew e instala ferramentas necessárias
@@ -37,7 +38,7 @@ jobs:
             eval "$(/opt/homebrew/bin/brew shellenv || /usr/local/bin/brew shellenv)"
           fi
           brew update
-          brew install cmake pkg-config lua openssl curl rust go
+          brew install cmake pkg-config lua openssl curl rust go nlohmann-json
 
       - name: Configurar ambiente Go
         uses: actions/setup-go@v5
@@ -50,10 +51,20 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
 
+      # CORREÇÃO 2: Ajudando o CMake a encontrar TODAS as dependências do Homebrew.
       - name: Configurar CMake
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_PREFIX_PATH="$(brew --prefix lua)" \
-          -DCMAKE_OSX_ARCHITECTURES="$(uname -m)"
+        run: |
+          # Exporta variáveis de ambiente para ajudar a encontrar as bibliotecas, especialmente a OpenSSL.
+          export LDFLAGS="-L$(brew --prefix openssl)/lib"
+          export CPPFLAGS="-I$(brew --prefix openssl)/include"
+          
+          # Constrói um CMAKE_PREFIX_PATH com todas as dependências para o find_package.
+          # O ponto e vírgula (;) é o separador de listas do CMake.
+          CMAKE_PREFIX_PATH_ARGS="-DCMAKE_PREFIX_PATH=$(brew --prefix lua);$(brew --prefix curl);$(brew --prefix nlohmann-json)"
+          
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            ${CMAKE_PREFIX_PATH_ARGS} \
+            -DCMAKE_OSX_ARCHITECTURES="$(uname -m)"
 
       - name: Compilar Projeto
         run: cmake --build build --parallel
