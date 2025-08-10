@@ -1,121 +1,131 @@
-# .github/workflows/windows_ci.yml
-# Copyright (C) 2025 Pedro Henrique / phkaiser13
-#
-# Workflow de Integração Contínua para Windows usando vcpkg e CMake.
-#
-# SPDX-License-Identifier: Apache-2.0
-
 name: Build e Release do gitph (Windows)
 
 on:
-  push:
-    branches: [ "main" ]
-    tags:
-      - 'v*'
-  pull_request:
-    branches: [ "main" ]
+push:
+branches: [ "main" ]
+tags:
+- 'v*'
+pull_request:
+branches: [ "main" ]
+
+permissions:
+contents: write
 
 jobs:
-  build:
-    name: Build e Teste (Windows)
-    runs-on: windows-latest
-    
-    steps:
-      # 1. Clona o repositório
-      - name: Checkout do código
-        uses: actions/checkout@v4
+build:
+name: Build e Teste (Windows)
+runs-on: windows-latest
 
-      # 2. Configura e instala o vcpkg e suas dependências
-      #    Isso substitui o `apt-get` do workflow de Linux.
-      - name: Instalar dependências com vcpkg
-        uses: lukka/run-vcpkg@v11
-        with:
-          # Lista de pacotes que o seu CMakeLists.txt precisa
-          vcpkgGitCommitId: '1d27727db48074d65d836693b1437b42512f3263' # Commit estável do vcpkg
-          vcpkgArguments: 'curl lua nlohmann-json'
-          vcpkgTriplet: 'x64-windows' # Arquitetura para a compilação
+yaml
+Copiar
+Editar
+steps:
+  - name: Checkout do código
+    uses: actions/checkout@v4
 
-      # 3. Configura o ambiente Go
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
+  - name: Instalar dependências com vcpkg
+    uses: lukka/run-vcpkg@v11
+    with:
+      # ajuste o commit se quiser outro ponto estável do vcpkg
+      vcpkgGitCommitId: '1d27727db48074d65d836693b1437b42512f3263'
+      vcpkgArguments: 'curl lua nlohmann-json'
+      vcpkgTriplet: 'x64-windows'
 
-      # 4. Configura o ambiente Rust
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@v2
+  - name: Setup Go
+    uses: actions/setup-go@v5
+    with:
+      go-version: '1.21'
 
-      # 5. Configura e compila o projeto usando CMake em modo Release
-      #    AQUI ESTÁ A MÁGICA: O `CMAKE_TOOLCHAIN_FILE` aponta para o vcpkg,
-      #    resolvendo automaticamente o `find_package`.
-      - name: Configurar CMake
-        run: |
-          cmake -S . -B build `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-        shell: pwsh
+  - name: Setup Rust
+    uses: dtolnay/rust-toolchain@stable
+    with:
+      toolchain: stable
 
-      - name: Compilar Projeto
-        run: cmake --build build --config Release --parallel
-        shell: pwsh
+  - name: Configurar CMake (gerador Visual Studio x64)
+    shell: pwsh
+    run: |
+      cmake -S . -B build `
+        -DCMAKE_BUILD_TYPE=Release `
+        -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" `
+        -A x64
 
-      # 6. Salva os artefatos de build para o job de release
-      - name: Upload dos artefatos de build (Windows)
-        uses: actions/upload-artifact@v4
-        with:
-          name: gitph-build-artifacts-windows
-          path: |
-            build/bin/Release/ # No Windows com MSVC, os binários ficam num subdiretório de configuração
-            build/bin/modules/Release/
-            src/plugins/
-            LICENSE
+  - name: Compilar Projeto
+    shell: pwsh
+    run: cmake --build build --config Release --parallel
 
-  # Job de release que só executa quando uma tag é criada
-  release:
-    name: Criar Release (Windows)
-    needs: build
-    runs-on: windows-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+  - name: Executar testes (ctest)
+    shell: pwsh
+    run: |
+      if (Test-Path build) {
+        ctest --test-dir build --output-on-failure -C Release || Write-Error "Alguns testes falharam"
+      } else {
+        Write-Host "Pasta build não encontrada — pulando testes"
+      }
 
-    steps:
-      - name: Checkout do código
-        uses: actions/checkout@v4
+  - name: Preparar artefatos de release
+    shell: pwsh
+    run: |
+      $OUT = "artifacts/release"
+      Remove-Item -Recurse -Force $OUT -ErrorAction SilentlyContinue
+      New-Item -ItemType Directory -Path $OUT | Out-Null
 
-      - name: Download dos artefatos de build
-        uses: actions/download-artifact@v4
-        with:
-          name: gitph-build-artifacts-windows
-          path: artifacts/
+      # Copia executáveis e dlls compilados
+      Get-ChildItem -Path build -Recurse -Include *.exe,*.dll -File | ForEach-Object { Copy-Item -Path $_.FullName -Destination $OUT -Force }
 
-      # 7. Empacota os arquivos de release num arquivo .zip
-      - name: Empacotar para Release (Windows)
-        shell: pwsh
-        run: |
-          $VERSION = "${{ github.ref_name }}"
-          $RELEASE_NAME = "gitph-${VERSION}-windows-x64"
-          
-          # Cria a estrutura de diretórios final
-          $RELEASE_PATH = "release/${RELEASE_NAME}"
-          mkdir -p "${RELEASE_PATH}/modules"
-          
-          # Copia os executáveis e DLLs
-          Copy-Item -Path "artifacts/*.exe" -Destination "$RELEASE_PATH/"
-          Copy-Item -Path "artifacts/*.dll" -Destination "$RELEASE_PATH/"
-          Copy-Item -Path "artifacts/modules/*" -Destination "$RELEASE_PATH/modules/"
-          Copy-Item -Path "artifacts/plugins/*" -Destination "$RELEASE_PATH/plugins/"
-          Copy-Item -Path "artifacts/LICENSE" -Destination "$RELEASE_PATH/"
+      # Copia módulos/plugins se existirem
+      if (Test-Path "src/plugins") { Copy-Item -Path "src/plugins" -Destination $OUT -Recurse -Force }
 
-          # Cria o arquivo .zip
-          Compress-Archive -Path "$RELEASE_PATH/*" -DestinationPath "release/${RELEASE_NAME}.zip"
-          
-          # Exporta o caminho do pacote para o próximo passo
-          echo "RELEASE_ZIP_PATH=release/${RELEASE_NAME}.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      # Copia LICENSE se existir
+      if (Test-Path "LICENSE") { Copy-Item -Path "LICENSE" -Destination $OUT -Force }
 
-      - name: Publicar Release no GitHub
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ env.RELEASE_ZIP_PATH }}
-          generate_release_notes: true
+  - name: Upload dos artefatos de build (Windows)
+    uses: actions/upload-artifact@v4
+    with:
+      name: gitph-build-artifacts-windows
+      path: artifacts/release/**
+release:
+name: Criar Release (Windows)
+needs: build
+runs-on: windows-latest
+if: startsWith(github.ref, 'refs/tags/v')
+
+bash
+Copiar
+Editar
+steps:
+  - name: Checkout do código
+    uses: actions/checkout@v4
+
+  - name: Download dos artefatos de build
+    uses: actions/download-artifact@v4
+    with:
+      name: gitph-build-artifacts-windows
+      path: artifacts/
+
+  - name: Empacotar para Release (Windows)
+    shell: pwsh
+    run: |
+      $VERSION = "${{ github.ref_name }}"
+      $RELEASE_NAME = "gitph-$VERSION-windows-x64"
+      $RELEASE_PATH = "release/$RELEASE_NAME"
+
+      # limpa e cria diretório
+      Remove-Item -Recurse -Force $RELEASE_PATH -ErrorAction SilentlyContinue
+      New-Item -ItemType Directory -Path $RELEASE_PATH | Out-Null
+
+      # copia tudo que veio nos artefatos (preserva plugins/ etc.)
+      Copy-Item -Path "artifacts/release/*" -Destination $RELEASE_PATH -Recurse -Force
+
+      # cria zip
+      $ZIP = "release/${RELEASE_NAME}.zip"
+      if (Test-Path $ZIP) { Remove-Item $ZIP -Force }
+      Compress-Archive -Path "$RELEASE_PATH/*" -DestinationPath $ZIP
+
+      Write-Output "RELEASE_ZIP_PATH=$ZIP"
+      echo "RELEASE_ZIP_PATH=$ZIP" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+  - name: Publicar Release no GitHub
+    uses: softprops/action-gh-release@v2
+    with:
+      files: ${{ env.RELEASE_ZIP_PATH }}
+      generate_release_notes: true
