@@ -14,21 +14,22 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 use libc::{c_char, c_int};
-use std::ffi::{CStr, CString};
+use once_cell::sync::Lazy;
+use std::ffi::{CStr};
+use std::ptr;
+use std::slice;
 use std::sync::Mutex;
-
-use lazy_static::lazy_static;
 use tokio::runtime::Runtime;
 
-// The domain logic module we will create next.
 mod sync;
 
-// --- FFI Boilerplate (Types, Context, Logger) ---
+// --- Tipos FFI ---
 #[repr(C)]
 pub enum GitphStatus {
     Success = 0,
     ErrorExecFailed = -5,
 }
+
 #[repr(C)]
 pub enum GitphLogLevel {
     Debug,
@@ -37,76 +38,96 @@ pub enum GitphLogLevel {
     Error,
     Fatal,
 }
+
 type LogFn = extern "C" fn(GitphLogLevel, *const c_char, *const c_char);
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct GitphCoreContext {
     log: Option<LogFn>,
 }
 
-lazy_static! {
-    static ref RUNTIME: Mutex<Runtime> = Mutex::new(Runtime::new().expect("Failed to create Tokio runtime"));
-    static ref CORE_CONTEXT: Mutex<Option<GitphCoreContext>> = Mutex::new(None);
-}
-
-fn log_to_core(level: GitphLogLevel, message: &str) {
-    if let Ok(guard) = CORE_CONTEXT.lock() {
-        if let Some(context) = &*guard {
-            if let Some(log_fn) = context.log {
-                let module_name = CString::new("SYNC_ENGINE").unwrap();
-                if let Ok(msg) = CString::new(message) {
-                    log_fn(level, module_name.as_ptr(), msg.as_ptr());
-                } else {
-                    let error_msg = CString::new("Error: Log message contained null bytes.").unwrap();
-                    log_fn(GitphLogLevel::Error, module_name.as_ptr(), error_msg.as_ptr());
-                }
-            }
-        }
-    }
-}
-
-// --- Module Metadata ---
 #[repr(C)]
 pub struct GitphModuleInfo {
     name: *const c_char,
     version: *const c_char,
     description: *const c_char,
-    commands: *const *const c_char,
+    commands: *const *const c_char, // pointer to null-terminated array of *const c_char
 }
 
-// --- CORREÇÃO 1: Wrapper para garantir Sync ---
-struct SafeModuleInfo(GitphModuleInfo);
-unsafe impl Sync for SafeModuleInfo {}
+// --- Estado Global (inicializado de forma segura) ---
+static RUNTIME: Lazy<Mutex<Runtime>> = Lazy::new(|| {
+    let rt = Runtime::new().expect("Failed to create Tokio runtime");
+    Mutex::new(rt)
+});
 
-// --- CORREÇÃO 2: Usar dados verdadeiramente estáticos ---
-static MODULE_NAME: &[u8] = b"sync_engine\0";
-static MODULE_VERSION: &[u8] = b"1.0.0\0";
-static MODULE_DESC: &[u8] = b"Performs complex, bi-directional repository synchronization.\0";
+static CORE_CONTEXT: Lazy<Mutex<Option<GitphCoreContext>>> = Lazy::new(|| Mutex::new(None));
 
-// Array estático de ponteiros para os comandos.
-static SUPPORTED_COMMANDS_PTRS: &[*const c_char] = &[
-    b"sync-run\0".as_ptr() as *const c_char,
-    b"sync-config\0".as_ptr() as *const c_char,
-    b"sync-status\0".as_ptr() as *const c_char,
-    std::ptr::null(), // Terminador nulo
-];
+// Use literais de bytes com nul para construir &'static CStr sem alocação dinâmica.
+static MODULE_NAME_BYTES: &[u8] = b"sync_engine\0";
+static MODULE_VERSION_BYTES: &[u8] = b"1.0.0\0";
+static MODULE_DESC_BYTES: &[u8] = b"Performs complex, bi-directional repository synchronization.\0";
 
-// O `lazy_static` agora contém apenas dados que são `Sync`.
-lazy_static! {
-    static ref MODULE_INFO: SafeModuleInfo = SafeModuleInfo(GitphModuleInfo {
-        name: MODULE_NAME.as_ptr() as *const c_char,
-        version: MODULE_VERSION.as_ptr() as *const c_char,
-        description: MODULE_DESC.as_ptr() as *const c_char,
-        commands: SUPPORTED_COMMANDS_PTRS.as_ptr(),
-    });
+static NAME_CSTR: Lazy<&'static CStr> = Lazy::new(|| unsafe {
+    CStr::from_bytes_with_nul_unchecked(MODULE_NAME_BYTES)
+});
+static VERSION_CSTR: Lazy<&'static CStr> = Lazy::new(|| unsafe {
+    CStr::from_bytes_with_nul_unchecked(MODULE_VERSION_BYTES)
+});
+static DESC_CSTR: Lazy<&'static CStr> = Lazy::new(|| unsafe {
+    CStr::from_bytes_with_nul_unchecked(MODULE_DESC_BYTES)
+});
+
+// Comandos estáticos (ponteiros para bytes estáticos). O vetor é alocado uma vez e nunca mutado.
+static SUPPORTED_COMMANDS_PTRS: Lazy<Vec<*const c_char>> = Lazy::new(|| {
+    let mut v = Vec::with_capacity(4);
+    // cada as_ptr() vem de um &'static CStr -> ponteiro válido por todo o tempo de execução
+    v.push(unsafe { CStr::from_bytes_with_nul_unchecked(b"sync-run\0") }.as_ptr());
+    v.push(unsafe { CStr::from_bytes_with_nul_unchecked(b"sync-config\0") }.as_ptr());
+    v.push(unsafe { CStr::from_bytes_with_nul_unchecked(b"sync-status\0") }.as_ptr());
+    v.push(ptr::null()); // terminador nulo como em C
+    v
+});
+
+// GitphModuleInfo estático construído a partir dos pointers acima.
+static MODULE_INFO: Lazy<GitphModuleInfo> = Lazy::new(|| GitphModuleInfo {
+    name: NAME_CSTR.as_ptr(),
+    version: VERSION_CSTR.as_ptr(),
+    description: DESC_CSTR.as_ptr(),
+    commands: SUPPORTED_COMMANDS_PTRS.as_ptr(),
+});
+
+// --- Função de log auxiliar ---
+fn log_to_core(level: GitphLogLevel, message: &str) {
+    if let Ok(mut guard) = CORE_CONTEXT.lock() {
+        if let Some(context) = &*guard {
+            if let Some(log_fn) = context.log {
+                // module name já é um CStr estático
+                let module_name = NAME_CSTR.as_ptr();
+                // construir CStr temporário: convertemos para bytes com nul e usamos from_bytes_with_nul_unchecked
+                // mas como message vem de Rust, temos que garantir que não contenha NULs.
+                if message.as_bytes().contains(&0) {
+                    let fallback = unsafe { CStr::from_bytes_with_nul_unchecked(b"Log message contained interior nul\0") };
+                    log_fn(GitphLogLevel::Error, module_name, fallback.as_ptr());
+                    return;
+                }
+                // criar uma CString exigiria alocação; em vez disso, crio um Vec com nul e uso as_ptr
+                let mut buf = Vec::with_capacity(message.len() + 1);
+                buf.extend_from_slice(message.as_bytes());
+                buf.push(0);
+                // segurança: buf é mantido só dentro da chamada
+                let cptr = buf.as_ptr() as *const c_char;
+                // note: buf será dropado no fim da função, mas o ponteiro é usado apenas dentro da chamada ao log_fn
+                log_fn(level, module_name, cptr);
+            }
+        }
+    }
 }
 
-
-// --- FFI Function Implementations ---
-
+// --- FFI Exports ---
 #[no_mangle]
 pub extern "C" fn module_get_info() -> *const GitphModuleInfo {
-    &MODULE_INFO.0
+    &*MODULE_INFO as *const GitphModuleInfo
 }
 
 #[no_mangle]
@@ -114,28 +135,45 @@ pub extern "C" fn module_init(context: *const GitphCoreContext) -> GitphStatus {
     if context.is_null() {
         return GitphStatus::ErrorExecFailed;
     }
-    *CORE_CONTEXT.lock().unwrap() = Some(unsafe { *context });
-    let _ = RUNTIME.lock().unwrap();
+
+    // Segurança: copiar o contexto fornecido (é um Plain Old Data pequeno)
+    unsafe {
+        let ctx = *context;
+        if let Ok(mut guard) = CORE_CONTEXT.lock() {
+            *guard = Some(ctx);
+        } else {
+            return GitphStatus::ErrorExecFailed;
+        }
+    }
+
+    // Garantir que runtime foi inicializado (Lazy já inicializa quando acessado)
+    let _ = RUNTIME.lock().map_err(|_| GitphStatus::ErrorExecFailed);
+
     log_to_core(GitphLogLevel::Info, "sync_engine module initialized.");
     GitphStatus::Success
 }
 
 #[no_mangle]
 pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphStatus {
-    if argv.is_null() {
+    if argv.is_null() || argc < 1 {
+        log_to_core(GitphLogLevel::Error, "Execution failed: argv is null or argc < 1");
         return GitphStatus::ErrorExecFailed;
     }
 
-    let args: Vec<String> = (0..argc as isize)
-        .map(|i| unsafe {
-            let arg_ptr = *argv.offset(i);
-            if arg_ptr.is_null() {
-                String::new()
-            } else {
-                CStr::from_ptr(arg_ptr).to_string_lossy().into_owned()
-            }
-        })
-        .collect();
+    // converte argv em slice seguro
+    let raw_args: &[*const c_char] = unsafe { slice::from_raw_parts(argv, argc as usize) };
+
+    // transforma em Vec<String> com atençao a ponteiros nulos
+    let mut args = Vec::with_capacity(raw_args.len());
+    for &p in raw_args.iter() {
+        if p.is_null() {
+            args.push(String::new());
+        } else {
+            // CStr::from_ptr é seguro se p vier de C; convertemos com to_string_lossy para evitar panics
+            let s = unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned();
+            args.push(s);
+        }
+    }
 
     if args.is_empty() || args[0].is_empty() {
         log_to_core(GitphLogLevel::Error, "Execution failed: No command provided.");
@@ -144,18 +182,28 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphS
 
     let command = args[0].as_str();
     let user_args = &args[1..];
-    let runtime = RUNTIME.lock().unwrap();
 
-    let result = runtime.block_on(async {
+    // pegar runtime
+    let runtime_guard = match RUNTIME.lock() {
+        Ok(g) => g,
+        Err(_) => {
+            log_to_core(GitphLogLevel::Error, "Failed to lock runtime mutex.");
+            return GitphStatus::ErrorExecFailed;
+        }
+    };
+
+    // executar a tarefa async bloqueando no runtime existente
+    let result = runtime_guard.block_on(async {
         match command {
             "sync-run" => sync::handle_run_sync(user_args).await,
-            _ => Err(format!("Unknown command '{}' for sync_engine", command)),
+            "sync-config" => sync::handle_config(user_args).await,
+            "sync-status" => sync::handle_status(user_args).await,
+            other => Err(format!("Unknown command '{}' for sync_engine", other)),
         }
     });
 
     match result {
         Ok(success_message) => {
-            println!("{}", success_message);
             log_to_core(GitphLogLevel::Info, &success_message);
             GitphStatus::Success
         }
