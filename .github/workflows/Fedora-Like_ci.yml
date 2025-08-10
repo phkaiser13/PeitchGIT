@@ -1,142 +1,142 @@
-# Copyright (C) 2025 Pedro Henrique / phkaiser13
-# fedora_ci.yml - Workflow de CI para o projeto gitph em distros Fedora-like.
-#
-# Este workflow automatiza o build e release para múltiplas arquiteturas
-# em um ambiente baseado em Fedora. Ele complementa o workflow de Debian/Ubuntu.
-#
-# SPDX-License-Identifier: Apache-2.0
+# # Copyright (C) 2025 Pedro Henrique / phkaiser13
+# # fedora_ci.yml - Workflow de CI para o projeto gitph em distros Fedora-like.
+# #
+# # Este workflow automatiza o build e release para múltiplas arquiteturas
+# # em um ambiente baseado em Fedora. Ele complementa o workflow de Debian/Ubuntu.
+# #
+# # SPDX-License-Identifier: Apache-2.0
 
-name: Build e Release Multi-Arch (Fedora)
+# name: Build e Release Multi-Arch (Fedora)
 
-on:
-  push:
-    branches: [ "main" ]
-    tags:
-      - 'v*'
-  pull_request:
-    branches: [ "main" ]
+# on:
+#   push:
+#     branches: [ "main" ]
+#     tags:
+#       - 'v*'
+#   pull_request:
+#     branches: [ "main" ]
 
-jobs:
-  # Job de build para múltiplas arquiteturas em ambiente Fedora
-  build-fedora:
-    name: Build para ${{ matrix.arch }} (Fedora)
-    runs-on: ubuntu-latest
-    strategy:
-      # Matriz para as arquiteturas que o Fedora suporta oficialmente
-      matrix:
-        include:
-          - arch: x86_64 # Equivalente ao amd64
-            platform: linux/amd64
-          - arch: aarch64 # Equivalente ao arm64
-            platform: linux/arm64
+# jobs:
+#   # Job de build para múltiplas arquiteturas em ambiente Fedora
+#   build-fedora:
+#     name: Build para ${{ matrix.arch }} (Fedora)
+#     runs-on: ubuntu-latest
+#     strategy:
+#       # Matriz para as arquiteturas que o Fedora suporta oficialmente
+#       matrix:
+#         include:
+#           - arch: x86_64 # Equivalente ao amd64
+#             platform: linux/amd64
+#           - arch: aarch64 # Equivalente ao arm64
+#             platform: linux/arm64
 
-    steps:
-      # 1. Clona o repositório
-      - name: Checkout do código
-        uses: actions/checkout@v4
+#     steps:
+#       # 1. Clona o repositório
+#       - name: Checkout do código
+#         uses: actions/checkout@v4
 
-      # 2. Configura o QEMU para emulação de arquitetura
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+#       # 2. Configura o QEMU para emulação de arquitetura
+#       - name: Set up QEMU
+#         uses: docker/setup-qemu-action@v3
 
-      # 3. Compila o projeto dentro de um contêiner Docker do Fedora
-      - name: Build dentro do contêiner Docker (Fedora)
-        run: |
-          docker run --rm --platform ${{ matrix.platform }} \
-            -v "${{ github.workspace }}":/work -w /work \
-            fedora:latest \
-            /bin/bash -c '
-              set -e
-              echo "Iniciando build para ${{ matrix.platform }} em ambiente Fedora"
+#       # 3. Compila o projeto dentro de um contêiner Docker do Fedora
+#       - name: Build dentro do contêiner Docker (Fedora)
+#         run: |
+#           docker run --rm --platform ${{ matrix.platform }} \
+#             -v "${{ github.workspace }}":/work -w /work \
+#             fedora:latest \
+#             /bin/bash -c '
+#               set -e
+#               echo "Iniciando build para ${{ matrix.platform }} em ambiente Fedora"
 
-              # Instala dependências usando DNF
-              # O grupo @development-tools é o equivalente ao build-essential
-              dnf install -y \
-                @"Development Tools" \
-                cmake \
-                pkgconf \
-                lua-devel \
-                libcurl-devel \
-                nlohmann-json-devel \
-                git
+#               # Instala dependências usando DNF
+#               # O grupo @development-tools é o equivalente ao build-essential
+#               dnf install -y \
+#                 @"Development Tools" \
+#                 cmake \
+#                 pkgconf \
+#                 lua-devel \
+#                 libcurl-devel \
+#                 nlohmann-json-devel \
+#                 git
 
-              # Configura e compila o projeto
-              cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-              cmake --build build --parallel
+#               # Configura e compila o projeto
+#               cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+#               cmake --build build --parallel
 
-              echo "Build em Fedora concluído com sucesso!"
-            '
+#               echo "Build em Fedora concluído com sucesso!"
+#             '
       
-      # 4. Salva os artefatos de build com um nome único para o Fedora
-      - name: Upload dos artefatos de build (${{ matrix.arch }})
-        uses: actions/upload-artifact@v4
-        with:
-          name: gitph-build-artifacts-fedora-${{ matrix.arch }}
-          path: |
-            build/bin/
-            src/plugins/
-            LICENSE
+#       # 4. Salva os artefatos de build com um nome único para o Fedora
+#       - name: Upload dos artefatos de build (${{ matrix.arch }})
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: gitph-build-artifacts-fedora-${{ matrix.arch }}
+#           path: |
+#             build/bin/
+#             src/plugins/
+#             LICENSE
 
-  # Job de release que cria os pacotes a partir dos builds do Fedora
-  release-fedora:
-    name: Criar Release (Fedora)
-    needs: build-fedora # Depende do sucesso dos builds do Fedora
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+#   # Job de release que cria os pacotes a partir dos builds do Fedora
+#   release-fedora:
+#     name: Criar Release (Fedora)
+#     needs: build-fedora # Depende do sucesso dos builds do Fedora
+#     runs-on: ubuntu-latest
+#     if: startsWith(github.ref, 'refs/tags/v')
 
-    steps:
-      # 1. Clona o repositório
-      - name: Checkout do código
-        uses: actions/checkout@v4
+#     steps:
+#       # 1. Clona o repositório
+#       - name: Checkout do código
+#         uses: actions/checkout@v4
 
-      # 2. Baixa os artefatos compilados pelo job de build do Fedora
-      - name: Download dos artefatos de build (Fedora)
-        uses: actions/download-artifact@v4
-        with:
-          # O padrão garante que pegamos apenas os artefatos do Fedora
-          pattern: gitph-build-artifacts-fedora-*
-          path: artifacts/
+#       # 2. Baixa os artefatos compilados pelo job de build do Fedora
+#       - name: Download dos artefatos de build (Fedora)
+#         uses: actions/download-artifact@v4
+#         with:
+#           # O padrão garante que pegamos apenas os artefatos do Fedora
+#           pattern: gitph-build-artifacts-fedora-*
+#           path: artifacts/
 
-      # 3. Empacota os arquivos para cada arquitetura
-      - name: Empacotar para Release (Fedora)
-        run: |
-          set -e
-          VERSION=${{ github.ref_name }}
-          mkdir -p release_packages
+#       # 3. Empacota os arquivos para cada arquitetura
+#       - name: Empacotar para Release (Fedora)
+#         run: |
+#           set -e
+#           VERSION=${{ github.ref_name }}
+#           mkdir -p release_packages
 
-          # Itera sobre cada diretório de artefato do Fedora
-          for ARTIFACT_DIR in artifacts/gitph-build-artifacts-fedora-*/; do
-            # Extrai a arquitetura do nome do diretório
-            ARCH=$(basename "$ARTIFACT_DIR" | sed 's/gitph-build-artifacts-fedora-//')
+#           # Itera sobre cada diretório de artefato do Fedora
+#           for ARTIFACT_DIR in artifacts/gitph-build-artifacts-fedora-*/; do
+#             # Extrai a arquitetura do nome do diretório
+#             ARCH=$(basename "$ARTIFACT_DIR" | sed 's/gitph-build-artifacts-fedora-//')
             
-            # Define o nome do pacote final, indicando que é para Fedora
-            RELEASE_NAME="gitph-${VERSION}-fedora-${ARCH}"
-            PACKAGE_DIR="release_packages/${RELEASE_NAME}"
+#             # Define o nome do pacote final, indicando que é para Fedora
+#             RELEASE_NAME="gitph-${VERSION}-fedora-${ARCH}"
+#             PACKAGE_DIR="release_packages/${RELEASE_NAME}"
             
-            echo "Empacotando para a arquitetura: ${ARCH} (Fedora)"
+#             echo "Empacotando para a arquitetura: ${ARCH} (Fedora)"
 
-            # Cria a estrutura de diretórios
-            mkdir -p "${PACKAGE_DIR}/modules"
+#             # Cria a estrutura de diretórios
+#             mkdir -p "${PACKAGE_DIR}/modules"
             
-            # Copia os arquivos
-            cp -r "${ARTIFACT_DIR}/bin/"* "${PACKAGE_DIR}/"
-            if [ -d "${ARTIFACT_DIR}/plugins" ] && [ "$(ls -A ${ARTIFACT_DIR}/plugins)" ]; then
-              cp -r "${ARTIFACT_DIR}/plugins/"* "${PACKAGE_DIR}/modules/"
-            fi
-            cp "${ARTIFACT_DIR}/LICENSE" "${PACKAGE_DIR}/"
+#             # Copia os arquivos
+#             cp -r "${ARTIFACT_DIR}/bin/"* "${PACKAGE_DIR}/"
+#             if [ -d "${ARTIFACT_DIR}/plugins" ] && [ "$(ls -A ${ARTIFACT_DIR}/plugins)" ]; then
+#               cp -r "${ARTIFACT_DIR}/plugins/"* "${PACKAGE_DIR}/modules/"
+#             fi
+#             cp "${ARTIFACT_DIR}/LICENSE" "${PACKAGE_DIR}/"
             
-            # Remove símbolos de debug
-            strip --strip-unneeded "${PACKAGE_DIR}/gitph"
-            find "${PACKAGE_DIR}/modules" -type f -name "*.so" -exec strip --strip-unneeded {} + 2>/dev/null || true
+#             # Remove símbolos de debug
+#             strip --strip-unneeded "${PACKAGE_DIR}/gitph"
+#             find "${PACKAGE_DIR}/modules" -type f -name "*.so" -exec strip --strip-unneeded {} + 2>/dev/null || true
 
-            # Cria o arquivo .tar.gz
-            (cd release_packages && tar -czf "${RELEASE_NAME}.tar.gz" "${RELEASE_NAME}")
-          done
+#             # Cria o arquivo .tar.gz
+#             (cd release_packages && tar -czf "${RELEASE_NAME}.tar.gz" "${RELEASE_NAME}")
+#           done
 
-      # 4. Publica a Release no GitHub com os pacotes do Fedora
-      #    NOTA: Se você combinar os workflows, este passo deve ser unificado.
-      - name: Publicar Release no GitHub
-        uses: softprops/action-gh-release@v2
-        with:
-          files: release_packages/*.tar.gz
-          generate_release_notes: true
+#       # 4. Publica a Release no GitHub com os pacotes do Fedora
+#       #    NOTA: Se você combinar os workflows, este passo deve ser unificado.
+#       - name: Publicar Release no GitHub
+#         uses: softprops/action-gh-release@v2
+#         with:
+#           files: release_packages/*.tar.gz
+#           generate_release_notes: true
