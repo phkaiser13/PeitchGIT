@@ -86,20 +86,22 @@ void handle_git_download() {
 #ifdef _WIN32
         const char* git_url = "https://github.com/git-for-windows/git/releases/download/v2.37.1.windows.1/Git-2.37.1-64-bit.exe";
         const char* out_filename = "Git-Installer.exe";
-#else
-        // On Linux/macOS, it's better to guide the user to their package manager.
-        printf("\nPlease install Git using your system's package manager.\n");
-        printf("  - On Debian/Ubuntu: sudo apt-get install git\n");
-        printf("  - On Fedora/CentOS: sudo dnf install git\n");
-        printf("  - On macOS (with Homebrew): brew install git\n");
-        return;
-#endif
+
+        // Mova a chamada para DENTRO do bloco #ifdef
         if (download_file(git_url, out_filename) == 0) {
             printf("\nSuccessfully downloaded '%s'.\n", out_filename);
             printf("Please run this installer, then run the gitph installer again.\n");
         } else {
             printf("\nFailed to download the Git installer.\n");
         }
+#else
+        // Em Linux/macOS, apenas guie o usuário.
+        printf("\nPlease install Git using your system's package manager.\n");
+        printf("  - On Debian/Ubuntu: sudo apt-get install git\n");
+        printf("  - On Fedora/CentOS: sudo dnf install git\n");
+        printf("  - On macOS (with Homebrew): brew install git\n");
+        // A função simplesmente termina aqui para sistemas não-Windows.
+#endif
     } else {
         printf("Installation cancelled. Please install Git manually and try again.\n");
     }
