@@ -1,9 +1,7 @@
+# .github/workflows/windows_ci.yml
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
-# windows_ci.yml - Workflow de Integração Contínua para Windows
 #
-# Este workflow automatiza o build e release da aplicação em um ambiente Windows.
-# Ele utiliza o vcpkg para instalar dependências C/C++ de forma que o CMake
-# possa encontrá-las facilmente, espelhando a funcionalidade do apt no Linux.
+# Workflow de Integração Contínua para Windows usando vcpkg e CMake.
 #
 # SPDX-License-Identifier: Apache-2.0
 
@@ -21,65 +19,61 @@ jobs:
   build:
     name: Build e Teste (Windows)
     runs-on: windows-latest
-
+    
     steps:
       # 1. Clona o repositório
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      # 2. Configura o ambiente Go
+      # 2. Configura e instala o vcpkg e suas dependências
+      #    Isso substitui o `apt-get` do workflow de Linux.
+      - name: Instalar dependências com vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          # Lista de pacotes que o seu CMakeLists.txt precisa
+          vcpkgGitCommitId: '1d27727db48074d65d836693b1437b42512f3263' # Commit estável do vcpkg
+          vcpkgArguments: 'curl lua nlohmann-json'
+          vcpkgTriplet: 'x64-windows' # Arquitetura para a compilação
+
+      # 3. Configura o ambiente Go
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      # 3. Configura o ambiente Rust (com cache integrado)
+      # 4. Configura o ambiente Rust
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
 
-      # 4. Instala e configura o vcpkg para gerenciar dependências C++
-      - name: Setup vcpkg
-        uses: microsoft/setup-vcpkg@v1
-        id: vcpkg
-        with:
-          # O vcpkg vai clonar e compilar as bibliotecas necessárias
-          # Os nomes correspondem aos pacotes que o apt instalava
-          vcpkg-commit-id: 'latest'
-
-      # 5. Instala as dependências de sistema usando vcpkg
-      - name: Instalar dependências com vcpkg
-        run: |
-          # O vcpkg automaticamente seleciona a versão correta (x64-windows)
-          $VCPKG_ROOT/vcpkg.exe install curl lua nlohmann-json
-        shell: pwsh
-
-      # 6. Configura e compila o projeto usando CMake em modo Release
-      #    A chave aqui é passar o CMAKE_TOOLCHAIN_FILE para que o CMake encontre
-      #    as bibliotecas instaladas pelo vcpkg.
+      # 5. Configura e compila o projeto usando CMake em modo Release
+      #    AQUI ESTÁ A MÁGICA: O `CMAKE_TOOLCHAIN_FILE` aponta para o vcpkg,
+      #    resolvendo automaticamente o `find_package`.
       - name: Configurar CMake
-        run: >
-          cmake -S . -B build
-          -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_TOOLCHAIN_FILE=${{ steps.vcpkg.outputs.vcpkg-toolchain-file }}
+        run: |
+          cmake -S . -B build `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
         shell: pwsh
 
       - name: Compilar Projeto
         run: cmake --build build --config Release --parallel
         shell: pwsh
 
-      # 7. Salva os artefatos de build para o job de release poder usá-los
-      - name: Upload dos artefatos de build
+      # 6. Salva os artefatos de build para o job de release
+      - name: Upload dos artefatos de build (Windows)
         uses: actions/upload-artifact@v4
         with:
           name: gitph-build-artifacts-windows
           path: |
-            build/bin/Release/
+            build/bin/Release/ # No Windows com MSVC, os binários ficam num subdiretório de configuração
+            build/bin/modules/Release/
             src/plugins/
             LICENSE
 
+  # Job de release que só executa quando uma tag é criada
   release:
     name: Criar Release (Windows)
     needs: build
@@ -96,28 +90,32 @@ jobs:
           name: gitph-build-artifacts-windows
           path: artifacts/
 
-      # 3. Empacota os arquivos de release em um arquivo .zip
-      - name: Empacotar para Release
+      # 7. Empacota os arquivos de release num arquivo .zip
+      - name: Empacotar para Release (Windows)
         shell: pwsh
         run: |
           $VERSION = "${{ github.ref_name }}"
           $RELEASE_NAME = "gitph-${VERSION}-windows-x64"
           
           # Cria a estrutura de diretórios final
-          New-Item -ItemType Directory -Force "release/$RELEASE_NAME/modules"
+          $RELEASE_PATH = "release/${RELEASE_NAME}"
+          mkdir -p "${RELEASE_PATH}/modules"
           
-          # Copia os arquivos para a estrutura final
-          Copy-Item -Path "artifacts/*" -Destination "release/$RELEASE_NAME/" -Recurse -Force
-          
+          # Copia os executáveis e DLLs
+          Copy-Item -Path "artifacts/*.exe" -Destination "$RELEASE_PATH/"
+          Copy-Item -Path "artifacts/*.dll" -Destination "$RELEASE_PATH/"
+          Copy-Item -Path "artifacts/modules/*" -Destination "$RELEASE_PATH/modules/"
+          Copy-Item -Path "artifacts/plugins/*" -Destination "$RELEASE_PATH/plugins/"
+          Copy-Item -Path "artifacts/LICENSE" -Destination "$RELEASE_PATH/"
+
           # Cria o arquivo .zip
-          Compress-Archive -Path "release/$RELEASE_NAME/*" -DestinationPath "release/${RELEASE_NAME}.zip"
+          Compress-Archive -Path "$RELEASE_PATH/*" -DestinationPath "release/${RELEASE_NAME}.zip"
           
           # Exporta o caminho do pacote para o próximo passo
-          echo "RELEASE_PATH=release/${RELEASE_NAME}.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "RELEASE_ZIP_PATH=release/${RELEASE_NAME}.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      # 4. Cria a Release no GitHub e faz o upload do pacote .zip
       - name: Publicar Release no GitHub
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.RELEASE_PATH }}
+          files: ${{ env.RELEASE_ZIP_PATH }}
           generate_release_notes: true
