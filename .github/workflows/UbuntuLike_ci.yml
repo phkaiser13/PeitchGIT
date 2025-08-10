@@ -1,0 +1,145 @@
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
+# main_ci.yml - Workflow de Integração Contínua para o projeto gitph.
+#
+# Este workflow automatiza o processo de build e release da aplicação para múltiplas arquiteturas.
+# Ele garante que o projeto compila corretamente em ambientes limpos (x64, ARM, etc.)
+# e cria pacotes de distribuição automaticamente quando uma nova versão é marcada.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+name: Build e Release Multi-Arch do gitph
+
+# Gatilhos do workflow:
+on:
+  push:
+    branches: [ "main" ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  # Job de build que agora executa em uma matriz para várias arquiteturas
+  build:
+    name: Build para ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: arm64
+            platform: linux/arm64
+          - arch: i386
+            platform: linux/i386
+          # Adicione outras arquiteturas suportadas pelo Debian/Ubuntu aqui
+          # - arch: armhf
+          #   platform: linux/arm/v7
+
+    steps:
+      # 1. Clona o repositório
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      # 2. Configura o QEMU para permitir a execução de contêineres de outras arquiteturas
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # 3. Compila o projeto dentro de um contêiner Docker para a arquitetura alvo
+      #    Isso simplifica a instalação de dependências e garante o ambiente correto.
+      - name: Build dentro do contêiner Docker
+        run: |
+          docker run --rm --platform ${{ matrix.platform }} \
+            -v "${{ github.workspace }}":/work -w /work \
+            ubuntu:22.04 \
+            /bin/bash -c '
+              set -e
+              echo "Iniciando build para ${{ matrix.platform }}"
+
+              # Instala dependências
+              apt-get update
+              apt-get install -y build-essential cmake pkg-config liblua5.4-dev libcurl4-openssl-dev nlohmann-json3-dev git
+
+              # Configura e compila o projeto
+              cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+              cmake --build build --parallel
+
+              echo "Build concluído com sucesso!"
+            '
+      
+      # 4. Salva os artefatos de build com um nome específico da arquitetura
+      - name: Upload dos artefatos de build (${{ matrix.arch }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitph-build-artifacts-${{ matrix.arch }}
+          path: |
+            build/bin/
+            src/plugins/
+            LICENSE
+
+  # Job de release que só executa quando uma tag é criada
+  release:
+    name: Criar Release
+    needs: build # Depende do sucesso de TODOS os jobs da matriz de build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      # 1. Clona o repositório
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      # 2. Baixa TODOS os artefatos compilados pelos jobs de build
+      #    A action irá criar um diretório para cada artefato.
+      - name: Download de todos os artefatos de build
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      # 3. Empacota os arquivos para cada arquitetura e prepara para a release
+      - name: Empacotar para Release
+        run: |
+          set -e
+          VERSION=${{ github.ref_name }}
+          mkdir -p release_packages
+
+          # Itera sobre cada diretório de artefato baixado (ex: artifacts/gitph-build-artifacts-amd64/)
+          for ARTIFACT_DIR in artifacts/gitph-build-artifacts-*/; do
+            # Extrai a arquitetura do nome do diretório
+            ARCH=$(basename "$ARTIFACT_DIR" | sed 's/gitph-build-artifacts-//')
+            
+            # Define o nome do pacote final
+            RELEASE_NAME="gitph-${VERSION}-linux-${ARCH}"
+            PACKAGE_DIR="release_packages/${RELEASE_NAME}"
+            
+            echo "Empacotando para a arquitetura: ${ARCH}"
+
+            # Cria a estrutura de diretórios final
+            mkdir -p "${PACKAGE_DIR}/modules"
+            
+            # Copia os arquivos para a estrutura final
+            cp -r "${ARTIFACT_DIR}/bin/"* "${PACKAGE_DIR}/"
+            # Verifica se existem plugins antes de copiar
+            if [ -d "${ARTIFACT_DIR}/plugins" ] && [ "$(ls -A ${ARTIFACT_DIR}/plugins)" ]; then
+              cp -r "${ARTIFACT_DIR}/plugins/"* "${PACKAGE_DIR}/modules/"
+            fi
+            cp "${ARTIFACT_DIR}/LICENSE" "${PACKAGE_DIR}/"
+            
+            # Tira informações de debug dos binários para reduzir tamanho
+            echo "Removendo símbolos de debug..."
+            strip --strip-unneeded "${PACKAGE_DIR}/gitph"
+            # Usa 'find' para tratar o caso de não haver módulos .so
+            find "${PACKAGE_DIR}/modules" -type f -name "*.so" -exec strip --strip-unneeded {} + 2>/dev/null || true
+
+            # Cria o arquivo .tar.gz
+            echo "Criando o pacote ${RELEASE_NAME}.tar.gz"
+            (cd release_packages && tar -czf "${RELEASE_NAME}.tar.gz" "${RELEASE_NAME}")
+          done
+
+      # 4. Cria a Release no GitHub e faz o upload de TODOS os pacotes .tar.gz
+      - name: Publicar Release no GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          # O wildcard (*) garante que todos os pacotes de todas as arquiteturas sejam enviados
+          files: release_packages/*.tar.gz
+          generate_release_notes: true
