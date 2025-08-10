@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Pedro Henrique
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
 # Cargo.toml - Rust project manifest for the git_ops module.
 #
 # This file configures the Rust build for the `git_ops` module. It defines
@@ -18,7 +18,7 @@
 name = "git_ops"
 version = "0.1.0"
 edition = "2021"
-authors = ["Pedro Henrique <pedro.garcia@vytruve.org>"]
+authors = ["Pedro Henrique / phkaiser13 <pedro.garcia@vytruve.org>"]
 description = "A gitph module for fundamental Git operations."
 
 [lib]

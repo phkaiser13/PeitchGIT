@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * utils.c - Implementation of the common C utilities library.
  *
  * This file provides the concrete implementations for the functions declared

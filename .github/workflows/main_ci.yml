@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Pedro Henrique
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
 # main_ci.yml - Workflow de Integração Contínua para o projeto gitph.
 #
 # Este workflow automatiza o processo de build e release da aplicação.

@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
 * cli_parser.h - Interface for the Command Line Interface Parser and Dispatcher.
  *
  * This header defines the public API for the CLI handling module. This module

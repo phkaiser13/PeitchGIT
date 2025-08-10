@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Pedro Henrique
+// Copyright (C) 2025 Pedro Henrique / phkaiser13
 // rpc_data.proto - Protocol Buffers schema for inter-module data exchange.
 //
 // This file defines the formal data contract for complex data structures that

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (C) 2025 Pedro Henrique
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
 # build.sh - Build script for gitph on POSIX systems.
 #
 # This script orchestrates the build process by calling CMake to configure

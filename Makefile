@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Pedro Henrique
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
 # Makefile - Um wrapper conveniente e amigável para o CMake.
 #
 # Este Makefile não contém lógica de compilação. Ele serve como uma fachada,

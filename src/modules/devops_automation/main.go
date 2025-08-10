@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * main.go - Unified FFI bridge and dispatcher for the devops_automation module.
  *
  * This file is the single entry point for the C core to interact with all

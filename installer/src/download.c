@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * download.c - A robust file downloader using libcurl.
  *
  * This file provides a focused and reliable file download functionality,

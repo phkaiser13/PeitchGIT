@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * lua_bridge.h - Interface for the Lua scripting engine bridge.
  *
  * This header defines the public API for interacting with the embedded Lua

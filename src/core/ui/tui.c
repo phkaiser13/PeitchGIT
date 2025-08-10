@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * tui.c - Implementation of the Text-based User Interface.
  *
  * This file contains the logic for the interactive menu of the application.

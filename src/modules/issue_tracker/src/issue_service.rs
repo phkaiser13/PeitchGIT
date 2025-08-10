@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * issue_service.rs - Abstracted business logic for issue tracker services.
  *
  * This file implements a sophisticated, trait-based architecture for interacting

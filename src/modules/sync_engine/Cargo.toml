@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Pedro Henrique
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
 # Cargo.toml - Rust project manifest for the sync_engine module.
 #
 # This file configures the build for the most complex module in our system:
@@ -21,7 +21,7 @@
 name = "sync_engine"
 version = "0.1.0"
 edition = "2021"
-authors = ["Pedro Henrique <seu-email@exemplo.com>"]
+authors = ["Pedro Henrique / phkaiser13 <seu-email@exemplo.com>"]
 description = "A gitph module for bi-directional repository synchronization."
 
 [lib]

@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * utils.h - Interface for the common C utilities library.
  *
  * This header defines the public API for `libcommon`, a foundational library

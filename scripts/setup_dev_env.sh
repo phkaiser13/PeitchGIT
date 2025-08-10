@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (C) 2025 Pedro Henrique
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
 # setup_dev_env.sh - Attempts to install development dependencies.
 #
 # This script detects the package manager on common POSIX systems and tries

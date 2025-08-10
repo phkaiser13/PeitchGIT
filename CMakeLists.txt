@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Pedro Henrique
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
 # CMakeLists.txt - Orquestração de compilação para o projeto poliglota gitph.
 #
 # Este script CMake é o sistema nervoso central do nosso processo de build.

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (C) 2025 Pedro Henrique
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
 # check_deps.sh - Verifies that all necessary build dependencies are installed.
 #
 # This script checks for the presence of compilers and tools required

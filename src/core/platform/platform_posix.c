@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * platform_posix.c - POSIX-specific implementation of the platform layer.
  *
  * This file provides the concrete implementation of the functions declared in

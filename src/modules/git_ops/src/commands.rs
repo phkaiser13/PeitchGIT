@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * commands.rs - Business logic for git_ops module commands.
  *
  * This module implements the high-level logic for the commands supported by

@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * tui.h - Interface for the Text-based User Interface.
  *
  * This header defines the functions for managing the interactive console

@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * main.c - Main entry point for the gitph application.
  *
  * This file contains the main function, which serves as the orchestrator for
@@ -44,7 +44,7 @@
  */
 static void print_version(void) {
     printf("gitph version %s\n", GITPH_VERSION);
-    printf("Copyright (C) 2025 Pedro Henrique\n");
+    printf("Copyright (C) 2025 Pedro Henrique / phkaiser13\n");
     printf("License: GPL-3.0-or-later\n");
 }
 

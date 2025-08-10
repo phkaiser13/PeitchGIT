@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * platform.h - Platform Abstraction Layer Interface.
  *
  * This header defines a consistent interface for interacting with

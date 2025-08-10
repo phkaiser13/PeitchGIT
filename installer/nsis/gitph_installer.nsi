@@ -1,4 +1,4 @@
-; Copyright (C) 2025 Pedro Henrique
+; Copyright (C) 2025 Pedro Henrique / phkaiser13
 ; gitph_installer.nsi - NSIS script for creating a Windows installer.
 ;
 ; This script orchestrates the creation of a user-friendly, native Windows

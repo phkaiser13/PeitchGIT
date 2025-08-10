@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * parser.go - YAML workflow parser for the ci_cd_manager module.
  *
  * This Go program is designed to be compiled as a C shared library. Its sole

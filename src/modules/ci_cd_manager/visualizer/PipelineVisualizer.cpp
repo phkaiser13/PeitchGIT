@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * PipelineVisualizer.cpp - Implementation of the C++ CI/CD Pipeline Visualizer.
  *
  * This file implements the logic for parsing a JSON data stream and rendering

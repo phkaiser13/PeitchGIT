@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * lib.rs - FFI bridge and async entry point for the issue_tracker module.
  *
  * This file serves as the FFI layer, bridging the synchronous C world with

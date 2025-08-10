@@ -1,4 +1,4 @@
-// /* Copyright (C) 2025 Pedro Henrique
+// /* Copyright (C) 2025 Pedro Henrique / phkaiser13
 //         * go.mod - Go module definition for the api_client module.
 //         *
 //         * This file initializes a Go module. It serves two primary purposes:

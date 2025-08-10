@@ -1,4 +1,4 @@
-// /* Copyright (C) 2025 Pedro Henrique
+// /* Copyright (C) 2025 Pedro Henrique / phkaiser13
 //         * go.mod - Go module definition for the ci_cd_manager module.
 //         *
 //         * This file initializes a new, independent Go module dedicated to parsing

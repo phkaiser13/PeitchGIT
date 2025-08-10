@@ -1,4 +1,4 @@
-// /* Copyright (C) 2025 Pedro Henrique
+// /* Copyright (C) 2025 Pedro Henrique / phkaiser13
 //         * go.mod - Go module definition for the devops_automation module.
 //         *
 //         * This file establishes a new, self-contained Go module for handling DevOps

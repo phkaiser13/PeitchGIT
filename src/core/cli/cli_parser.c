@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * cli_parser.c - Implementation of the CLI Parser and Dispatcher.
  *
  * This file implements the logic for routing commands to their respective

@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * PipelineVisualizer.h - Interface for the C++ CI/CD Pipeline Visualizer.
  *
  * This header defines the public interface for the PipelineVisualizer class.

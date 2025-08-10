@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * installer_main.c - Main logic for the gitph installer.
  *
  * This program is the user's first interaction with gitph. It orchestrates

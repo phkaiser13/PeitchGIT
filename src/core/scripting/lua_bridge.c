@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * lua_bridge.c - Implementation of the Lua scripting engine bridge.
  *
  * This file implements the bridge between the C core and the Lua scripting

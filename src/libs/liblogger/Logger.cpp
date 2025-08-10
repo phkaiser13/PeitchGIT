@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * Logger.cpp - Implementation of the advanced C++ logger.
  *
  * This file implements the singleton Logger class and its C-compatible wrapper

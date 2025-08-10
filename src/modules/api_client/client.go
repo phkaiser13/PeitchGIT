@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * client.go - FFI bridge and entry point for the api_client Go module.
  *
  * This file is the core of the C-Go interaction for the api_client module.

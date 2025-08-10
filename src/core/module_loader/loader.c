@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * loader.c - Implementation of the dynamic module loader.
  *
  * This file contains the core logic for discovering, loading, validating, and

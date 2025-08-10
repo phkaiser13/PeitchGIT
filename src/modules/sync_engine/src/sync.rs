@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * sync.rs - Core state machine and logic for the synchronization engine.
  *
  * This file contains the high-stakes logic for performing a stateful,

@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * lib.rs - FFI bridge and entry point for the git_ops Rust module.
  *
  * This file serves as the main library entry point and the Foreign Function

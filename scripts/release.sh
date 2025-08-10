@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (C) 2025 Pedro Henrique
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
 # release.sh - Creates a distributable release archive of gitph.
 #
 # This script automates the process of building a release version, packaging

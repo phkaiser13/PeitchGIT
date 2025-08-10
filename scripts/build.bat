@@ -1,5 +1,5 @@
 @echo off
-REM Copyright (C) 2025 Pedro Henrique
+REM Copyright (C) 2025 Pedro Henrique / phkaiser13
 REM build.bat - Build script for gitph on Windows.
 REM
 REM This script orchestrates the build process by calling CMake to configure

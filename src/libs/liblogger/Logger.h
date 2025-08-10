@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * Logger.h - Advanced C++ logger with a C-compatible interface.
  *
  * This header defines a singleton Logger class designed for robust, thread-safe

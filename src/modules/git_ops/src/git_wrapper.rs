@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * git_wrapper.rs - A safe wrapper for executing Git commands.
  *
  * This module provides a clean and safe interface for interacting with the

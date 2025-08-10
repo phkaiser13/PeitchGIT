@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * config_manager.h - Interface for the application configuration manager.
  *
  * This header file defines the public API for the configuration manager module.

@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
 * main.h - Header for the main entry point of the gitph application.
  *
  * This header file corresponds to `main.c`. In a typical C project, the main

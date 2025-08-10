@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * github_handler.go - Business logic for GitHub API interactions.
  *
  * This file defines a generic ApiProvider interface and its concrete

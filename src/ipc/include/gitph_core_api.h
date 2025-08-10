@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * gitph_core_api.h - Core API contract for gitph modules.
  *
  * This header file defines the essential interface that every dynamically loaded

@@ -1,4 +1,4 @@
-/* Copyright (C) 2025 Pedro Henrique
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * config_manager.c - Implementation of the application configuration manager.
  *
  * This file implements the configuration management functionality using a hash
