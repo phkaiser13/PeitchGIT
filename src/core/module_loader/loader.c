@@ -23,6 +23,7 @@
 #include "libs/liblogger/Logger.h"  // For logging loading process
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 // Platform-specific includes for dynamic loading and directory traversal
 #ifdef PLATFORM_WINDOWS
@@ -81,7 +82,7 @@ static void free_loaded_module(LoadedModule* module) {
  * @see loader.h
  */
 GitphStatus modules_load(const char* directory_path) {
-    char log_buffer[512];
+char log_buffer[2048]; // was 512
     snprintf(log_buffer, sizeof(log_buffer), "Scanning for modules in: %s", directory_path);
     logger_log(LOG_LEVEL_INFO, "LOADER", log_buffer);
 

@@ -22,6 +22,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // Core module headers - these will be created in subsequent steps
 #include "platform/platform.h"      // For platform-specific initializations

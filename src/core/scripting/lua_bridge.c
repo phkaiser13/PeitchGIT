@@ -17,11 +17,13 @@
 #include "libs/liblogger/Logger.h"
 #include "platform/platform.h"
 #include "cli/cli_parser.h"
+#include <string.h>
 
 // Lua headers
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
+
 
 // Platform-specific includes for directory traversal
 #ifdef PLATFORM_WINDOWS
