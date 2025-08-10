@@ -1,6 +1,6 @@
 ---
 name: "Feature request"
-about: "Propose a new feature or improvement for gitph."
+description: "Propose a new feature or improvement for gitph."
 title: "[FEATURE] "
 labels: ["enhancement", "needs-discussion"]
 assignees: []
@@ -12,6 +12,7 @@ body:
       label: "Summary"
       description: "One-line description of the requested feature."
       placeholder: "Short description (e.g. `support remote templates for hooks`)"
+    validations:
       required: true
 
   - type: textarea
