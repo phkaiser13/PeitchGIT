@@ -1,149 +1,199 @@
+<div align="center">
+  <br />
+  <h1>📖 Ph Git (Peitch Git)</h1>
+  <strong>The Polyglot Assistant for Git & DevOps Workflows</strong>
+  <br />
+  <br />
+  <p>
+    A modern, extensible, and high-performance command-line tool designed to unify and streamline your development lifecycle.
+  </p>
+  <img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg" alt="license" />
+  <img src="https://img.shields.io/github/v/release/phkaiser13/peitchgit" alt="release" />
+  <img src="https://img.shields.io/github/actions/workflow/status/phkaiser13/peitchgit/main_ci.yml?branch=main" alt="build status" />
+  <img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg" alt="contributions welcome" />
+</div>
 
-# 📖 Ph Git (peight git) — The Polyglot Git Assistant
 
-**ph GIt** is a modern and extensible command-line interface (CLI) tool designed to streamline and supercharge your Git and DevOps workflows. Built on a unique **polyglot architecture**, it leverages the raw performance of **C/C++** and **Rust**, the concurrency of **Go**, and the scripting flexibility of **Lua** to deliver a high-performance, customizable experience.
+-----
 
----
+**`gitph`** reimagines the developer's command line by providing a single, cohesive interface for Git, DevOps tooling, and workflow automation. Built on a unique **polyglot architecture**, it acts as a lightweight orchestrator, leveraging the strengths of C, C++, Rust, and Go to deliver unparalleled performance and safety.
+
+With a dual CLI and interactive TUI, and a powerful Lua scripting engine for unlimited extensibility, `gitph` is designed to be the last workflow tool you'll ever need.
+
+### Core Architecture: The Best Tool for the Job
+
+`gitph`'s foundation is a lean **C Core** that dynamically loads and orchestrates a suite of modules. This allows each component to be written in the language best suited for its task, ensuring optimal performance, safety, and development velocity.
+
+```
++------------------------------------------------------+
+|                 User (CLI / TUI)                     |
++--------------------------+---------------------------+
+                           |
+                           v
++--------------------------+---------------------------+
+|                  C CORE (Orchestrator)               |
+|  (Module Loader, CLI Parser, Lua Bridge, Config Mgr) |
++--------------------------+---------------------------+
+                           | (Loads Modules via C FFI)
+                           v
++------------+-------------+-------------+-------------+
+| C++ Module | Rust Modules| Go Modules  | Lua Plugins |
+|------------|-------------|-------------|-------------|
+| - Visualizer | - Git Ops   | - API Client| - Aliases   |
+| - Logger     | - Sync Engine | - DevOps    | - Hooks     |
+|            | - Issue Tracker | - CI Parser |             |
++------------+-------------+-------------+-------------+
+```
 
 ## ✨ Key Features
 
-* **Dual Interface:** Use `gitph` directly via CLI for scripting or switch to **interactive mode (TUI)** for a guided, menu-driven experience.
-* **Simplified Git Commands:** Execute complex operations using smart aliases like `gitph SND`, which automatically stages, commits, and pushes your changes.
-* **Advanced Sync Engine:** A powerful bidirectional sync engine that manipulates the Git repository at a low level, enabling operations beyond standard Git CLI capabilities.
-* **DevOps Automation:** Wrap tools like **Terraform** and **Vault** for seamless integration and secure IaC workflows.
-* **Issue Tracking Integration:** View GitHub issue details directly from your terminal.
-* **CI/CD Workflow Viewer:** Parse CI workflows (e.g., GitHub Actions) and visually explore pipelines from the terminal.
-* **Highly Extensible:** Add your own aliases and automation hooks using embedded **Lua scripting** with minimal effort.
+  * ⚡️ **Unified Workflow Automation**: Execute complex, multi-step operations like staging, committing, and pushing with a single, intelligent command (`gitph SND`).
+  * ⚙️ **Powerful Bi-Directional Sync**: Go beyond standard Git with a stateful synchronization engine that uses low-level repository analysis to manage complex mirroring and update workflows safely.
+  * 🛠️ **Seamless DevOps Integration**: Interact with essential tools like Terraform and Vault directly through the `gitph` interface, with support for both interactive streaming and data capture.
+  * 🔌 **Deep Extensibility with Lua**: Don't just use `gitph`—remake it. Add custom aliases, automate tasks, and enforce team policies with powerful, easy-to-write Lua scripts and event hooks.
+  * 📡 **Intelligent API Clients**: Fetch data from GitHub, GitLab, and other services with asynchronous, non-blocking clients that keep the UI responsive.
+  * 🖥️ **Dual CLI & Interactive TUI**: Whether you're a power user scripting in the shell or a newcomer exploring features, `gitph` provides both a full-featured CLI and a discoverable, menu-driven TUI.
 
----
+## The `gitph` Philosophy
 
-## 🛠️ Polyglot Architecture
+Modern development involves more than just Git. It's a web of CI/CD pipelines, infrastructure-as-code, issue trackers, and provider APIs. `gitph` was born from the idea that these tools shouldn't require context-switching. By acting as a central orchestrator, `gitph` unifies these disparate workflows under one roof.
 
-`gitph` is a real-world case study in polyglot software design. Each language is chosen for its strengths in specific domains, resulting in a modular, scalable, and efficient system.
+Our polyglot approach is a deliberate engineering choice to ensure excellence at every level:
 
-| Language     |                                             Icon                                             | Role                                                                                                                                                                              |
-| ------------ | :------------------------------------------------------------------------------------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **C**        |       <img src="https://img.icons8.com/color/48/000000/c-programming.png" width="24"/>       | **The Orchestrator.** Acts as the core of the application, offering low-level control, dynamic module loading, and lifecycle orchestration with maximum portability.              |
-| **C++**      |      <img src="https://img.icons8.com/color/48/000000/c-plus-plus-logo.png" width="24"/>     | **High-Performance Libraries.** Powers components such as the thread-safe logger and CI/CD visualizer, utilizing modern C++ features and RAII for robustness.                     |
-| **Rust**     | <img src="https://img.icons8.com/color/48/000000/rust-programming-language.png" width="24"/> | **Memory Safety & Critical Performance.** Used for critical modules like the `sync_engine` and async `issue_tracker` client, where safety and speed are non-negotiable.           |
-| **Go**       |           <img src="https://img.icons8.com/color/48/000000/golang.png" width="24"/>          | **Concurrency Made Simple.** Ideal for API clients and CLI wrappers such as `api_client` and `devops_automation`, thanks to Go’s elegant concurrency model and rapid development. |
-| **Lua**      |        <img src="https://img.icons8.com/color/48/000000/lua-language.png" width="24"/>       | **User-Level Scripting.** Embedded as a scripting engine to enable user-defined hooks, custom aliases, and personalized automation with minimal overhead.                         |
-| **Protobuf** |        <img src="https://img.icons8.com/color/48/000000/google-logo.png" width="24"/>        | **Language-Agnostic Contracts.** Facilitates efficient communication between Go and C++ components through well-defined binary data structures.                                   |
-
----
+| Language | Role & Rationale |
+| :--- | :--- |
+| **C** | **The Orchestrator.** Provides low-level control, dynamic module loading, and maximum portability for the application's core lifecycle. |
+| **C++** | **High-Performance Libraries.** Powers components like the thread-safe logger and CI/CD visualizer, using modern C++ features for robustness and safe resource management (RAII). |
+| **Rust** | **Memory Safety & Critical Performance.** The choice for mission-critical modules like the `sync_engine` and `issue_tracker`, where correctness, safety, and speed are non-negotiable. |
+| **Go** | **Concurrency Made Simple.** Perfect for network-bound tasks and CLI wrappers like the `api_client` and `devops_automation` modules, thanks to Go's elegant concurrency model and rich standard library. |
+| **Lua** | **User-Level Scripting.** Embedded to empower users with the ability to define custom hooks, aliases, and personalized workflows without needing to recompile the application. |
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 
-To build `gitph`, make sure the following dependencies are installed:
+Ensure the following dependencies are installed. We provide helper scripts to verify and install them.
 
-* `gcc`/`g++` (or `clang`)
-* `cmake` (version 3.15+)
-* `go` (version 1.18+)
-* `rustc` and `cargo`
-* `liblua5.4-dev` (Lua headers)
-* `libcurl4-openssl-dev` (C URL library headers)
+  * `gcc`/`g++` (or `clang`)
+  * `cmake` (version 3.15+)
+  * `go` (version 1.18+)
+  * `rustc` and `cargo`
+  * Lua 5.4 and libcurl development headers
 
-On Debian/Ubuntu systems:
+**Automated Setup (Linux & macOS):**
 
 ```bash
-sudo apt-get install build-essential cmake golang rustc liblua5.4-dev libcurl4-openssl-dev
+./scripts/setup_dev_env.sh
 ```
 
----
+This script will detect your package manager and attempt to install all required dependencies.
 
 ### Build Instructions
 
-`gitph` uses **CMake** as its primary build system, with a convenience `Makefile`.
+The project uses a `Makefile` as a convenient wrapper around its CMake build system.
 
-1. **Clone the repository:**
+1.  **Clone the repository:**
 
-```bash
-git clone https://github.com/your-username/gitph.git
-cd gitph
-```
+    ```bash
+    git clone https://github.com/phkaiser13/peitchgit.git
+    cd peitchgit
+    ```
 
-2. **Build the project:**
+2.  **Build the project:**
 
-Quick build:
+    ```bash
+    make
+    ```
 
-```bash
-make
-```
+    The main executable will be located at `build/bin/gitph`, with all modules in `build/bin/modules/`.
 
-Step-by-step:
+## 💻 Usage Showcase
 
-```bash
-make configure  # Run once to generate build files
-make build
-```
+### The "One-Shot" Send
 
-3. **Post-build:**
-
-* The main executable will be located in `build/bin/gitph`.
-* All dynamic modules (`.so` or `.dll`) will be in `build/bin/modules/`.
-
----
-
-## 💻 Usage
-
-### Command-Line Mode (CLI)
-
-Execute commands directly for scripting and automation:
+Tired of `git add .`, `git commit -m "..."`, `git push`? Automate it.
 
 ```bash
-# View repository status
-./build/bin/gitph status
-
 # Stage, commit, and push all changes in one command
 ./build/bin/gitph SND
-
-# Fetch issue details from GitHub
-./build/bin/gitph issue-get <user/repo> <issue_id>
 ```
 
-### Interactive Mode (TUI)
+`gitph` handles the entire sequence, even detecting if there's nothing to commit.
 
-Run `gitph` with no arguments to launch the terminal UI:
+### Interactive Mode
+
+Simply run `gitph` with no arguments to enter a menu-driven TUI that lists all available commands from all loaded modules.
 
 ```bash
 ./build/bin/gitph
 ```
 
----
+### DevOps Integration
 
-## 🔌 Lua-Based Extensibility
+Read a secret from Vault without wrestling with JSON output.
 
-You can extend `gitph` by adding `.lua` scripts in the `src/plugins/` directory.
+```bash
+# Reads the secret and displays it as clean key-value pairs
+./build/bin/gitph vault-read secret/data/prod/api-keys
+```
 
-**Example: `src/plugins/custom_aliases.lua`**
+### Issue Tracking
+
+Quickly check an issue's status directly from your terminal.
+
+```bash
+./build/bin/gitph issue-get "golang/go" "58532"
+```
+
+## 🔌 Extending with Lua
+
+Create your own commands and hooks by adding `.lua` files to the `src/plugins/` directory.
+
+**Example 1: Custom Aliases**
+
+Create `src/plugins/my_aliases.lua`:
 
 ```lua
--- Define a shorthand 'st' for the 'status' command
-if gitph.register_alias then
-  gitph.register_alias("st", "status")
-  gitph.log("INFO", "Alias 'st' for 'status' registered!")
+-- Create a short alias 'st' for the 'status' command
+gitph.register_alias("st", "status")
+
+-- Log to the main gitph log file to confirm loading
+gitph.log("INFO", "Loaded custom alias 'st'.")
+```
+
+Now, `gitph st` works just like `gitph status`\!
+
+**Example 2: Enforce Team Policy with a Hook**
+
+Create `src/plugins/policy.lua` to prevent direct pushes to the `main` branch:
+
+```lua
+-- This global function is automatically called by gitph before a push
+function on_pre_push(remote, branch)
+    if branch == "main" then
+        print("[POLICY] Direct pushes to the main branch are forbidden.")
+        print("Please use a pull request.")
+        return false -- This cancels the push operation
+    end
+    -- Allow pushes to any other branch
+    return true
 end
 ```
 
----
+This powerful hook system allows you to integrate linters, run tests, or enforce any workflow rule before code leaves your machine.
 
 ## 🤝 Contributing
 
-We welcome contributions! To get involved:
+Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
 
-1. Fork the repository.
-2. Create a feature branch: `git checkout -b feature/YourFeature`.
-3. Commit your changes: `git commit -m 'Add YourFeature'`.
-4. Push to your branch: `git push origin feature/YourFeature`.
-5. Open a pull request.
+1.  Fork the Project
+2.  Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3.  Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4.  Push to the Branch (`git push origin feature/AmazingFeature`)
+5.  Open a Pull Request
 
----
+Please feel free to open an issue for any bugs or feature requests using our templates.
 
 ## 📜 License
 
-This project is licensed under the **GNU General Public License v3.0**.
-See the [LICENSE](./LICENSE) file for full details.
-
----
+Distributed under the GNU General Public License v3.0 or later. See `LICENSE` for more information.
