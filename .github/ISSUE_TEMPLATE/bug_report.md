@@ -1,33 +1,100 @@
 ---
-name: "Relatório de Bug"
-about: Crie um relatório para nos ajudar a melhorar o gitph
+name: "Bug report"
+about: "Create a clear, actionable report to help us debug and fix issues in gitph."
 title: "[BUG] "
-labels: bug, triage
-assignees: ''
+labels: ["bug", "triage"]
+assignees: []
+---
+
+# Bug Report
+
+**Summary**
+A one-line summary of the bug.
 
 ---
 
-**Descreva o bug**
-Uma descrição clara e concisa do que é o bug.
+## Steps to reproduce
+Please provide the minimal, precise steps required to reproduce the issue.  
+1. Step one (e.g., open repository `X`)  
+2. Run: `gitph <command> <args>`  
+3. Observe the error
 
-**Para Reproduzir**
-Passos para reproduzir o comportamento:
-1. Vá para '...'
-2. Execute o comando '....' com os seguintes argumentos '....'
-3. Role para baixo até '....'
-4. Veja o erro
+> If possible, include a minimal repository, a small script, or exact commands that reproduce the problem.
 
-**Comportamento Esperado**
-Uma descrição clara e concisa do que esperava que acontecesse.
+---
 
-**Screenshots (Opcional)**
-Se aplicável, adicione screenshots para ajudar a explicar o seu problema.
+## Expected behavior
+Describe what you expected to happen.
 
-**Ambiente de Trabalho:**
-Por favor, complete os seguintes detalhes:
-- **Sistema Operativo:** [e.g., Windows 11, Ubuntu 22.04, macOS Sonoma]
-- **Versão do `gitph`:** [e.g., 1.0.0]
-- **Terminal/Shell:** [e.g., PowerShell, bash, zsh]
+---
 
-**Contexto Adicional**
-Adicione qualquer outro contexto sobre o problema aqui.
+## Actual behavior
+Describe what actually happened, including error messages, stack traces, and exit codes. Paste full output inside a fenced code block:
+
+```
+
+\<copy-paste error / stack trace here>
+
+```
+
+---
+
+## Reproduction example / Minimal test case
+If applicable, include a short reproducible example (commands, small code snippet, repository link).
+
+---
+
+## Environment
+Please paste output or fill in the fields below:
+
+- **OS:** (e.g., `Ubuntu 22.04`, `Windows 11`, `macOS 14.5`)  
+- **gitph version:** (e.g., `gitph --version` output)  
+- **Installed from:** (e.g., Homebrew, apt, pip, source, release tarball)  
+- **Shell / Terminal:** (e.g., `bash`, `zsh`, `PowerShell`)  
+- **Architecture:** (e.g., `x86_64`, `arm64`)
+
+Helpful commands you can paste here:
+```
+
+gitph --version
+uname -a
+
+```
+
+---
+
+## Logs / Debug output
+If available, run the command with debug logging and paste the output (or attach logs as files). Example:
+```
+
+gitph <command> --debug
+
+```
+
+---
+
+## Screenshots / GIFs (optional)
+Attach screenshots or a short GIF showing the issue.
+
+---
+
+## Severity / Impact
+Select one (helps prioritization):
+- [ ] Blocker — prevents using gitph entirely
+- [ ] Major — important functionality broken / no reasonable workaround
+- [ ] Minor — partial loss of functionality; workaround exists
+- [ ] Trivial — cosmetic or very small issue
+
+---
+
+## Workarounds (if any)
+Describe any temporary fixes or steps that mitigate the issue.
+
+---
+
+## Additional context
+Add any other context, related issues, or notes (e.g., when it started, whether it affects multiple machines/users).
+
+---
+
+**Security / Sensitive data note:** please redact any secrets, API tokens, credentials, or personal data. If logs contain sensitive information, attach a sanitized file instead.
