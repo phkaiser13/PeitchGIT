@@ -1,16 +1,13 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
 # Ubuntu-Like_ci.yml - Workflow de Integração Contínua para o projeto gitph.
 #
-# Este workflow automatiza o processo de build e release da aplicação.
-# Ele é configurado para compilar e empacotar a aplicação para múltiplas
-# arquiteturas em sistemas Debian/Ubuntu e derivados (Ubuntu-like).
-# Arquiteturas suportadas: x86_64 (amd64), aarch64 (arm64), e i386.
+# Este workflow automatiza o processo de build e release da aplicação em múltiplas
+# arquiteturas para sistemas baseados em Debian/Ubuntu.
 #
 # SPDX-License-Identifier: Apache-2.0
 
-name: Build e Release Multi-Arch do gitph
+name: Build e Release Multi-Arquitetura Ubuntu-like (Linux)
 
-# Gatilhos do workflow:
 on:
   push:
     branches: [ "main" ]
@@ -20,163 +17,131 @@ on:
     branches: [ "main" ]
 
 jobs:
-  # Job de build que agora usa uma matriz para compilar para várias arquiteturas
   build:
-    # O nome do job agora é dinâmico para refletir a arquitetura
-    name: Build para ${{ matrix.name }}
-    # Usamos sempre o runner x86_64 e emulamos as outras arquiteturas com QEMU
+    name: Build em ${{ matrix.name }}
     runs-on: ubuntu-latest
-
-    # ESTRATÉGIA: Define a matriz de build para diferentes arquiteturas
+    
+    # A matriz define as diferentes configurações para cada arquitetura
     strategy:
-      fail-fast: false # Garante que todos os jobs da matriz rodem, mesmo que um falhe
+      fail-fast: false
       matrix:
         include:
-          - name: 'Debian/Ubuntu (x86_64)'
-            arch: 'x86_64'
-            deb_arch: 'amd64'
-          - name: 'Debian/Ubuntu (aarch64)'
-            arch: 'aarch64'
-            deb_arch: 'arm64'
-          - name: 'Debian/Ubuntu (i386)'
-            arch: 'i686' # 'uname -m' para 32-bit costuma ser i686
-            deb_arch: 'i386'
+          - name: "Ubuntu (x86_64)"
+            arch: "amd64"
+            platform: "x86_64-linux-gnu"
+          - name: "Ubuntu (aarch64)"
+            arch: "arm64"
+            platform: "aarch64-linux-gnu"
+          - name: "Ubuntu (i386)"
+            arch: "i386"
+            platform: "i686-linux-gnu" # O nome da toolchain para i386 pode ser i686
 
     steps:
-      # 1. Clona o repositório
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      # 2. Configura o QEMU para permitir a emulação de outras arquiteturas
-      #    Essencial para compilar para ARM e i386 em um runner x86_64
-      - name: Setup QEMU
+      # Configura o QEMU para permitir a execução de binários de outras arquiteturas
+      - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      # 3. Instala as dependências de sistema para cross-compilation
-      - name: Instalar dependências de cross-compilation
+      # Instala as dependências de sistema para a arquitetura alvo
+      - name: Instalar dependências de cross-compilação
         run: |
-          # Adiciona a arquitetura de destino ao dpkg (se não for a nativa)
-          if [ "${{ matrix.deb_arch }}" != "amd64" ]; then
-            sudo dpkg --add-architecture ${{ matrix.deb_arch }}
-          fi
           sudo apt-get update
-          # Instala as ferramentas de build (nativas) e as bibliotecas (para a arquitetura de destino)
-          sudo apt-get install -y build-essential cmake pkg-config \
-            liblua5.4-dev:${{ matrix.deb_arch }} \
-            libcurl4-openssl-dev:${{ matrix.deb_arch }} \
-            nlohmann-json3-dev
+          # Adiciona a arquitetura estrangeira ao dpkg
+          sudo dpkg --add-architecture ${{ matrix.arch }}
+          # Instala as ferramentas de compilação base e as de cross-compilação
+          sudo apt-get install -y build-essential cmake pkg-config gcc-${{ matrix.platform }} g++-${{ matrix.platform }}
+          # Instala as bibliotecas para a arquitetura alvo
+          sudo apt-get install -y liblua5.4-dev:${{ matrix.arch }} libcurl4-openssl-dev:${{ matrix.arch }} nlohmann-json3-dev
 
-      # 4. Configura o ambiente Go
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      # 5. Configura o ambiente Rust (com cache)
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          # Adiciona o alvo de compilação para Rust (se for cross-compiling)
-          targets: ${{ matrix.arch }}-unknown-linux-gnu
+          # Adiciona o target para cross-compilação do Rust
+          targets: ${{ matrix.platform }}
       - uses: Swatinem/rust-cache@v2
 
-      # 6. Configura e compila o projeto usando CMake
-      #    Para cross-compilation, precisamos informar ao CMake qual toolchain usar.
-      - name: Configurar CMake
+      # Cria um arquivo de toolchain para o CMake para forçar a cross-compilação
+      - name: Criar arquivo de Toolchain do CMake
         run: |
-          # Para cross-compiling, definimos o toolchain file do CMake
-          if [ "${{ matrix.deb_arch }}" != "amd64" ]; then
-            TOOLCHAIN_FLAGS="-DCMAKE_TOOLCHAIN_FILE=../cmake/cross-${{ matrix.arch }}.cmake"
-          fi
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release $TOOLCHAIN_FLAGS
+          echo "set(CMAKE_SYSTEM_NAME Linux)" > toolchain.cmake
+          echo "set(CMAKE_SYSTEM_PROCESSOR ${{ matrix.arch }})" >> toolchain.cmake
+          echo "set(CMAKE_C_COMPILER ${{ matrix.platform }}-gcc)" >> toolchain.cmake
+          echo "set(CMAKE_CXX_COMPILER ${{ matrix.platform }}-g++)" >> toolchain.cmake
+          echo "set(CMAKE_FIND_ROOT_PATH /usr/${{ matrix.platform }})" >> toolchain.cmake
+          echo "set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)" >> toolchain.cmake
+          echo "set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)" >> toolchain.cmake
+          echo "set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)" >> toolchain.cmake
+
+      - name: Configurar CMake com Toolchain
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake
 
       - name: Compilar Projeto
         run: cmake --build build --parallel
 
-      # 7. Salva os artefatos de build, nomeando-os com a arquitetura
+      - name: Preparar artefatos para upload
+        shell: bash
+        run: |
+          ARTIFACT_DIR="artifacts"
+          mkdir -p "$ARTIFACT_DIR/modules"
+          cp build/bin/* "$ARTIFACT_DIR/"
+          cp -r src/plugins/* "$ARTIFACT_DIR/modules/"
+          cp LICENSE "$ARTIFACT_DIR/"
+
       - name: Upload dos artefatos de build
         uses: actions/upload-artifact@v4
         with:
-          # O nome do artefato inclui a arquitetura para ser único
-          name: gitph-build-artifacts-${{ matrix.arch }}
-          path: |
-            build/bin/
-            src/plugins/
-            LICENSE
+          name: gitph-build-artifacts-linux-${{ matrix.arch }}
+          path: artifacts/
 
-  # Job de release que coleta todos os artefatos e cria os pacotes
   release:
-    name: Criar Release Multi-Arch
+    name: Criar Release
     needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
-      # 1. Clona o repositório
-      - name: Checkout do código
-        uses: actions/checkout@v4
-
-      # 2. Baixa TODOS os artefatos de build de todas as arquiteturas
       - name: Download de todos os artefatos de build
         uses: actions/download-artifact@v4
         with:
-          # O path onde os artefatos (cada um em sua pasta) serão salvos
           path: artifacts/
-
-      # 3. Instala ferramentas para 'strip' de diferentes arquiteturas
-      - name: Instalar binutils para cross-stripping
-        run: sudo apt-get update && sudo apt-get install -y binutils-aarch64-linux-gnu binutils-i686-linux-gnu
-
-      # 4. Empacota os arquivos para cada arquitetura
+      
       - name: Empacotar para Release
         run: |
-          set -e # Aborta o script se qualquer comando falhar
-          VERSION=${{ github.ref_name }}
-          mkdir -p release # Pasta final para os pacotes .tar.gz
-
-          # Itera sobre cada pasta de artefato baixada (ex: artifacts/gitph-build-artifacts-x86_64)
-          for ARTIFACT_DIR in artifacts/gitph-build-artifacts-*/; do
-            # Extrai a arquitetura do nome da pasta
-            ARCH=$(basename "$ARTIFACT_DIR" | sed 's/gitph-build-artifacts-//')
-            echo "--- Empacotando para arquitetura: ${ARCH} ---"
-
+          # Loop através de cada diretório de artefato baixado
+          for DIR in artifacts/gitph-build-artifacts-linux-*; do
+            ARCH=$(basename "$DIR" | sed 's/gitph-build-artifacts-linux-//')
+            VERSION="${{ github.ref_name }}"
             RELEASE_NAME="gitph-${VERSION}-linux-${ARCH}"
-            PACKAGE_DIR="release/${RELEASE_NAME}"
             
-            # Cria a estrutura de diretórios final
-            mkdir -p "${PACKAGE_DIR}/modules"
+            echo "Empacotando $RELEASE_NAME..."
             
-            # Copia os arquivos do artefato para a estrutura final
-            cp -r "${ARTIFACT_DIR}"/bin/* "${PACKAGE_DIR}/"
-            cp -r "${ARTIFACT_DIR}"/plugins/* "${PACKAGE_DIR}/modules/"
-            cp "${ARTIFACT_DIR}"/LICENSE "${PACKAGE_DIR}/"
+            # Cria a estrutura de diretório final
+            mkdir -p "release/${RELEASE_NAME}"
+            mv "${DIR}"/* "release/${RELEASE_NAME}/"
             
-            # Define o comando 'strip' correto para a arquitetura
-            STRIP_COMMAND="strip"
-            if [ "$ARCH" == "aarch64" ]; then
-              STRIP_COMMAND="aarch64-linux-gnu-strip"
-            elif [ "$ARCH" == "i686" ]; then
-              STRIP_COMMAND="i686-linux-gnu-strip"
-            fi
+            # Remove símbolos de debug
+            echo "Removendo símbolos de debug para ${ARCH}..."
+            strip --strip-unneeded "release/${RELEASE_NAME}/gitph"
+            find "release/${RELEASE_NAME}/modules" -type f -name "*.so" -exec strip --strip-unneeded {} +
             
-            # Remove símbolos de debug dos binários para reduzir o tamanho
-            echo "Removendo símbolos de debug com '$STRIP_COMMAND'..."
-            $STRIP_COMMAND --strip-unneeded "${PACKAGE_DIR}/gitph"
-            find "${PACKAGE_DIR}/modules" -type f -name "*.so" -exec $STRIP_COMMAND --strip-unneeded {} +
-            
-            # Cria o arquivo .tar.gz final
-            echo "Criando o pacote ${RELEASE_NAME}.tar.gz..."
+            # Cria o arquivo .tar.gz
             (cd release && tar -czf "${RELEASE_NAME}.tar.gz" "${RELEASE_NAME}")
           done
           
-          # Exporta o caminho dos pacotes para o próximo passo
-          echo "RELEASE_PATHS=release/*.tar.gz" >> $GITHUB_ENV
+          # Exporta a lista de pacotes para o próximo passo
+          echo "RELEASE_ASSETS=$(ls release/*.tar.gz | tr '\n' ' ')" >> $GITHUB_ENV
 
-      # 5. Cria a Release no GitHub e faz o upload de TODOS os pacotes .tar.gz
       - name: Publicar Release no GitHub
         uses: softprops/action-gh-release@v2
         with:
-          # Usa um glob pattern para encontrar e fazer upload de todos os pacotes
-          files: ${{ env.RELEASE_PATHS }}
+          # Anexa todos os pacotes .tar.gz criados
+          files: ${{ env.RELEASE_ASSETS }}
           generate_release_notes: true
