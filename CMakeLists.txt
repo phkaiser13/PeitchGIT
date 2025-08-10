@@ -55,19 +55,11 @@ add_executable(gitph ${CORE_SOURCES})
 
 # 4. Adiciona os diretórios de inclusão para o executável principal
 target_include_directories(gitph PUBLIC
-    ${CMAKE_SOURCE_DIR}/src/core/cli
-    ${CMAKE_SOURCE_DIR}/src/core/config
-    ${CMAKE_SOURCE_DIR}/src/core/main
-    ${CMAKE_SOURCE_DIR}/src/core/module_loader
-    ${CMAKE_SOURCE_DIR}/src/core/platform
-    ${CMAKE_SOURCE_DIR}/src/core/scripting
-    ${CMAKE_SOURCE_DIR}/src/core/ui
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/core
     ${CMAKE_SOURCE_DIR}/src/ipc/include
-    ${CMAKE_SOURCE_DIR}/src/libs/libcommon
-    ${CMAKE_SOURCE_DIR}/src/libs/liblogger
+    ${CMAKE_SOURCE_DIR}/src/libs
     ${LUA_INCLUDE_DIRS}
-    # Adicione o diretório para nlohmann/json se o tiver localmente
-    # "src/libs/nlohmann"
 )
 
 # 5. Liga o executável principal com as suas dependências
