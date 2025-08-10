@@ -1,0 +1,123 @@
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
+# windows_ci.yml - Workflow de Integração Contínua para Windows
+#
+# Este workflow automatiza o build e release da aplicação em um ambiente Windows.
+# Ele utiliza o vcpkg para instalar dependências C/C++ de forma que o CMake
+# possa encontrá-las facilmente, espelhando a funcionalidade do apt no Linux.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+name: Build e Release do gitph (Windows)
+
+on:
+  push:
+    branches: [ "main" ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: Build e Teste (Windows)
+    runs-on: windows-latest
+
+    steps:
+      # 1. Clona o repositório
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      # 2. Configura o ambiente Go
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      # 3. Configura o ambiente Rust (com cache integrado)
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+
+      # 4. Instala e configura o vcpkg para gerenciar dependências C++
+      - name: Setup vcpkg
+        uses: microsoft/setup-vcpkg@v1
+        id: vcpkg
+        with:
+          # O vcpkg vai clonar e compilar as bibliotecas necessárias
+          # Os nomes correspondem aos pacotes que o apt instalava
+          vcpkg-commit-id: 'latest'
+
+      # 5. Instala as dependências de sistema usando vcpkg
+      - name: Instalar dependências com vcpkg
+        run: |
+          # O vcpkg automaticamente seleciona a versão correta (x64-windows)
+          $VCPKG_ROOT/vcpkg.exe install curl lua nlohmann-json
+        shell: pwsh
+
+      # 6. Configura e compila o projeto usando CMake em modo Release
+      #    A chave aqui é passar o CMAKE_TOOLCHAIN_FILE para que o CMake encontre
+      #    as bibliotecas instaladas pelo vcpkg.
+      - name: Configurar CMake
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=${{ steps.vcpkg.outputs.vcpkg-toolchain-file }}
+        shell: pwsh
+
+      - name: Compilar Projeto
+        run: cmake --build build --config Release --parallel
+        shell: pwsh
+
+      # 7. Salva os artefatos de build para o job de release poder usá-los
+      - name: Upload dos artefatos de build
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitph-build-artifacts-windows
+          path: |
+            build/bin/Release/
+            src/plugins/
+            LICENSE
+
+  release:
+    name: Criar Release (Windows)
+    needs: build
+    runs-on: windows-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Download dos artefatos de build
+        uses: actions/download-artifact@v4
+        with:
+          name: gitph-build-artifacts-windows
+          path: artifacts/
+
+      # 3. Empacota os arquivos de release em um arquivo .zip
+      - name: Empacotar para Release
+        shell: pwsh
+        run: |
+          $VERSION = "${{ github.ref_name }}"
+          $RELEASE_NAME = "gitph-${VERSION}-windows-x64"
+          
+          # Cria a estrutura de diretórios final
+          New-Item -ItemType Directory -Force "release/$RELEASE_NAME/modules"
+          
+          # Copia os arquivos para a estrutura final
+          Copy-Item -Path "artifacts/*" -Destination "release/$RELEASE_NAME/" -Recurse -Force
+          
+          # Cria o arquivo .zip
+          Compress-Archive -Path "release/$RELEASE_NAME/*" -DestinationPath "release/${RELEASE_NAME}.zip"
+          
+          # Exporta o caminho do pacote para o próximo passo
+          echo "RELEASE_PATH=release/${RELEASE_NAME}.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      # 4. Cria a Release no GitHub e faz o upload do pacote .zip
+      - name: Publicar Release no GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.RELEASE_PATH }}
+          generate_release_notes: true
