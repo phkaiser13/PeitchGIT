@@ -60,7 +60,8 @@ jobs:
         run: |
           cmake -S . -B build `
             -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
+            -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake `
+            -DCMAKE_PREFIX_PATH=${{ env.VCPKG_ROOT }}/installed/x64-windows
         shell: pwsh
 
       # O comando de compilação é similar, mas adicionamos --config Release,
