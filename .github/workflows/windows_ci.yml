@@ -41,7 +41,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       # 4. Setup vcpkg e Instalar dependências
-      #    CORREÇÃO 1: Adicionado um 'id' ao passo para que possamos referenciar seus outputs.
       - name: Setup vcpkg e Instalar dependências
         id: vcpkg
         uses: johnwason/vcpkg-action@v7
@@ -51,10 +50,11 @@ jobs:
           triplet: x64-windows
 
       # 5. Configura o projeto com CMake
-      #    CORREÇÃO 2: Usamos o output 'vcpkg-root' do passo com id 'vcpkg'.
-      #    Esta é a forma mais robusta de passar valores entre os passos.
+      #    CORREÇÃO: Adicionado o gerador explícito "Visual Studio 17 2022" e a arquitetura "x64".
+      #    Isso garante que o CMake use o mesmo ambiente para o qual o vcpkg instalou as
+      #    dependências (x64-windows), resolvendo os erros "Cannot open include file".
       - name: Configurar CMake
-        run: cmake ${{ steps.vcpkg.outputs.vcpkg-cmake-config }} -S . -B build
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 ${{ steps.vcpkg.outputs.vcpkg-cmake-config }}
         shell: powershell
 
       # 6. Compila o projeto
