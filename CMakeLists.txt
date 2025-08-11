@@ -120,12 +120,10 @@ set(LUA_TARGET_NAME "")
 # Preferred: CMake's FindLua
 find_package(Lua 5.4 QUIET)
 if(Lua_FOUND)
-    # Typical variables: LUA_INCLUDE_DIR, LUA_LIBRARIES (note: module sets names with different case on some CMake versions)
-    # Create an imported target if none exists
     if(TARGET Lua::Lua)
         set(LUA_TARGET_NAME "Lua::Lua")
     else()
-        # Normalize names: try variables used by different FindLua implementations
+        # --- BLOCO CORRIGIDO ---
         if(DEFINED LUA_LIBRARIES)
             set(_lua_lib "${LUA_LIBRARIES}")
         elseif(DEFINED LUA_LIBRARY)
@@ -137,14 +135,21 @@ if(Lua_FOUND)
             set(_lua_inc "${LUA_INCLUDE_DIRS}")
         endif()
 
-        add_library(Lua::Lua UNKNOWN IMPORTED)
+        # Criar como um alvo INTERFACE para lidar corretamente com listas de bibliotecas
+        add_library(Lua::Lua INTERFACE IMPORTED)
         if(_lua_lib)
-            set_target_properties(Lua::Lua PROPERTIES IMPORTED_LOCATION "${_lua_lib}")
+            # INTERFACE_LINK_LIBRARIES processa corretamente a lista separada por ;
+            set_target_properties(Lua::Lua PROPERTIES 
+                INTERFACE_LINK_LIBRARIES "${_lua_lib}"
+            )
         endif()
         if(_lua_inc)
-            set_target_properties(Lua::Lua PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${_lua_inc}")
+            set_target_properties(Lua::Lua PROPERTIES 
+                INTERFACE_INCLUDE_DIRECTORIES "${_lua_inc}"
+            )
         endif()
         set(LUA_TARGET_NAME "Lua::Lua")
+        # --- FIM DO BLOCO CORRIGIDO ---
     endif()
 else()
     # pkg-config fallback (try several common names)
