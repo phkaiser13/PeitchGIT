@@ -58,11 +58,12 @@ jobs:
 
       # 5. Configura o projeto com CMake, apontando para o toolchain do vcpkg
       - name: Configurar CMake
+        shell: pwsh
         run: |
           cmake -S . -B build `
             -DCMAKE_BUILD_TYPE=Release `
             -A x64 `
-            -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake `
+            -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake `
             -DVCPKG_TARGET_TRIPLET=x64-windows-static
 
       # 6. Compila o projeto usando o CMake
