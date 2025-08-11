@@ -35,7 +35,6 @@ jobs:
 
       # Instala as dependências do projeto usando vcpkg.
       # O triplet 'x64-windows' garante que estamos compilando para Windows de 64 bits.
-      # CMake e curl já vêm pré-instalados nos runners do Windows.
       - name: Install dependencies (vcpkg)
         run: |
           ${{ env.VCPKG_ROOT }}/vcpkg.exe install lua:x64-windows nlohmann-json:x64-windows curl:x64-windows
@@ -55,14 +54,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       # A configuração do CMake é ajustada para usar o toolchain do vcpkg.
-      # Isso permite que o CMake encontre automaticamente as bibliotecas instaladas.
+      # Para contornar a lógica de busca falha do script FindLua.cmake no Windows,
+      # nós definimos as variáveis de cache LUA_INCLUDE_DIR e LUA_LIBRARY diretamente.
+      # Isso força o CMake a encontrar a biblioteca sem depender da busca.
       - name: Configure CMake
-        env:
-          LUA_DIR: ${{ env.VCPKG_ROOT }}/installed/x64-windows
         run: |
           cmake -S . -B build `
             -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
+            -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake `
+            -DLUA_INCLUDE_DIR=${{ env.VCPKG_ROOT }}/installed/x64-windows/include `
+            -DLUA_LIBRARY=${{ env.VCPKG_ROOT }}/installed/x64-windows/lib/lua.lib
         shell: pwsh
 
       # O comando de compilação é similar, mas adicionamos --config Release,
