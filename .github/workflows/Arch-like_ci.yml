@@ -10,84 +10,53 @@ on:
 
 jobs:
   build:
-    name: Build and Test (Arch Linux via Docker)
+    name: Build and Test (Arch Linux Container)
     runs-on: ubuntu-latest
+    # Define o contêiner no nível do job. O GitHub Actions gerencia o resto.
+    container:
+      image: archlinux:latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Ensure Docker available
-        run: docker --version
-
-      - name: Build inside Arch Linux container
-        # Run the entire build inside an ephemeral archlinux container and
-        # write build outputs to the mounted workspace (/work).
+      # Cada comando é agora um passo separado, tornando o debug mais fácil.
+      - name: Initialize Pacman Keyring
         run: |
-          set -euo pipefail
-          docker run --rm \
-            -v "${{ github.workspace }}":/work \
-            -w /work \
-            archlinux:latest \
-            /bin/bash -lc "
-              set -euo pipefail
+          pacman-key --init
+          pacman-key --populate archlinux
 
-              # Initialize pacman keyring (required in fresh containers)
-              pacman -Sy --noconfirm archlinux-keyring
-              pacman-key --init
-              pacman-key --populate archlinux
+      - name: Install system dependencies (Arch)
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel cmake lua curl nlohmann-json go rust git pkgconf
 
-              # Update system and install packages. --needed avoids reinstalling
-              pacman -Syu --noconfirm --needed \
-                base-devel \
-                cmake \
-                lua \
-                curl \
-                nlohmann-json \
-                go \
-                rust \
-                git \
-                pkgconf
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
 
-              # Optional: print versions for debugging
-              cmake --version
-              lua -v || true
-              go version || true
-              rustc --version || true
-              cargo --version || true
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
 
-              # Configure + build
-              cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-              cmake --build build --parallel
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
-              # Prepare artifact layout in workspace
-              mkdir -p /work/artifacts/bin
-              mkdir -p /work/artifacts/plugins || true
-
-              # Copy produced binaries and modules (adjust paths if different)
-              if [ -d build/bin ]; then
-                cp -r build/bin/* /work/artifacts/bin/ || true
-              fi
-
-              # If you have src/plugins or modules, copy them (best-effort)
-              if [ -d src/plugins ]; then
-                cp -r src/plugins/* /work/artifacts/plugins/ || true
-              fi
-
-              # Copy LICENSE for packaging later
-              cp LICENSE /work/artifacts/ || true
-
-              echo \"BUILD_DONE=1\"
-            "
+      - name: Compile Project
+        run: cmake --build build --parallel
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: gitph-build-artifacts
+          # Nome de artefato único para evitar conflitos no job de release
+          name: gitph-build-artifacts-arch 
           path: |
-            artifacts/bin/
-            artifacts/plugins/
-            artifacts/LICENSE
+            build/bin/
+            src/plugins/
+            LICENSE
 
   release:
     name: Create Release
@@ -96,15 +65,14 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: gitph-build-artifacts
-          path: release-assets/
-
+          # Baixa os artefatos específicos do Arch
+          name: gitph-build-artifacts-arch
+          path: artifacts/
+      
+      # O resto do seu job de release pode permanecer o mesmo.
       - name: Package for Release
         run: |
           set -euo pipefail
@@ -112,18 +80,16 @@ jobs:
           RELEASE_NAME="gitph-${VERSION}-linux-$(uname -m)"
           mkdir -p "release/${RELEASE_NAME}/modules"
 
-          # Copy binary files (adjust names if different)
-          if [ -d release-assets/bin ]; then
-            cp -r release-assets/bin/* "release/${RELEASE_NAME}/" || true
+          if [ -d artifacts/bin ]; then
+            cp -r artifacts/bin/* "release/${RELEASE_NAME}/" || true
           fi
-          if [ -d release-assets/plugins ]; then
-            cp -r release-assets/plugins/* "release/${RELEASE_NAME}/modules/" || true
+          if [ -d artifacts/plugins ]; then
+            cp -r artifacts/plugins/* "release/${RELEASE_NAME}/modules/" || true
           fi
-          if [ -f release-assets/LICENSE ]; then
-            cp release-assets/LICENSE "release/${RELEASE_NAME}/" || true
+          if [ -f artifacts/LICENSE ]; then
+            cp artifacts/LICENSE "release/${RELEASE_NAME}/" || true
           fi
 
-          # Strip debug symbols where possible
           if command -v strip >/dev/null 2>&1; then
             echo "Stripping debug symbols..."
             if [ -f "release/${RELEASE_NAME}/gitph" ]; then
@@ -132,7 +98,6 @@ jobs:
             find "release/${RELEASE_NAME}/modules" -type f -name "*.so" -exec strip --strip-unneeded {} + || true
           fi
 
-          # Create archive
           (cd release && tar -czf "${RELEASE_NAME}.tar.gz" "${RELEASE_NAME}")
           echo "RELEASE_PATH=release/${RELEASE_NAME}.tar.gz" >> $GITHUB_ENV
 
