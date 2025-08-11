@@ -12,21 +12,24 @@ jobs:
     runs-on: windows-latest
 
     steps:
+      # 1. Checkout do código
       - name: Checkout do código
         uses: actions/checkout@v4
 
+      # 2. Setup Go
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
+      # 3. Setup Rust com cache
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
 
-      # Instalar vcpkg manualmente para controle total
+      # 4. Instalar e configurar vcpkg manualmente
       - name: Instalar vcpkg e dependências
         shell: powershell
         run: |
@@ -37,13 +40,16 @@ jobs:
           C:/vcpkg/vcpkg.exe install curl:x64-windows lua:x64-windows nlohmann-json:x64-windows
           C:/vcpkg/vcpkg.exe integrate install
 
-      - name: Listar pacotes vcpkg instalados
+      # 5. Debug: listar pacotes instalados
+      - name: Listar pacotes vcpkg
         shell: powershell
         run: C:/vcpkg/vcpkg.exe list
 
-      - name: Configurar CMake com toolchain do vcpkg
+      # 6. Configurar CMake com toolchain do vcpkg (mantendo multiplataforma)
+      - name: Configurar CMake
         shell: powershell
         run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows
 
-      - name: Compilar Projeto
+      # 7. Compilar projeto
+      - name: Compilar projeto
         run: cmake --build build --config Release --parallel
