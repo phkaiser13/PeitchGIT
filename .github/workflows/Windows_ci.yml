@@ -1,0 +1,112 @@
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
+# Windows_ci.yml - Continuous Integration workflow for gitph on Windows.
+#
+# This workflow automates the build and release process for Windows,
+# supporting both x64 and arm64 architectures. It leverages vcpkg for
+# C++ dependency management and follows the project's established CI patterns.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Build and Release gitph (Windows)
+
+on:
+  push:
+    branches: [ "main" ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: Build for Windows (${{ matrix.arch }})
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            vcpkg_triplet: x64-windows
+          - arch: arm64
+            vcpkg_triplet: arm64-windows
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install C++ dependencies via vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: 04ba18f3a35a16d5612c6239a50bf4212b4d994e
+          vcpkgTriplet: ${{ matrix.vcpkg_triplet }}
+          # Packages needed by the project: lua, curl, nlohmann-json
+          vcpkgArguments: 'lua curl nlohmann-json'
+
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake"
+        shell: powershell
+
+      - name: Compile Project
+        run: cmake --build build --parallel
+        shell: powershell
+
+      - name: Package for Release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          $VERSION = "${{ github.ref_name }}"
+          $RELEASE_NAME = "gitph-$VERSION-windows-${{ matrix.arch }}"
+          $RELEASE_DIR = "release/${RELEASE_NAME}"
+
+          # Create the final directory structure
+          New-Item -ItemType Directory -Force -Path "$RELEASE_DIR/modules"
+
+          # Copy the build artifacts
+          Copy-Item -Path "build/bin/*" -Destination "$RELEASE_DIR/" -Recurse
+          Copy-Item -Path "src/plugins/*" -Destination "$RELEASE_DIR/modules/" -Recurse
+          Copy-Item -Path "LICENSE" -Destination "$RELEASE_DIR/"
+
+          # Create a .zip archive for the release
+          Compress-Archive -Path "$RELEASE_DIR/*" -DestinationPath "release/${RELEASE_NAME}.zip"
+
+          # Export the path for the upload step
+          echo "RELEASE_PATH=release/${RELEASE_NAME}.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        shell: powershell
+
+      - name: Upload Release Package
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-package-windows-${{ matrix.arch }}
+          path: ${{ env.RELEASE_PATH }}
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Download all release packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-package-windows-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish Release to GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*.zip
+          generate_release_notes: true
