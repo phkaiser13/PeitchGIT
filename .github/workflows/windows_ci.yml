@@ -48,12 +48,11 @@ jobs:
         id: vcpkg     
         with:
           # Lista de pacotes necessários conforme o CMakeLists.txt
-          vcpkg-packages: |
-            curl
-            lua
-            nlohmann-json
+          pkgs: curl lua nlohmann-json
+          triplet: x64-windows-release
+          token: ${{ github.token }}
+          
           # Garante que o vcpkg seja adicionado ao path para o CMake encontrar
-          vcpkg-add-to-path: true
 
       # 5. Configura e compila o projeto usando CMake
       #    -DCMAKE_TOOLCHAIN_FILE aponta para o script do vcpkg, que informa ao CMake
