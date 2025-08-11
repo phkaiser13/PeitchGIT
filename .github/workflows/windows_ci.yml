@@ -44,7 +44,7 @@ jobs:
       #    Esta action oficial da Microsoft clona e prepara o vcpkg.
       #    O caminho para o vcpkg fica disponível na variável de ambiente VCPKG_ROOT.
       - name: Setup vcpkg
-        uses: microsoft/vcpkg-action@v1
+        uses: johnwason/vcpkg-action@v7 # <-- A versão foi atualizada para v7
 
       # 5. Instala as dependências C++ via vcpkg
       #    Exatamente como você faria localmente.
