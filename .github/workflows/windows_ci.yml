@@ -41,10 +41,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       # 4. Configura o vcpkg para gerenciar dependências C++
-      #    Esta action oficial da Microsoft clona e prepara o vcpkg.
-      #    O caminho para o vcpkg fica disponível na variável de ambiente VCPKG_ROOT.
+      #    CORREÇÃO: Adicionado o 'github-token' para permitir que a action
+      #    consulte a API do GitHub e encontre a versão mais recente do vcpkg.
       - name: Setup vcpkg
-        uses: johnwason/vcpkg-action@v7 # <-- A versão foi atualizada para v7
+        uses: johnwason/vcpkg-action@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # 5. Instala as dependências C++ via vcpkg
       #    Exatamente como você faria localmente.
