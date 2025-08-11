@@ -9,7 +9,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # FIX: Complete `CMakeLists.txt` with improved, cross-platform library discovery and robust fallbacks.
-cmake\_minimum\_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.15)
 
 project(gitph LANGUAGES C CXX VERSION 1.0.0)
 
