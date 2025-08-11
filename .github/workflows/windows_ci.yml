@@ -41,9 +41,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       # 4. Setup vcpkg e Instalar dependências
-      #    CORREÇÃO: Combinamos a instalação e o setup em um único passo.
-      #    - 'pkgs': Lista os pacotes a serem instalados.
-      #    - 'triplet': Especifica a arquitetura de destino, resolvendo o erro.
       - name: Setup vcpkg e Instalar dependências
         uses: johnwason/vcpkg-action@v7
         with:
@@ -52,13 +49,12 @@ jobs:
           triplet: x64-windows
 
       # 5. Configura o projeto com CMake
-      #    Este passo permanece o mesmo, pois a action do vcpkg configura
-      #    a variável de ambiente VCPKG_ROOT corretamente.
+      #    CORREÇÃO: Mudado para 'powershell' que é o shell nativo do Windows.
+      #    A sintaxe para acessar a variável de ambiente VCPKG_ROOT muda para $env:VCPKG_ROOT.
+      #    Isso garante que o caminho seja expandido corretamente.
       - name: Configurar CMake
-        run: >
-          cmake -S . -B build
-          -D CMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
-        shell: bash
+        run: cmake -S . -B build -D "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+        shell: powershell
 
       # 6. Compila o projeto
       - name: Compilar Projeto
