@@ -1,80 +1,69 @@
-# .github/workflows/Arch-like_ci.yml
+Gemini, faça duas coisas nesse workflow>
+Primeiro, faça build para todas as arquiteturas do arch (arm, x86 e as outras),
+segundo, há um arquivo release.yml programado para releasar a build quando vier uma tag, ok?
+
 name: Build gitph (Arch-like - containerized)
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+push:
+branches: [ "main" ]
+tags:
+- 'v*'
+pull_request:
+branches: [ "main" ]
 
 jobs:
-  build:
-    name: Build for Arch (${{ matrix.arch }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # Definindo as arquiteturas para o build (aarch64 é ARM64)
-        arch: [x86_64, aarch64]
+build:
+name: Build and Test (Arch Linux Container)
+runs-on: ubuntu-latest
+# Define o contêiner no nível do job. O GitHub Actions gerencia o resto.
+container:
+image: archlinux:latest
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+code
+Code
+download
+content_copy
+expand_less
 
-      # Configura QEMU para permitir a execução de builds ARM em runners x86
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64 # Corresponde a 'aarch64'
+steps:
+  - name: Checkout code
+    uses: actions/checkout@v4
 
-      - name: Create Build Script
-        id: build_script
-        run: |
-          # Usamos um "heredoc" para criar um script de build que será executado dentro do contêiner.
-          # Isso evita problemas com variáveis de ambiente e caminhos entre o host e o contêiner.
-          cat <<'EOF' > build_in_container.sh
-          #!/bin/bash
-          set -e # Aborta o script se qualquer comando falhar
-          
-          echo "--- Initializing Pacman Keyring ---"
-          pacman-key --init
-          pacman-key --populate archlinux
-          
-          echo "--- Installing system dependencies ---"
-          pacman -Syu --noconfirm --needed \
-            base-devel cmake lua curl nlohmann-json go rust git pkgconf
-            
-          echo "--- Configuring CMake ---"
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          
-          echo "--- Compiling Project ---"
-          cmake --build build --parallel
-          
-          echo "--- Build complete ---"
-          EOF
-          chmod +x build_in_container.sh
+  # Cada comando é agora um passo separado, tornando o debug mais fácil.
+  - name: Initialize Pacman Keyring
+    run: |
+      pacman-key --init
+      pacman-key --populate archlinux
 
-      - name: Run Build in Arch Container
-        run: |
-          # Define a plataforma correta para o Docker com base na matriz
-          DOCKER_PLATFORM="linux/amd64"
-          if [ "${{ matrix.arch }}" == "aarch64" ]; then
-            DOCKER_PLATFORM="linux/arm64"
-          fi
-          
-          # Executa o contêiner Docker, especificando a plataforma,
-          # montando o diretório de trabalho atual (-v) e executando nosso script.
-          docker run --rm --platform $DOCKER_PLATFORM \
-            -v ${{ github.workspace }}:/work -w /work \
-            archlinux/archlinux:latest \
-            ./build_in_container.sh
+  - name: Install system dependencies (Arch)
+    run: |
+      pacman -Syu --noconfirm --needed \
+        base-devel cmake lua curl nlohmann-json go rust git pkgconf
 
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          # Nome de artefato único por arquitetura para não haver conflito
-          name: gitph-build-artifacts-arch-${{ matrix.arch }}
-          path: |
-            build/bin/
-            src/plugins/
-            LICENSE
+  - name: Setup Go
+    uses: actions/setup-go@v5
+    with:
+      go-version: '1.21'
+
+  - name: Setup Rust
+    uses: dtolnay/rust-toolchain@stable
+    with:
+      toolchain: stable
+  - uses: Swatinem/rust-cache@v2
+
+  - name: Configure CMake
+    run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+  - name: Compile Project
+    run: cmake --build build --parallel
+
+  - name: Upload build artifacts
+    uses: actions/upload-artifact@v4
+    with:
+      # Nome de artefato único para evitar conflitos no job de release
+      name: gitph-build-artifacts-arch 
+      path: |
+        build/bin/
+        src/plugins/
+        LICENSE
