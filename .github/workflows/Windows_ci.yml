@@ -33,6 +33,7 @@ jobs:
       - name: 'Configurar vcpkg para dependências C++'
         uses: lukka/run-vcpkg@v11
         with:
+          vcpkgGitCommitId: 'af3e0f1dc5e1d7f3d4e7b3f56a9482b0b96aeb48'
           vcpkgJsonGlob: '**/vcpkg.json' 
 
       - name: 'Instalar dependências (Lua, libcurl, nlohmann-json)'
