@@ -5,7 +5,7 @@
 # supporting both Intel (x86_64) and Apple Silicon (arm64) architectures.
 # SPDX-License-Identifier: Apache-2.0
 
-name: Build and Release gitph (macOS)
+name: Build and Release gitph (macOS & Darwin systems)
 
 # Workflow triggers:
 on:
