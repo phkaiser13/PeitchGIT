@@ -1,120 +1,157 @@
-# Copyright (C) 2025 Pedro Henrique / phkaiser13
-# Fedora-like_ci.yml - Continuous Integration workflow for the gitph project.
-#
-# This workflow automates the application's build and release process.
-# It ensures that the project compiles correctly in a clean environment
-# and automatically creates distribution packages when a new version is tagged.
-# SPDX-License-Identifier: Apache-2.0
+name: Build and Release gitph (Fedora-like Linux)
 
-name: Build and Release gitph (For Fedora-like Linux systems)
-
-# Workflow triggers:
 on:
   push:
-    branches: [ "main" ] # Executes on a push to the main branch
+    branches: [ "main" ]
     tags:
-      - 'v*'          # Executes when a tag like v1.0.0 is created
+      - 'v*'
   pull_request:
-    branches: [ "main" ] # Executes on pull requests to the main branch
+    branches: [ "main" ]
 
 jobs:
-  # Main build job that compiles and verifies the project in a Fedora environment
   build:
-    name: Build and Test (Fedora)
-    runs-on: fedora-latest # CHANGED: Using the latest Fedora image
+    name: Build and Test (Fedora container)
+    # Use an Ubuntu runner but run the job inside an official Fedora container:
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+      # options: '--user root' # default is root; uncomment if you need extra docker options
 
     steps:
-      # 1. Clone the repository
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Install system dependencies (C/C++, Lua, Curl) for Fedora
-      #    CHANGED: Replaced 'apt-get' with 'dnf' and adjusted package names.
-      - name: Install system dependencies (Fedora)
-        run: sudo dnf install -y gcc-c++ cmake make pkg-config lua-devel libcurl-devel nlohmann-json-devel
+      - name: Show basic info (debug)
+        run: |
+          uname -a
+          cat /etc/fedora-release || echo "no /etc/fedora-release"
+          whoami
+          id
 
-      # 3. Set up the Go environment
+      - name: Install system dependencies (Fedora)
+        run: |
+          # update repo metadata first
+          dnf -y update
+          # install build essentials and common dev packages
+          dnf install -y \
+            gcc-c++ \
+            make \
+            cmake \
+            pkgconf-pkg-config \
+            pkgconf \
+            lua-devel \
+            libcurl-devel \
+            openssl-devel \
+            binutils \
+            git \
+            tar \
+            gzip \
+            unzip \
+            which \
+            ca-certificates \
+            gnupg \
+            findutils || dnf -y install gcc-c++ cmake make pkgconfig lua-devel libcurl-devel binutils
+          # Clean DNF cache to reduce image bloat / speed up subsequent installs
+          dnf clean all || true
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      # 4. Set up the Rust environment (with integrated cache)
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@v2
 
-      # 5. Configure and compile the project using CMake in Release mode
+      - name: Cache Rust target (optional)
+        uses: Swatinem/rust-cache@v2
+
       - name: Configure CMake
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: |
+          mkdir -p build
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr/local
 
       - name: Compile Project
         run: cmake --build build --parallel
 
-      # 6. Save the build artifacts for the release job to use
+      - name: Run unit tests (if any)
+        if: always()
+        run: |
+          # adapt this to your test target (example: ctest)
+          if [ -f build/CTestTestfile.cmake ]; then
+            (cd build && ctest --output-on-failure --parallel $(nproc))
+          else
+            echo "No tests configured (no CTestTestfile.cmake)."
+          fi
+
+      - name: Package minimal artifacts
+        run: |
+          mkdir -p release_tmp/${GITHUB_REF_NAME:-local}/modules
+          # copy built binaries (adjust paths if different)
+          cp -r build/bin/* release_tmp/${GITHUB_REF_NAME:-local}/ || true
+          cp -r src/plugins/* release_tmp/${GITHUB_REF_NAME:-local}/modules/ || true
+          cp LICENSE release_tmp/${GITHUB_REF_NAME:-local}/ || true
+          # make a tar.gz artifact for debugging
+          tar -czf gitph-fedora-build-${GITHUB_SHA::8}.tar.gz -C release_tmp ${GITHUB_REF_NAME:-local} || true
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: gitph-build-artifacts-fedora
           path: |
             build/bin/
+            release_tmp/
+            gitph-fedora-build-*.tar.gz
             src/plugins/
             LICENSE
 
-  # Release job that only runs when a tag is created
   release:
     name: Create Release
-    needs: build # Depends on the success of the build job
-    # The release job can continue on Ubuntu, as it only packages the already compiled files.
-    # If preferred, this can also be changed to fedora-latest.
+    needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
-      # 1. Clone the repository (necessary to have the Git context)
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Download the artifacts compiled by the Fedora build job
       - name: Download build artifacts (Fedora)
         uses: actions/download-artifact@v4
         with:
-          name: gitph-build-artifacts-fedora # Ensures the correct artifacts are being downloaded
+          name: gitph-build-artifacts-fedora
           path: artifacts/
 
-      # 3. Package the release files
       - name: Package for Release
         run: |
-          # Determine the version from the Git tag and the package name
-          # Adding 'fedora' to the name to differentiate from builds of other distros
           VERSION=${{ github.ref_name }}
           RELEASE_NAME="gitph-${VERSION}-fedora-$(uname -m)"
-          
-          # Create the final directory structure directly
           mkdir -p "release/${RELEASE_NAME}/modules"
-          
-          # Copy the files to the final structure
-          cp -r artifacts/bin/* "release/${RELEASE_NAME}/"
-          cp -r artifacts/plugins/* "release/${RELEASE_NAME}/modules/"
-          cp artifacts/LICENSE "release/${RELEASE_NAME}/"
-          
-          # Strip debug information from the binaries to reduce size
-          echo "Stripping debug symbols..."
-          strip --strip-unneeded "release/${RELEASE_NAME}/gitph"
-          find "release/${RELEASE_NAME}/modules" -type f -name "*.so" -exec strip --strip-unneeded {} +
-          
-          # Create the .tar.gz file
-          echo "Creating the .tar.gz package..."
+          # adjust these source paths if your build placed things elsewhere
+          if [ -d "artifacts/build/bin" ]; then
+            cp -r artifacts/build/bin/* "release/${RELEASE_NAME}/" || true
+          elif [ -d "artifacts/build/bin" ]; then
+            cp -r artifacts/build/bin/* "release/${RELEASE_NAME}/" || true
+          fi
+          if [ -d "artifacts/release_tmp/${VERSION}/modules" ]; then
+            cp -r artifacts/release_tmp/${VERSION}/modules/* "release/${RELEASE_NAME}/modules/" || true
+          fi
+          cp artifacts/LICENSE "release/${RELEASE_NAME}/" || cp LICENSE "release/${RELEASE_NAME}/" || true
+          # strip (ensure binutils present in container or host; fallback to echo)
+          if command -v strip >/dev/null 2>&1; then
+            strip --strip-unneeded "release/${RELEASE_NAME}/gitph" || true
+            find "release/${RELEASE_NAME}/modules" -type f -name "*.so" -exec strip --strip-unneeded {} + || true
+          else
+            echo "strip not available; skipping symbol stripping"
+          fi
           (cd release && tar -czf "${RELEASE_NAME}.tar.gz" "${RELEASE_NAME}")
-          
-          # Export the package path for the next step
           echo "RELEASE_PATH=release/${RELEASE_NAME}.tar.gz" >> $GITHUB_ENV
 
-      # 4. Create the GitHub Release and upload the .tar.gz package
       - name: Publish Release to GitHub
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.RELEASE_PATH }}
           generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
