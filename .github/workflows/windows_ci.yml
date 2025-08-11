@@ -1,5 +1,3 @@
-# windows_build.yml - Workflow Windows com integração correta do vcpkg
-
 name: Build para Windows
 
 on:
@@ -14,46 +12,38 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      # 1. Checkout do código
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      # 2. Setup Go
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      # 3. Setup Rust com cache
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
 
-      # 4. Setup vcpkg e instalar dependências
-      - name: Setup vcpkg e instalar dependências
-        id: vcpkg
-        uses: johnwason/vcpkg-action@v7
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          pkgs: curl lua nlohmann-json
-          triplet: x64-windows
-          run-vcpkg-integrate-install: true
-
-      # 5. Debug para confirmar toolchain vcpkg
-      - name: Confirmar toolchain do vcpkg
+      # Instalar vcpkg manualmente para controle total
+      - name: Instalar vcpkg e dependências
+        shell: powershell
         run: |
-          echo "Verificando toolchain file"
-          dir C:/vcpkg/scripts/buildsystems
-          Test-Path C:/vcpkg/scripts/buildsystems/vcpkg.cmake
-        shell: powershell
+          if (-Not (Test-Path C:/vcpkg/vcpkg.exe)) {
+            git clone https://github.com/microsoft/vcpkg.git C:/vcpkg
+            C:/vcpkg/bootstrap-vcpkg.bat
+          }
+          C:/vcpkg/vcpkg.exe install curl:x64-windows lua:x64-windows nlohmann-json:x64-windows
+          C:/vcpkg/vcpkg.exe integrate install
 
-      # 6. Configurar CMake usando toolchain do vcpkg explicitamente
-      - name: Configurar CMake
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+      - name: Listar pacotes vcpkg instalados
         shell: powershell
+        run: C:/vcpkg/vcpkg.exe list
 
-      # 7. Compilar projeto
+      - name: Configurar CMake com toolchain do vcpkg
+        shell: powershell
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows
+
       - name: Compilar Projeto
         run: cmake --build build --config Release --parallel
