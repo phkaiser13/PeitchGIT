@@ -1,1 +1,93 @@
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
+# Windows-Like_ci.yml - Workflow de Integração Contínua para o projeto gitph (Windows).
+#
+# Este workflow automatiza o processo de build e upload de artefatos em runners Windows.
+# SPDX-License-Identifier: Apache-2.0
 
+name: Build do gitph (Windows)
+
+on:
+  push:
+    branches: [ "main" ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: Build e Teste (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Instalar ferramentas via Chocolatey (se necessário)
+        shell: powershell
+        run: |
+          # Alguns runners já possuem essas ferramentas; instalar caso não estejam disponíveis.
+          choco install -y ninja cmake || Write-Host "choco install returned non-zero (ok if already presente)"
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Setup Rust (toolchain + cache)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache do Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Instalar vcpkg e bibliotecas via vcpkg
+        shell: powershell
+        run: |
+          Set-StrictMode -Version Latest
+          if (-not (Test-Path vcpkg)) {
+            git clone --depth 1 https://github.com/microsoft/vcpkg.git vcpkg
+            & .\vcpkg\bootstrap-vcpkg.bat
+          } else {
+            Write-Host "vcpkg já presente"
+          }
+          # Instala as bibliotecas equivalentes à sua versão Linux. Ajuste os nomes/triplets conforme necessário.
+          .\vcpkg\vcpkg.exe install lua:x64-windows curl:x64-windows nlohmann-json:x64-windows
+          Write-Host "VCPKG_ROOT_PATH=$PWD\vcpkg"
+      
+      - name: Configurar CMake (usando toolchain do vcpkg)
+        shell: powershell
+        run: |
+          $vcpkgToolchain = Join-Path $PWD "vcpkg\scripts\buildsystems\vcpkg.cmake"
+          if (-not (Test-Path $vcpkgToolchain)) {
+            Write-Error "vcpkg toolchain file não encontrado: $vcpkgToolchain"
+            exit 1
+          }
+          cmake -S . -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$vcpkgToolchain" -DVCPKG_TARGET_TRIPLET=x64-windows
+
+      - name: Compilar Projeto
+        shell: powershell
+        run: |
+          cmake --build build --parallel
+
+      - name: Executar testes (opcional)
+        shell: powershell
+        run: |
+          if (Test-Path ./build) {
+            # Se você tiver testes via CTest:
+            if (Get-Command ctest -ErrorAction SilentlyContinue) {
+              cmake --build build --target test
+            } else {
+              Write-Host "ctest não disponível — pulei os testes"
+            }
+          }
+
+      - name: Upload dos artefatos de build
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitph-build-artifacts-windows
+          path: |
+            build\bin\
+            src\plugins\
+            LICENSE
