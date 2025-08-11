@@ -33,31 +33,41 @@ jobs:
         with:
           go-version: '1.21'
 
-      # 3. Configura o ambiente Rust (com cache)
+      # 3. Configura o ambiente Rust
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@v2
+      
+      # CORREÇÃO: Executa o cache para CADA módulo Rust individualmente.
+      # A ação de cache precisa ser executada no diretório que contém o Cargo.toml.
+      - name: Cache de dependências Rust (git_ops)
+        uses: Swatinem/rust-cache@v2
+        with:
+          working-directory: src/modules/git_ops
 
-      # 4. Instala as dependências C++ via vcpkg (o "apt-get" para C++ no Windows)
-      #    Isto irá baixar e compilar curl, lua e nlohmann-json.
-      #    O vcpkg se integra com o CMake automaticamente através do toolchain file.
+      - name: Cache de dependências Rust (issue_tracker)
+        uses: Swatinem/rust-cache@v2
+        with:
+          working-directory: src/modules/issue_tracker
+
+      - name: Cache de dependências Rust (sync_engine)
+        uses: Swatinem/rust-cache@v2
+        with:
+          working-directory: src/modules/sync_engine
+
+      # 4. Instala as dependências C++ via vcpkg
       - name: Instalar dependências C++ com vcpkg
-        uses: johnwason/vcpkg-action@v7 # <-- A versão foi atualizada para v7
+        uses: johnwason/vcpkg-action@v7
         id: vcpkg     
         with:
-          # Lista de pacotes necessários conforme o CMakeLists.txt
           pkgs: curl lua nlohmann-json
           triplet: x64-windows-release
           token: ${{ github.token }}
           
-          # Garante que o vcpkg seja adicionado ao path para o CMake encontrar
-
       # 5. Configura e compila o projeto usando CMake
-      #    -DCMAKE_TOOLCHAIN_FILE aponta para o script do vcpkg, que informa ao CMake
-      #    onde encontrar as bibliotecas instaladas (Lua, Curl, etc.).
-      #    -G "Visual Studio 17 2022" especifica o gerador para o compilador MSVC.
+      #    CORREÇÃO: Garante que o caminho para CMAKE_TOOLCHAIN_FILE use a variável
+      #    de ambiente VCPKG_ROOT, que é definida pela ação do vcpkg.
       - name: Configurar CMake
         run: >
           cmake -S . -B build
@@ -69,7 +79,6 @@ jobs:
         run: cmake --build build --config Release --parallel
 
       # 6. Salva os artefatos de build para o job de release
-      #    No Windows, bibliotecas compartilhadas são .dll e executáveis são .exe
       - name: Upload dos artefatos de build
         uses: actions/upload-artifact@v4
         with:
@@ -82,47 +91,31 @@ jobs:
   release-windows:
     name: Criar Release (Windows)
     needs: build-windows
-    runs-on: ubuntu-latest # O empacotamento e release pode ser feito no Ubuntu
+    runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
-      # 1. Clona o repositório
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      # 2. Baixa os artefatos compilados pelo job de build do Windows
       - name: Download dos artefatos de build
         uses: actions/download-artifact@v4
         with:
           name: gitph-build-artifacts-windows
           path: artifacts/
 
-      # 3. Empacota os arquivos para Release em um arquivo .zip
-      #    Usamos PowerShell para consistência e robustez nos scripts.
       - name: Empacotar para Release (Windows)
         shell: pwsh
         run: |
-          # Determina a versão a partir da tag e o nome do pacote
           $VERSION = "${{ github.ref_name }}"
           $RELEASE_NAME = "gitph-${VERSION}-windows-x64"
-          
-          # Cria a estrutura de diretórios final
           New-Item -ItemType Directory -Force -Path "release/$RELEASE_NAME/modules"
-          
-          # Copia os arquivos para a estrutura final
-          # O executável e as DLLs do C++ estarão na raiz
           Copy-Item -Path "artifacts/*.exe", "artifacts/*.dll" -Destination "release/$RELEASE_NAME/"
-          # As DLLs dos módulos Go/Rust estarão na subpasta de módulos
           Copy-Item -Path "artifacts/modules/*.dll" -Destination "release/$RELEASE_NAME/modules/"
           Copy-Item -Path "artifacts/LICENSE" -Destination "release/$RELEASE_NAME/"
-          
-          # Cria o arquivo .zip
           Compress-Archive -Path "release/$RELEASE_NAME/*" -DestinationPath "release/${RELEASE_NAME}.zip"
-          
-          # Exporta o caminho do pacote para o próximo passo
           echo "RELEASE_PATH=release/${RELEASE_NAME}.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      # 4. Publica a Release no GitHub com o pacote .zip
       - name: Publicar Release no GitHub
         uses: softprops/action-gh-release@v2
         with:
