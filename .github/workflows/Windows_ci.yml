@@ -1,1 +1,69 @@
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
+# main_ci_windows.yml - Continuous Integration workflow for the gitph project on Windows.
+#
+# This workflow automates the build process of the application for Windows,
+# using the Visual Studio toolchain provided by GitHub-hosted runners.
+# SPDX-License-Identifier: Apache-2.0
 
+name: Build gitph (Windows)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    # Nome do job atualizado para refletir o SO
+    name: Build for Windows (MSVC)
+    # Usa o runner mais recente do Windows fornecido pelo GitHub
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # No Windows, usamos vcpkg para gerenciar dependências C/C++ ao invés de Homebrew.
+      # Este passo clona o vcpkg e o prepara para uso.
+      - name: Setup vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git
+          ./vcpkg/bootstrap-vcpkg.bat
+          echo "VCPKG_ROOT=$PWD/vcpkg" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      # Instala as dependências do projeto usando vcpkg.
+      # O triplet 'x64-windows' garante que estamos compilando para Windows de 64 bits.
+      # CMake e curl já vêm pré-instalados nos runners do Windows.
+      - name: Install dependencies (vcpkg)
+        run: |
+          ${{ env.VCPKG_ROOT }}/vcpkg.exe install lua:x64-windows nlohmann-json:x64-windows
+        shell: pwsh
+
+      # O setup do Go é multiplataforma e permanece o mesmo.
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      # O setup do Rust também é multiplataforma.
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+
+      # A configuração do CMake é ajustada para usar o toolchain do vcpkg.
+      # Isso permite que o CMake encontre automaticamente as bibliotecas instaladas.
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
+        shell: pwsh
+
+      # O comando de compilação é similar, mas adicionamos --config Release,
+      # que é uma boa prática para geradores multi-configuração como o Visual Studio.
+      - name: Compile Project
+        run: cmake --build build --config Release --parallel
