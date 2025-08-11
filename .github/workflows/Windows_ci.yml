@@ -32,9 +32,9 @@ jobs:
 
       # 3. Instalar CMake via ação oficial
       - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v1.9.0
+        uses: cmake/setup-cmake@v3
         with:
-          cmake-version: '3.26.4' # ou a versão que preferir
+          cmake-version: '3.26.4'
 
       # 4. Instalar vcpkg e as dependências via vcpkg
       - name: Instalar vcpkg e dependências
