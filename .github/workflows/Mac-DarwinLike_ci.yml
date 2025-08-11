@@ -99,31 +99,3 @@ jobs:
           name: release-package-${{ matrix.arch }}
           path: ${{ env.RELEASE_PATH }}
 
-  # Release job that only runs when a tag is created
-  release:
-    name: Create GitHub Release
-    # Depends on the success of all jobs in the matrix
-    needs: build-and-package
-    runs-on: ubuntu-latest
-    # The condition ensures this job only runs for tags
-    if: startsWith(github.ref, 'refs/tags/v')
-
-    steps:
-      # 1. Download all release packages compiled by the matrix
-      - name: Download release packages
-        uses: actions/download-artifact@v4
-        with:
-          # The `release-package-*` pattern downloads artifacts from both architectures
-          pattern: release-package-*
-          path: release-assets
-          # Merges the artifacts into a single directory
-          merge-multiple: true
-
-      # 2. Create the GitHub Release and upload all .tar.gz packages
-      - name: Publish Release to GitHub
-        uses: softprops/action-gh-release@v2
-        with:
-          # Use a glob to find and upload all packages
-          files: release-assets/*.tar.gz
-          # The release body is automatically filled with the latest changes
-          generate_release_notes: true
