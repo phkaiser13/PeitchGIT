@@ -8,193 +8,367 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-cmake_minimum_required(VERSION 3.15)
+# FIX: Complete `CMakeLists.txt` with improved, cross-platform library discovery and robust fallbacks.
+cmake\_minimum\_required(VERSION 3.15)
 
 project(gitph LANGUAGES C CXX VERSION 1.0.0)
 
 # --- Global Settings and Options ---
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-include(FetchContent) # Include FetchContent for dependency management
 
-# Define output directories to keep the source tree clean.
-set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/bin)
-set(LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR}/bin)
-set(MODULE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/bin/modules)
+set(CMAKE\_CXX\_STANDARD 17)
+set(CMAKE\_CXX\_STANDARD\_REQUIRED ON)
+include(FetchContent) # Use FetchContent for optional fetch/build fallbacks
+include(GNUInstallDirs)
 
-# Create the output directory for modules
-file(MAKE_DIRECTORY ${MODULE_OUTPUT_PATH})
+# Keep output directories consistent
 
-# --- Dependency Management ---
-# This section handles external C/C++ libraries.
-#
-# How to provide dependencies:
-# 1. (Recommended) Use a C++ package manager like vcpkg.
-#    - Set the CMake toolchain file: cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=[path/to/vcpkg]/scripts/buildsystems/vcpkg.cmake
-#    - `find_package` will automatically find the libraries installed by vcpkg.
-#
-# 2. Use a system package manager (e.g., `sudo apt-get install`, `brew install`, `choco install`).
-#    - `find_package` will search for system-wide installations.
-#
-# 3. (Fallback) Do nothing.
-#    - If a package is not found, CMake's `FetchContent` will automatically
-#      download and build it. This is the case for nlohmann_json below.
+set(EXECUTABLE\_OUTPUT\_PATH \${CMAKE\_BINARY\_DIR}/bin)
+set(LIBRARY\_OUTPUT\_PATH \${CMAKE\_BINARY\_DIR}/bin)
+set(MODULE\_OUTPUT\_PATH \${CMAKE\_BINARY\_DIR}/bin/modules)
+file(MAKE\_DIRECTORY \${MODULE\_OUTPUT\_PATH})
 
-# --- Find System Dependencies ---
-find_package(CURL REQUIRED)
-find_package(Lua 5.4 REQUIRED)
+# --- Help users by appending common package-manager prefixes to CMAKE\_PREFIX\_PATH ---
 
-# Find nlohmann_json. If not found, it will be fetched automatically later.
-find_package(nlohmann_json 3.2.0 QUIET)
+# This makes it easier for find\_package() to locate Homebrew, vcpkg, etc.
 
-# On UNIX, add pkg-config to help find libraries like Lua
-if(UNIX)
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(LUA lua5.4)
+# Users can still override CMAKE\_PREFIX\_PATH on the command line.
+
+list(APPEND CMAKE\_PREFIX\_PATH
+/opt/homebrew          # Apple Silicon Homebrew
+/usr/local             # Intel Homebrew / common prefix
+/usr/local/opt         # Homebrew opt layout
+\$ENV{VCPKG\_ROOT}       # vcpkg (if set)
+)
+
+message(STATUS "CMAKE\_PREFIX\_PATH = \${CMAKE\_PREFIX\_PATH}")
+
+# --- Helper function: prefer imported target if available, fallback to variables ---
+
+macro(link\_target\_or\_vars target\_var var\_libs var\_includes out\_link\_var out\_include\_var)
+if(TARGET \${target\_var})
+set(\${out\_link\_var} \${target\_var} PARENT\_SCOPE)
+set(\${out\_include\_var} "" PARENT\_SCOPE)
+else()
+set(\${out\_link\_var} \${\${var\_libs}} PARENT\_SCOPE)
+set(\${out\_include\_var} \${\${var\_includes}} PARENT\_SCOPE)
+endif()
+endmacro()
+
+# --- Find CMake/PKG-config helpers ---
+
+find\_package(PkgConfig QUIET) # Optional; helpful for some distros
+
+# --- Find CURL ---
+
+# Try target-based find first, then variable-based fallback.
+
+find\_package(CURL QUIET)
+if(CURL\_FOUND)
+message(STATUS "Found libcurl: \${CURL\_VERSION}")
+else()
+message(WARNING "libcurl not found by find\_package(CURL). If building locally, install system package (apt/dnf/brew/choco) or use vcpkg, or set CMAKE\_PREFIX\_PATH.")
 endif()
 
-# --- Automatic Dependency Fetching (if not found on system) ---
+# --- Find Lua (robust, multi-strategy for cross-distro/Homebrew/vcpkg) ---
 
-# If the nlohmann_json target is not defined after find_package,
-# download it from GitHub.
-if(NOT nlohmann_json_FOUND)
-    message(STATUS "nlohmann_json not found on system. Fetching from GitHub...")
-    FetchContent_Declare(
-        nlohmann_json
-        GIT_REPOSITORY https://github.com/nlohmann/json.git
-        GIT_TAG v3.11.3 # Using a specific version is good practice
-    )
-    FetchContent_MakeAvailable(nlohmann_json)
-    message(STATUS "nlohmann_json fetched successfully.")
+set(\_LUA\_FOUND FALSE)
+
+# 1) Try CMake's FindLua
+
+find\_package(Lua 5.4 QUIET)
+if(Lua\_FOUND)
+set(\_LUA\_FOUND TRUE)
+message(STATUS "Found Lua via CMake's FindLua module.")
 endif()
 
+# 2) Try pkg-config names if pkg-config is available
 
-# --- Compile C/C++ Core ---
+if(NOT \_LUA\_FOUND AND PkgConfig\_FOUND)
+\# Try multiple common pkg-config names
+foreach(\_lua\_pc\_name lua5.4 lua-5.4 lua)
+pkg\_check\_modules(LUA\_PKG QUIET \${\_lua\_pc\_name})
+if(LUA\_PKG\_FOUND)
+set(\_LUA\_FOUND TRUE)
+set(LUA\_INCLUDE\_DIRS \${LUA\_PKG\_INCLUDE\_DIRS})
+set(LUA\_LIBRARIES \${LUA\_PKG\_LIBS})
+message(STATUS "Found Lua via pkg-config: \${\_lua\_pc\_name}")
+break()
+endif()
+endforeach()
+endif()
 
-# 1. Compile the C++ Logger as a static library
-add_library(logger STATIC src/libs/liblogger/Logger.cpp)
-target_include_directories(logger PUBLIC ${CMAKE_SOURCE_DIR}/src/ipc/include)
+# 3) Probe common Homebrew/vcpkg prefixes for lua or lua\@5.4
 
-# 2. Gather all C source files for the main executable
-file(GLOB_RECURSE CORE_SOURCES
-    "src/core/cli/*.c"
-    "src/core/config/*.c"
-    "src/core/main/*.c"
-    "src/core/module_loader/*.c"
-    "src/core/platform/*.c"
-    "src/core/scripting/*.c"
-    "src/core/ui/*.c"
-    "src/libs/libcommon/*.c"
+if(NOT \_LUA\_FOUND)
+foreach(\_p /opt/homebrew /usr/local /usr/local/opt \$ENV{VCPKG\_ROOT})
+if(NOT \_p)
+continue()
+endif()
+\# check for lua\@5.4 or lua
+if(EXISTS "\${\_p}/opt/lua\@5.4" OR EXISTS "\${\_p}/opt/lua")
+if(EXISTS "\${\_p}/opt/lua\@5.4")
+set(\_candidate "\${\_p}/opt/lua\@5.4")
+else()
+set(\_candidate "\${\_p}/opt/lua")
+endif()
+if(EXISTS "\${\_candidate}/include")
+set(LUA\_INCLUDE\_DIRS "\${\_candidate}/include")
+endif()
+\# prefer shared library names
+if(EXISTS "\${\_candidate}/lib/liblua.dylib")
+set(LUA\_LIBRARIES "\${\_candidate}/lib/liblua.dylib")
+elseif(EXISTS "\${\_candidate}/lib/liblua.a")
+set(LUA\_LIBRARIES "\${\_candidate}/lib/liblua.a")
+elseif(EXISTS "\${\_candidate}/lib/liblua5.4.dylib")
+set(LUA\_LIBRARIES "\${\_candidate}/lib/liblua5.4.dylib")
+endif()
+if(LUA\_INCLUDE\_DIRS OR LUA\_LIBRARIES)
+set(\_LUA\_FOUND TRUE)
+message(STATUS "Found Lua in prefix: \${\_candidate}")
+break()
+endif()
+endif()
+endforeach()
+endif()
+
+# 4) Final fallback: instruct the user
+
+if(NOT \_LUA\_FOUND)
+message(FATAL\_ERROR
+"Lua 5.4 not found. Install Lua (system package, Homebrew 'lua' or 'lua\@5.4', vcpkg, or set CMAKE\_PREFIX\_PATH). "
+"Example: 'brew install lua' or 'sudo apt install liblua5.4-dev'.")
+endif()
+
+# Normalize variables commonly used later
+
+# CMake's FindLua sometimes sets LUA\_INCLUDE\_DIR and LUA\_LIBRARIES or other variations.
+
+if(DEFINED Lua\_INCLUDE\_DIR)
+set(LUA\_INCLUDE\_DIRS \${Lua\_INCLUDE\_DIR})
+endif()
+if(DEFINED Lua\_LIBRARY)
+set(LUA\_LIBRARIES \${Lua\_LIBRARY})
+elseif(DEFINED Lua\_LIBRARIES)
+set(LUA\_LIBRARIES \${Lua\_LIBRARIES})
+endif()
+
+# Provide an imported target if available (CMake 3.20+ or vcpkg might provide one)
+
+if(TARGET Lua::Lua)
+set(LUA\_LINK\_TARGET Lua::Lua)
+else()
+set(LUA\_LINK\_TARGET "\${LUA\_LIBRARIES}")
+endif()
+
+message(STATUS "Lua include dirs: \${LUA\_INCLUDE\_DIRS}")
+message(STATUS "Lua libraries: \${LUA\_LIBRARIES}")
+
+# --- Find nlohmann\_json ---
+
+find\_package(nlohmann\_json 3.2.0 QUIET)
+if(nlohmann\_json\_FOUND)
+message(STATUS "Found nlohmann\_json via find\_package.")
+else()
+message(STATUS "nlohmann\_json not found on system. Will fetch using FetchContent.")
+FetchContent\_Declare(
+nlohmann\_json
+GIT\_REPOSITORY [https://github.com/nlohmann/json.git](https://github.com/nlohmann/json.git)
+GIT\_TAG v3.11.3
+)
+FetchContent\_MakeAvailable(nlohmann\_json)
+message(STATUS "nlohmann\_json fetched and made available.")
+endif()
+
+# --- Project sources ---
+
+# Logger
+
+add\_library(logger STATIC src/libs/liblogger/Logger.cpp)
+target\_include\_directories(logger PUBLIC \${CMAKE\_SOURCE\_DIR}/src/ipc/include)
+
+# Core C sources
+
+file(GLOB\_RECURSE CORE\_SOURCES
+"src/core/cli/*.c"
+"src/core/config/*.c"
+"src/core/main/*.c"
+"src/core/module\_loader/*.c"
+"src/core/platform/*.c"
+"src/core/scripting/*.c"
+"src/core/ui/*.c"
+"src/libs/libcommon/*.c"
 )
 
-# 3. Compile the main gitph executable
-add_executable(gitph ${CORE_SOURCES})
+add\_executable(gitph \${CORE\_SOURCES})
 
-# 4. Add include directories for the main executable
-target_include_directories(gitph PUBLIC
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/src/core
-    ${CMAKE_SOURCE_DIR}/src/ipc/include
-    ${CMAKE_SOURCE_DIR}/src/libs
-    ${LUA_INCLUDE_DIRS}
+# --- Include directories for the main executable ---
+
+target\_include\_directories(gitph PUBLIC
+\${CMAKE\_SOURCE\_DIR}/src
+\${CMAKE\_SOURCE\_DIR}/src/core
+\${CMAKE\_SOURCE\_DIR}/src/ipc/include
+\${CMAKE\_SOURCE\_DIR}/src/libs
 )
 
-# 5. Link the main executable with its dependencies
-target_link_libraries(gitph
-    PRIVATE
-    logger
-    ${CURL_LIBRARIES}
-    ${LUA_LIBRARIES}
-)
+# Add Lua include dir if available
 
-# On POSIX systems, we need to link against libdl for dynamic loading
+if(LUA\_INCLUDE\_DIRS)
+target\_include\_directories(gitph PUBLIC \${LUA\_INCLUDE\_DIRS})
+endif()
+
+# Use modern target for libcurl if available
+
+if(TARGET CURL::libcurl)
+set(\_CURL\_LINK\_TARGET CURL::libcurl)
+\# CURL::libcurl brings include dirs automatically
+else()
+if(DEFINED CURL\_LIBRARIES)
+set(\_CURL\_LINK\_TARGET \${CURL\_LIBRARIES})
+elseif(DEFINED CURL\_LIBRARY)
+set(\_CURL\_LINK\_TARGET \${CURL\_LIBRARY})
+else()
+set(\_CURL\_LINK\_TARGET "")
+endif()
+
+```
+# If find_package(CURL) provided include directories:
+if(DEFINED CURL_INCLUDE_DIRS)
+    target_include_directories(gitph PUBLIC ${CURL_INCLUDE_DIRS})
+endif()
+```
+
+endif()
+
+# Link the main executable with dependencies.
+
+# Prefer imported targets; if not present use variables discovered earlier.
+
+set(\_link\_list logger)
+
+if(\_CURL\_LINK\_TARGET)
+list(APPEND \_link\_list \${\_CURL\_LINK\_TARGET})
+else()
+message(WARNING "libcurl target/vars not found. Linking may fail; ensure curl dev library is installed.")
+endif()
+
+if(LUA\_LINK\_TARGET)
+list(APPEND \_link\_list \${LUA\_LINK\_TARGET})
+else()
+message(FATAL\_ERROR "Lua link target/vars not configured correctly.")
+endif()
+
+target\_link\_libraries(gitph PRIVATE \${\_link\_list})
+
+# On POSIX systems, link to dl and m where appropriate
+
 if(UNIX AND NOT APPLE)
-    target_link_libraries(gitph PRIVATE dl m) # Added 'm' for math library, if needed by Lua
+target\_link\_libraries(gitph PRIVATE dl m)
 endif()
 
+# --- Module build macros (Rust / Go) ---
 
-# --- Compile Polyglot Modules (via Custom Commands) ---
-
-# Helper macro to define a build process for a Rust module
-macro(add_rust_module module_name)
-    add_custom_command(
-        OUTPUT ${MODULE_OUTPUT_PATH}/${CMAKE_SHARED_LIBRARY_PREFIX}${module_name}${CMAKE_SHARED_LIBRARY_SUFFIX}
-        COMMAND ${CMAKE_COMMAND} -E env "CARGO_TARGET_DIR=${CMAKE_BINARY_DIR}/cargo_target" cargo build --release --manifest-path ${CMAKE_SOURCE_DIR}/src/modules/${module_name}/Cargo.toml
-        COMMAND ${CMAKE_COMMAND} -E copy
-                ${CMAKE_BINARY_DIR}/cargo_target/release/${CMAKE_SHARED_LIBRARY_PREFIX}${module_name}${CMAKE_SHARED_LIBRARY_SUFFIX}
-                ${MODULE_OUTPUT_PATH}/
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/src/modules/${module_name}
-        COMMENT "Compiling Rust module: ${module_name}"
-        VERBATIM
-    )
-    add_custom_target(build_${module_name} ALL
-        DEPENDS ${MODULE_OUTPUT_PATH}/${CMAKE_SHARED_LIBRARY_PREFIX}${module_name}${CMAKE_SHARED_LIBRARY_SUFFIX}
-    )
+macro(add\_rust\_module module\_name)
+add\_custom\_command(
+OUTPUT \${MODULE\_OUTPUT\_PATH}/\${CMAKE\_SHARED\_LIBRARY\_PREFIX}\${module\_name}\${CMAKE\_SHARED\_LIBRARY\_SUFFIX}
+COMMAND \${CMAKE\_COMMAND} -E env "CARGO\_TARGET\_DIR=\${CMAKE\_BINARY\_DIR}/cargo\_target" cargo build --release --manifest-path \${CMAKE\_SOURCE\_DIR}/src/modules/\${module\_name}/Cargo.toml
+COMMAND \${CMAKE\_COMMAND} -E copy
+\${CMAKE\_BINARY\_DIR}/cargo\_target/release/\${CMAKE\_SHARED\_LIBRARY\_PREFIX}\${module\_name}\${CMAKE\_SHARED\_LIBRARY\_SUFFIX}
+\${MODULE\_OUTPUT\_PATH}/
+WORKING\_DIRECTORY \${CMAKE\_SOURCE\_DIR}/src/modules/\${module\_name}
+COMMENT "Compiling Rust module: \${module\_name}"
+VERBATIM
+)
+add\_custom\_target(build\_\${module\_name} ALL
+DEPENDS \${MODULE\_OUTPUT\_PATH}/\${CMAKE\_SHARED\_LIBRARY\_PREFIX}\${module\_name}\${CMAKE\_SHARED\_LIBRARY\_SUFFIX}
+)
 endmacro()
 
-# Helper macro to define a build process for a Go module
-macro(add_go_module module_name)
-    add_custom_command(
-        OUTPUT ${MODULE_OUTPUT_PATH}/${CMAKE_SHARED_LIBRARY_PREFIX}${module_name}${CMAKE_SHARED_LIBRARY_SUFFIX}
-        COMMAND go build -buildmode=c-shared -o ${MODULE_OUTPUT_PATH}/${CMAKE_SHARED_LIBRARY_PREFIX}${module_name}${CMAKE_SHARED_LIBRARY_SUFFIX} .
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/src/modules/${module_name}
-        COMMENT "Compiling Go module: ${module_name}"
-        VERBATIM
-    )
-    add_custom_target(build_${module_name} ALL
-        DEPENDS ${MODULE_OUTPUT_PATH}/${CMAKE_SHARED_LIBRARY_PREFIX}${module_name}${CMAKE_SHARED_LIBRARY_SUFFIX}
-    )
+macro(add\_go\_module module\_name)
+add\_custom\_command(
+OUTPUT \${MODULE\_OUTPUT\_PATH}/\${CMAKE\_SHARED\_LIBRARY\_PREFIX}\${module\_name}\${CMAKE\_SHARED\_LIBRARY\_SUFFIX}
+COMMAND go build -buildmode=c-shared -o \${MODULE\_OUTPUT\_PATH}/\${CMAKE\_SHARED\_LIBRARY\_PREFIX}\${module\_name}\${CMAKE\_SHARED\_LIBRARY\_SUFFIX} .
+WORKING\_DIRECTORY \${CMAKE\_SOURCE\_DIR}/src/modules/\${module\_name}
+COMMENT "Compiling Go module: \${module\_name}"
+VERBATIM
+)
+add\_custom\_target(build\_\${module\_name} ALL
+DEPENDS \${MODULE\_OUTPUT\_PATH}/\${CMAKE\_SHARED\_LIBRARY\_PREFIX}\${module\_name}\${CMAKE\_SHARED\_LIBRARY\_SUFFIX}
+)
 endmacro()
 
-# --- Invoke compilation for each module ---
-add_rust_module(git_ops)
-add_rust_module(issue_tracker)
-add_rust_module(sync_engine)
+# Add modules
 
-add_go_module(api_client)
-add_go_module(devops_automation)
+add\_rust\_module(git\_ops)
+add\_rust\_module(issue\_tracker)
+add\_rust\_module(sync\_engine)
 
-# --- Specific Build for `ci_cd_manager` Module ---
+add\_go\_module(api\_client)
+add\_go\_module(devops\_automation)
 
-# 1. Compile the Go parser as a shared library
-add_custom_command(
-    OUTPUT ${MODULE_OUTPUT_PATH}/${CMAKE_SHARED_LIBRARY_PREFIX}ci_cd_parser${CMAKE_SHARED_LIBRARY_SUFFIX}
-    COMMAND go build -buildmode=c-shared -o ${MODULE_OUTPUT_PATH}/${CMAKE_SHARED_LIBRARY_PREFIX}ci_cd_parser${CMAKE_SHARED_LIBRARY_SUFFIX} parser.go
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/src/modules/ci_cd_manager
-    COMMENT "Compiling CI/CD Go parser"
-    VERBATIM
+# --- Specific module: ci\_cd\_manager ---
+
+add\_custom\_command(
+OUTPUT \${MODULE\_OUTPUT\_PATH}/\${CMAKE\_SHARED\_LIBRARY\_PREFIX}ci\_cd\_parser\${CMAKE\_SHARED\_LIBRARY\_SUFFIX}
+COMMAND go build -buildmode=c-shared -o \${MODULE\_OUTPUT\_PATH}/\${CMAKE\_SHARED\_LIBRARY\_PREFIX}ci\_cd\_parser\${CMAKE\_SHARED\_LIBRARY\_SUFFIX} parser.go
+WORKING\_DIRECTORY \${CMAKE\_SOURCE\_DIR}/src/modules/ci\_cd\_manager
+COMMENT "Compiling CI/CD Go parser"
+VERBATIM
 )
-add_custom_target(build_ci_cd_parser ALL
-    DEPENDS ${MODULE_OUTPUT_PATH}/${CMAKE_SHARED_LIBRARY_PREFIX}ci_cd_parser${CMAKE_SHARED_LIBRARY_SUFFIX}
-)
-
-# 2. Compile the C++ visualizer as a shared library
-# NOTE: The nlohmann/json library is now handled automatically by find_package or FetchContent.
-add_library(ci_cd_visualizer SHARED src/modules/ci_cd_manager/visualizer/PipelineVisualizer.cpp)
-target_include_directories(ci_cd_visualizer PUBLIC
-    ${CMAKE_SOURCE_DIR}/src/ipc/include
+add\_custom\_target(build\_ci\_cd\_parser ALL
+DEPENDS \${MODULE\_OUTPUT\_PATH}/\${CMAKE\_SHARED\_LIBRARY\_PREFIX}ci\_cd\_parser\${CMAKE\_SHARED\_LIBRARY\_SUFFIX}
 )
 
-# The visualizer needs access to the logger and nlohmann_json.
-# Linking to nlohmann_json::nlohmann_json automatically adds its include directory.
-target_link_libraries(ci_cd_visualizer PRIVATE
-    logger
-    nlohmann_json::nlohmann_json
+add\_library(ci\_cd\_visualizer SHARED src/modules/ci\_cd\_manager/visualizer/PipelineVisualizer.cpp)
+target\_include\_directories(ci\_cd\_visualizer PUBLIC
+\${CMAKE\_SOURCE\_DIR}/src/ipc/include
 )
 
-set_target_properties(ci_cd_visualizer PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY "${MODULE_OUTPUT_PATH}"
+# Link visualizer against logger and nlohmann\_json, prefer imported target
+
+if(TARGET nlohmann\_json::nlohmann\_json)
+target\_link\_libraries(ci\_cd\_visualizer PRIVATE logger nlohmann\_json::nlohmann\_json)
+else()
+\# If FetchContent provided a target, it will generally be available as nlohmann\_json::nlohmann\_json
+\# Otherwise include its headers via include path if available.
+target\_link\_libraries(ci\_cd\_visualizer PRIVATE logger)
+endif()
+
+set\_target\_properties(ci\_cd\_visualizer PROPERTIES
+LIBRARY\_OUTPUT\_DIRECTORY "\${MODULE\_OUTPUT\_PATH}"
 )
 
-# --- Installation Rules ---
-install(TARGETS gitph DESTINATION bin)
+# --- Installer target ---
+
+add\_executable(installer\_main installer/src/installer\_main.c installer/src/download.c)
+
+# Link curl to installer (prefer imported target)
+
+if(TARGET CURL::libcurl)
+target\_link\_libraries(installer\_main PRIVATE CURL::libcurl)
+elseif(DEFINED CURL\_LIBRARIES)
+target\_link\_libraries(installer\_main PRIVATE \${CURL\_LIBRARIES})
+else()
+message(WARNING "installer\_main: libcurl not found; installer linking may fail.")
+endif()
+set\_target\_properties(installer\_main PROPERTIES RUNTIME\_OUTPUT\_DIRECTORY "\${CMAKE\_BINARY\_DIR}/installer")
+
+# --- Installation rules ---
+
+install(TARGETS gitph DESTINATION \${CMAKE\_INSTALL\_BINDIR})
 install(
-    DIRECTORY ${MODULE_OUTPUT_PATH}/
-    DESTINATION bin/modules
-    FILES_MATCHING PATTERN "*.so" PATTERN "*.dll" PATTERN "*.dylib"
+DIRECTORY \${MODULE\_OUTPUT\_PATH}/
+DESTINATION \${CMAKE\_INSTALL\_BINDIR}/modules
+FILES\_MATCHING PATTERN "*.so" PATTERN "*.dll" PATTERN "\*.dylib"
 )
 
-# Add a target for the C installer (not compiled by default with 'all')
-add_executable(installer_main installer/src/installer_main.c installer/src/download.c)
-target_link_libraries(installer_main PRIVATE ${CURL_LIBRARIES})
-set_target_properties(installer_main PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/installer")
+# --- Helpful user messages ---
+
+message(STATUS "Configuration complete. If you still see 'library not found' during link time on macOS or other systems, try:")
+message(STATUS "  - Passing explicit prefix paths: -DCMAKE\_PREFIX\_PATH=/opt/homebrew:/usr/local")
+message(STATUS "  - On macOS (Apple Silicon): brew install lua curl nlohmann-json")
+message(STATUS "  - On Debian/Ubuntu: sudo apt install liblua5.4-dev libcurl4-openssl-dev    (or libcurl4-gnutls-dev)")
+message(STATUS "  - On Fedora: sudo dnf install lua-devel libcurl-devel")
+message(STATUS "  - With vcpkg: set -DCMAKE\_TOOLCHAIN\_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake and install packages there.")
+message(STATUS "  - To debug linker errors, re-run the build with VERBOSE=1 (e.g., cmake --build . -- VERBOSE=1).")
+
+# End of CMakeLists.txt
