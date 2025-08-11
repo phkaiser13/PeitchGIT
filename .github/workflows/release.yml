@@ -40,103 +40,62 @@ jobs:
         id: get_version
         run: |
           # Extrai a versão do projeto do arquivo CMakeLists.txt para nomear a tag da release
-          VERSION=$(grep 'project(gitph' CMakeLists.txt | grep -oP 'VERSION \K[0-9.]+')
+          VERSION=$(grep -oP 'project\(gitph VERSION \K[0-9.]+' CMakeLists.txt)
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "Tag da Release: v${VERSION}"
 
       - name: 'Baixar todos os artefatos dos builds'
-        uses: actions/github-script@v7
+        uses: actions/download-artifact@v4
         with:
-          script: |
-            const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
-               owner: context.repo.owner,
-               repo: context.repo.repo,
-               run_id: ${{github.event.workflow_run.id }},
-            });
-            const matchArtifact = artifacts.data.artifacts.find((artifact) => {
-              return artifact.name == "gitph-build-artifacts-ubuntu" || 
-                     artifact.name == "gitph-build-artifacts-windows" || 
-                     artifact.name == "gitph-build-artifacts-fedora" || 
-                     artifact.name == "gitph-build-artifacts-arch"   ||
-                     artifact.name.startsWith("gitph-build-artifacts-macos-")
-            });
-            if (matchArtifact) {
-              const download = await github.rest.actions.downloadArtifact({
-                 owner: context.repo.owner,
-                 repo: context.repo.repo,
-                 artifact_id: matchArtifact.id,
-                 archive_format: 'zip',
-              });
-              const fs = require('fs');
-              fs.writeFileSync(`${process.env.GITHUB_WORKSPACE}/${matchArtifact.name}.zip`, Buffer.from(download.data));
-            }
+          # Associa os artefatos ao workflow que acionou este
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          # O download-artifact criará diretórios com os nomes dos artefatos
+          # Ex: ./gitph-build-artifacts-arch-x86_64/, ./gitph-build-artifacts-ubuntu-x86_64/, etc.
 
       - name: 'Organizar e empacotar artefatos'
         run: |
           # Cria o diretório de releases
           mkdir -p release_packages
 
-          # Descompacta todos os artefatos baixados
-          for zip in *.zip; do
-            unzip -o "$zip" -d "${zip%.zip}"
-          done
-          
           # Função para criar o pacote tar.gz
           create_package() {
             local ARTIFACT_DIR=$1
             local PLATFORM_NAME=$2
             local VERSION=$3
-            local RELEASE_NAME="peitchgit-v${VERSION}-${PLATFORM_NAME}"
+            # Nome do projeto corrigido para 'gitph'
+            local RELEASE_NAME="gitph-v${VERSION}-${PLATFORM_NAME}"
             
-            echo "Empacotando ${ARTIFACT_DIR} em ${RELEASE_NAME}.tar.gz"
+            echo "Empacotando o conteúdo de '${ARTIFACT_DIR}' em '${RELEASE_NAME}.tar.gz'"
             
-            # Entra no diretório do artefato para criar o pacote com a estrutura correta
-            (
-              cd "${ARTIFACT_DIR}"
-              # Empacota o conteúdo (binários, módulos, etc.)
-              tar -czf "../../release_packages/${RELEASE_NAME}.tar.gz" .
-            )
+            if [ ! -d "${ARTIFACT_DIR}" ]; then
+              echo "Aviso: Diretório do artefato '${ARTIFACT_DIR}' não encontrado. Pulando."
+              return
+            fi
+
+            # Empacota o conteúdo do diretório, não o diretório em si, usando -C
+            tar -czf "release_packages/${RELEASE_NAME}.tar.gz" -C "${ARTIFACT_DIR}" .
           }
           
           # Ubuntu
-          if [ -d "gitph-build-artifacts-ubuntu-x86_64" ]; then
-            create_package "gitph-build-artifacts-ubuntu-x86_64" "Ubuntu-x86_64" "${{ env.VERSION }}"
-          fi
-          if [ -d "gitph-build-artifacts-ubuntu-arm64" ]; then
-            create_package "gitph-build-artifacts-ubuntu-arm64" "Ubuntu-arm64" "${{ env.VERSION }}"
-          fi
+          create_package "gitph-build-artifacts-ubuntu-x86_64" "ubuntu-x86_64" "${{ env.VERSION }}"
+          create_package "gitph-build-artifacts-ubuntu-arm64" "ubuntu-arm64" "${{ env.VERSION }}"
           
           # Windows
-          if [ -d "gitph-build-artifacts-windows-x86_64/Release" ]; then
-            create_package "gitph-build-artifacts-windows-x86_64/Release" "Windows-x86_64" "${{ env.VERSION }}"
-          fi
-          if [ -d "gitph-build-artifacts-windows-arm64/Release" ]; then
-            create_package "gitph-build-artifacts-windows-arm64/Release" "Windows-arm64" "${{ env.VERSION }}"
-          fi
+          create_package "gitph-build-artifacts-windows-x86_64/Release" "windows-x86_64" "${{ env.VERSION }}"
+          create_package "gitph-build-artifacts-windows-arm64/Release" "windows-arm64" "${{ env.VERSION }}"
           
           # Fedora
-          if [ -d "gitph-build-artifacts-fedora-x86_64" ]; then
-            create_package "gitph-build-artifacts-fedora-x86_64" "Fedora-x86_64" "${{ env.VERSION }}"
-          fi
-          if [ -d "gitph-build-artifacts-fedora-arm64" ]; then
-            create_package "gitph-build-artifacts-fedora-arm64" "Fedora-arm64" "${{ env.VERSION }}"
-          fi
+          create_package "gitph-build-artifacts-fedora-x86_64" "fedora-x86_64" "${{ env.VERSION }}"
+          create_package "gitph-build-artifacts-fedora-arm64" "fedora-arm64" "${{ env.VERSION }}"
           
-          # Arch
-          if [ -d "gitph-build-artifacts-arch-x86_64" ]; then
-            create_package "gitph-build-artifacts-arch-x86_64" "Arch-x86_64" "${{ env.VERSION }}"
-          fi
-          if [ -d "gitph-build-artifacts-arch-arm64" ]; then
-            create_package "gitph-build-artifacts-arch-arm64" "Arch-arm64" "${{ env.VERSION }}"
-          fi
+          # Arch (NOVA SEÇÃO PARA AS MÚLTIPLAS ARQUITETURAS)
+          create_package "gitph-build-artifacts-arch-x86_64" "arch-x86_64" "${{ env.VERSION }}"
+          create_package "gitph-build-artifacts-arch-aarch64" "arch-aarch64" "${{ env.VERSION }}"
           
-          # macOS (já tinha)
-          if [ -d "gitph-build-artifacts-macos-x86_64" ]; then
-            create_package "gitph-build-artifacts-macos-x86_64" "macOS-x86_64" "${{ env.VERSION }}"
-          fi
-          if [ -d "gitph-build-artifacts-macos-arm64" ]; then
-            create_package "gitph-build-artifacts-macos-arm64" "macOS-arm64" "${{ env.VERSION }}"
-          fi
+          # macOS
+          create_package "gitph-build-artifacts-macos-x86_64" "macos-x86_64" "${{ env.VERSION }}"
+          create_package "gitph-build-artifacts-macos-arm64" "macos-arm64" "${{ env.VERSION }}"
 
           echo "Pacotes de release prontos:"
           ls -l release_packages
