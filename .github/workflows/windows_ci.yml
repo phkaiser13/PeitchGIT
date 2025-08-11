@@ -54,7 +54,7 @@ jobs:
       #    CORREÇÃO 2: Usamos o output 'vcpkg-root' do passo com id 'vcpkg'.
       #    Esta é a forma mais robusta de passar valores entre os passos.
       - name: Configurar CMake
-        run: cmake -S . -B build -D "CMAKE_TOOLCHAIN_FILE=${{ steps.vcpkg.outputs.vcpkg-root }}/scripts/buildsystems/vcpkg.cmake"
+        run: cmake ${{ steps.vcpkg.outputs.vcpkg-cmake-config }} -S . -B build
         shell: powershell
 
       # 6. Compila o projeto
