@@ -1,52 +1,132 @@
+# .github/workflows/release.yml
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
-# release.yml - Workflow para automatizar a criação de releases no GitHub.
-#
-# Este workflow é acionado manualmente e orquestra o processo de:
-# 1. Realizar um build limpo do projeto no modo Release.
-# 2. Executar o script 'release.sh' para empacotar os artefatos.
-# 3. Usar o GitHub CLI para criar uma nova tag e release, fazendo o upload do pacote.
 #
 # SPDX-License-Identifier: Apache-2.0
+#
+# Este workflow é responsável por criar uma release no GitHub.
+# Ele é acionado após a conclusão bem-sucedida dos workflows de build
+# e empacota os artefatos de cada plataforma em um formato de distribuição.
 
-name: Create GitHub Release
+name: 'Criação de Release'
 
 on:
-  workflow_dispatch: # Permite que este workflow seja acionado manualmente pela UI do GitHub Actions
+  workflow_run:
+    # Aciona este workflow quando os workflows de build listados terminam na branch main
+    workflows:
+      - "Build do gitph"                                # Nome do workflow Ubuntu-Like_ci.yml
+      - "Build gitph (Fedora-like Linux)"               # Nome do workflow Fedora-like_ci.yml
+      - "Build gitph (Arch-like - containerized)"       # Nome do workflow Arch-like_ci.yml
+      - "Build gitph (Windows)"                         # Nome do workflow Windows_ci.yml
+      - "Build gitph (macOS & Darwin systems)"          # Nome do workflow Mac-DarwinLike_ci.yml
+    types:
+      - completed
+    branches:
+      - main
 
 jobs:
-  create-release:
-    name: Build and Create Release
+  release:
+    name: 'Criar Release e Empacotar Artefatos'
+    # Executa apenas se o workflow acionador foi bem-sucedido e se for um push (não em PRs)
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Permissão necessária para criar a release
 
     steps:
-      - name: Checkout do código
+      - name: 'Checkout do código'
         uses: actions/checkout@v4
 
-      - name: Instalar dependências de build (Ubuntu)
+      - name: 'Extrair versão do CMakeLists.txt'
+        id: get_version
         run: |
-          sudo apt-get update && sudo apt-get install -y \
-            build-essential cmake pkg-config liblua5.4-dev libcurl4-openssl-dev nlohmann-json3-dev \
-            golang rustc
-        
-      - name: Construir e empacotar a release
-        id: package
-        run: |
-          # Executa o script de release existente
-          ./scripts/release.sh
-          # Captura o nome do arquivo gerado para usar no próximo passo
-          RELEASE_ARCHIVE=$(find release -name "*.tar.gz" -print)
-          echo "ARCHIVE_PATH=$RELEASE_ARCHIVE" >> $GITHUB_ENV
-          # Extrai a versão do nome do arquivo para usar na tag
-          VERSION=$(echo $RELEASE_ARCHIVE | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+')
-          echo "RELEASE_VERSION=v$VERSION" >> $GITHUB_ENV
+          # Extrai a versão do projeto do arquivo CMakeLists.txt para nomear a tag da release
+          VERSION=$(grep 'project(gitph' CMakeLists.txt | grep -oP 'VERSION \K[0-9.]+')
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "Tag da Release: v${VERSION}"
 
-      - name: Criar a Release no GitHub
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: 'Baixar todos os artefatos dos builds'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+               owner: context.repo.owner,
+               repo: context.repo.repo,
+               run_id: ${{github.event.workflow_run.id }},
+            });
+            const matchArtifact = artifacts.data.artifacts.find((artifact) => {
+              return artifact.name == "gitph-build-artifacts-ubuntu" || 
+                     artifact.name == "gitph-build-artifacts-windows" || 
+                     artifact.name == "gitph-build-artifacts-fedora" || 
+                     artifact.name == "gitph-build-artifacts-arch"   ||
+                     artifact.name.startsWith("gitph-build-artifacts-macos-")
+            });
+            if (matchArtifact) {
+              const download = await github.rest.actions.downloadArtifact({
+                 owner: context.repo.owner,
+                 repo: context.repo.repo,
+                 artifact_id: matchArtifact.id,
+                 archive_format: 'zip',
+              });
+              const fs = require('fs');
+              fs.writeFileSync(`${process.env.GITHUB_WORKSPACE}/${matchArtifact.name}.zip`, Buffer.from(download.data));
+            }
+
+      - name: 'Organizar e empacotar artefatos'
         run: |
-          echo "Criando release para a versão ${{ env.RELEASE_VERSION }} com o arquivo ${{ env.ARCHIVE_PATH }}"
-          gh release create ${{ env.RELEASE_VERSION }} \
-             --title "Release ${{ env.RELEASE_VERSION }}" \
-             --notes "Release automatizada da versão ${{ env.RELEASE_VERSION }}." \
-             --generate-notes \
-             "${{ env.ARCHIVE_PATH }}"
+          # Cria o diretório de releases
+          mkdir -p release_packages
+
+          # Descompacta todos os artefatos baixados
+          for zip in *.zip; do
+            unzip -o "$zip" -d "${zip%.zip}"
+          done
+          
+          # Função para criar o pacote tar.gz
+          create_package() {
+            local ARTIFACT_DIR=$1
+            local PLATFORM_NAME=$2
+            local VERSION=$3
+            local RELEASE_NAME="peitchgit-v${VERSION}-${PLATFORM_NAME}"
+            
+            echo "Empacotando ${ARTIFACT_DIR} em ${RELEASE_NAME}.tar.gz"
+            
+            # Entra no diretório do artefato para criar o pacote com a estrutura correta
+            (
+              cd "${ARTIFACT_DIR}"
+              # Empacota o conteúdo (binários, módulos, etc.)
+              tar -czf "../../release_packages/${RELEASE_NAME}.tar.gz" .
+            )
+          }
+
+          # Empacota cada artefato com o nome correto
+          if [ -d "gitph-build-artifacts-ubuntu" ]; then
+            create_package "gitph-build-artifacts-ubuntu" "Ubuntu-x86_64" "${{ env.VERSION }}"
+          fi
+          if [ -d "gitph-build-artifacts-windows" ]; then
+            create_package "gitph-build-artifacts-windows/Release" "Windows-x86_64" "${{ env.VERSION }}"
+          fi
+          if [ -d "gitph-build-artifacts-fedora" ]; then
+            create_package "gitph-build-artifacts-fedora" "Fedora-x86_64" "${{ env.VERSION }}"
+          fi
+          if [ -d "gitph-build-artifacts-arch" ]; then
+            create_package "gitph-build-artifacts-arch" "Arch-x86_64" "${{ env.VERSION }}"
+          fi
+          if [ -d "gitph-build-artifacts-macos-x86_64" ]; then
+            create_package "gitph-build-artifacts-macos-x86_64" "macOS-x86_64" "${{ env.VERSION }}"
+          fi
+          if [ -d "gitph-build-artifacts-macos-arm64" ]; then
+            create_package "gitph-build-artifacts-macos-arm64" "macOS-arm64" "${{ env.VERSION }}"
+          fi
+
+          echo "Pacotes de release prontos:"
+          ls -l release_packages
+
+      - name: 'Criar Release e Anexar Pacotes'
+        uses: softprops/action-gh-release@v2
+        with:
+          # Usa a versão extraída como nome da tag
+          tag_name: "v${{ env.VERSION }}"
+          # Anexa todos os pacotes .tar.gz criados
+          files: release_packages/*.tar.gz
+          # Gera o corpo da release automaticamente com base nos commits
+          generate_release_notes: true
