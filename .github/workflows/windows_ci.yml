@@ -44,7 +44,8 @@ jobs:
       #    Isto irá baixar e compilar curl, lua e nlohmann-json.
       #    O vcpkg se integra com o CMake automaticamente através do toolchain file.
       - name: Instalar dependências C++ com vcpkg
-        uses: microsoft/vcpkg-action@v7 # <-- A versão foi atualizada para v6
+        uses: johnwason/vcpkg-action@v7 # <-- A versão foi atualizada para v7
+        id: vcpkg     
         with:
           # Lista de pacotes necessários conforme o CMakeLists.txt
           vcpkg-packages: |
