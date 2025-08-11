@@ -33,14 +33,12 @@ jobs:
         with:
           go-version: '1.21'
 
-      # 3. Configura o ambiente Rust
+      # 3. Configura o ambiente Rust e o cache para cada módulo
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
       
-      # CORREÇÃO: Executa o cache para CADA módulo Rust individualmente.
-      # A ação de cache precisa ser executada no diretório que contém o Cargo.toml.
       - name: Cache de dependências Rust (git_ops)
         uses: Swatinem/rust-cache@v2
         with:
@@ -66,8 +64,8 @@ jobs:
           token: ${{ github.token }}
           
       # 5. Configura e compila o projeto usando CMake
-      #    CORREÇÃO: Garante que o caminho para CMAKE_TOOLCHAIN_FILE use a variável
-      #    de ambiente VCPKG_ROOT, que é definida pela ação do vcpkg.
+      #    CORREÇÃO FINAL: O caminho para CMAKE_TOOLCHAIN_FILE foi corrigido para usar
+      #    a variável de ambiente VCPKG_ROOT, que aponta para o local de instalação do vcpkg.
       - name: Configurar CMake
         run: >
           cmake -S . -B build
