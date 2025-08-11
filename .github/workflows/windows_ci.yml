@@ -1,26 +1,26 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
-# main_ci_windows.yml - Workflow de Integração Contínua para Windows.
+# windows_build.yml - Workflow de Integração Contínua para Windows.
 #
-# Este workflow automatiza o build e release da aplicação no ambiente Windows.
-# Utiliza o vcpkg para gerenciar dependências C++, garantindo um build limpo
-# e confiável, e cria um pacote .zip para distribuição.
+# Este workflow valida a compilação do projeto no ambiente Windows,
+# garantindo que todas as dependências (C++, Rust, Go) são resolvidas
+# e que o projeto compila com sucesso usando o toolchain do Visual Studio
+# e o gerenciador de pacotes vcpkg.
 #
 # SPDX-License-Identifier: Apache-2.0
 
-name: Build e Release do gitph (Windows)
+name: Build para Windows
 
+# Gatilhos do workflow:
 on:
   push:
     branches: [ "main" ]
-    tags:
-      - 'v*'
   pull_request:
     branches: [ "main" ]
 
 jobs:
   build-windows:
-    name: Build e Teste (Windows)
-    runs-on: windows-latest
+    name: Build em Windows (MSVC)
+    runs-on: windows-latest # Usa o ambiente Windows mais recente com Visual Studio
 
     steps:
       # 1. Clona o repositório
@@ -33,89 +33,35 @@ jobs:
         with:
           go-version: '1.21'
 
-      # 3. Configura o ambiente Rust e o cache para cada módulo
+      # 3. Configura o ambiente Rust (com cache integrado)
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-      
-      - name: Cache de dependências Rust (git_ops)
-        uses: Swatinem/rust-cache@v2
-        with:
-          working-directory: src/modules/git_ops
+      - uses: Swatinem/rust-cache@v2
 
-      - name: Cache de dependências Rust (issue_tracker)
-        uses: Swatinem/rust-cache@v2
-        with:
-          working-directory: src/modules/issue_tracker
+      # 4. Configura o vcpkg para gerenciar dependências C++
+      #    Esta action oficial da Microsoft clona e prepara o vcpkg.
+      #    O caminho para o vcpkg fica disponível na variável de ambiente VCPKG_ROOT.
+      - name: Setup vcpkg
+        uses: microsoft/vcpkg-action@v1
 
-      - name: Cache de dependências Rust (sync_engine)
-        uses: Swatinem/rust-cache@v2
-        with:
-          working-directory: src/modules/sync_engine
+      # 5. Instala as dependências C++ via vcpkg
+      #    Exatamente como você faria localmente.
+      - name: Instalar dependências com vcpkg
+        run: vcpkg install curl lua nlohmann-json
+        shell: cmd # Usar o shell padrão do Windows
 
-      # 4. Instala as dependências C++ via vcpkg
-      - name: Instalar dependências C++ com vcpkg
-        uses: johnwason/vcpkg-action@v7
-        id: vcpkg     
-        with:
-          pkgs: curl lua nlohmann-json
-          triplet: x64-windows-release
-          token: ${{ github.token }}
-          
-      # 5. Configura e compila o projeto usando CMake
-      #    CORREÇÃO FINAL: O caminho para CMAKE_TOOLCHAIN_FILE foi corrigido para usar
-      #    a variável de ambiente VCPKG_ROOT, que aponta para o local de instalação do vcpkg.
+      # 6. Configura o projeto com CMake
+      #    O ponto crucial aqui é o uso de CMAKE_TOOLCHAIN_FILE para que o CMake
+      #    encontre as bibliotecas instaladas pelo vcpkg.
       - name: Configurar CMake
         run: >
           cmake -S . -B build
-          -G "Visual Studio 17 2022"
-          -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake"
+          -D CMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
+        shell: bash # Usar bash para facilitar a expansão da variável de ambiente
 
+      # 7. Compila o projeto
+      #    Executa o build em modo Release e em paralelo para maior velocidade.
       - name: Compilar Projeto
         run: cmake --build build --config Release --parallel
-
-      # 6. Salva os artefatos de build para o job de release
-      - name: Upload dos artefatos de build
-        uses: actions/upload-artifact@v4
-        with:
-          name: gitph-build-artifacts-windows
-          path: |
-            build/bin/Release/
-            build/bin/modules/Release/
-            LICENSE
-
-  release-windows:
-    name: Criar Release (Windows)
-    needs: build-windows
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-
-    steps:
-      - name: Checkout do código
-        uses: actions/checkout@v4
-
-      - name: Download dos artefatos de build
-        uses: actions/download-artifact@v4
-        with:
-          name: gitph-build-artifacts-windows
-          path: artifacts/
-
-      - name: Empacotar para Release (Windows)
-        shell: pwsh
-        run: |
-          $VERSION = "${{ github.ref_name }}"
-          $RELEASE_NAME = "gitph-${VERSION}-windows-x64"
-          New-Item -ItemType Directory -Force -Path "release/$RELEASE_NAME/modules"
-          Copy-Item -Path "artifacts/*.exe", "artifacts/*.dll" -Destination "release/$RELEASE_NAME/"
-          Copy-Item -Path "artifacts/modules/*.dll" -Destination "release/$RELEASE_NAME/modules/"
-          Copy-Item -Path "artifacts/LICENSE" -Destination "release/$RELEASE_NAME/"
-          Compress-Archive -Path "release/$RELEASE_NAME/*" -DestinationPath "release/${RELEASE_NAME}.zip"
-          echo "RELEASE_PATH=release/${RELEASE_NAME}.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Publicar Release no GitHub
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ env.RELEASE_PATH }}
-          generate_release_notes: true
