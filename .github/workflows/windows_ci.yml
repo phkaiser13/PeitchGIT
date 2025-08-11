@@ -20,7 +20,7 @@ on:
 jobs:
   build-windows:
     name: Build em Windows (MSVC)
-    runs-on: windows-latest # Usa o ambiente Windows mais recente com Visual Studio
+    runs-on: windows-latest
 
     steps:
       # 1. Clona o repositório
@@ -40,29 +40,26 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
 
-      # 4. Configura o vcpkg para gerenciar dependências C++
-      #    CORREÇÃO: O nome do parâmetro correto é 'token', e não 'github-token'.
-      - name: Setup vcpkg
+      # 4. Setup vcpkg e Instalar dependências
+      #    CORREÇÃO: Combinamos a instalação e o setup em um único passo.
+      #    - 'pkgs': Lista os pacotes a serem instalados.
+      #    - 'triplet': Especifica a arquitetura de destino, resolvendo o erro.
+      - name: Setup vcpkg e Instalar dependências
         uses: johnwason/vcpkg-action@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          pkgs: curl lua nlohmann-json
+          triplet: x64-windows
 
-      # 5. Instala as dependências C++ via vcpkg
-      #    Exatamente como você faria localmente.
-      - name: Instalar dependências com vcpkg
-        run: vcpkg install curl lua nlohmann-json
-        shell: cmd # Usar o shell padrão do Windows
-
-      # 6. Configura o projeto com CMake
-      #    O ponto crucial aqui é o uso de CMAKE_TOOLCHAIN_FILE para que o CMake
-      #    encontre as bibliotecas instaladas pelo vcpkg.
+      # 5. Configura o projeto com CMake
+      #    Este passo permanece o mesmo, pois a action do vcpkg configura
+      #    a variável de ambiente VCPKG_ROOT corretamente.
       - name: Configurar CMake
         run: >
           cmake -S . -B build
           -D CMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
-        shell: bash # Usar bash para facilitar a expansão da variável de ambiente
+        shell: bash
 
-      # 7. Compila o projeto
-      #    Executa o build em modo Release e em paralelo para maior velocidade.
+      # 6. Compila o projeto
       - name: Compilar Projeto
         run: cmake --build build --config Release --parallel
