@@ -1,62 +1,62 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
-# main_ci.yml - Workflow de Integração Contínua para o projeto gitph.
+# Arch-like_ci.ymll - Continuous Integration workflow for the gitph project.
 #
-# Este workflow automatiza o processo de build e release da aplicação.
-# Ele garante que o projeto compila corretamente em um ambiente limpo
-# e cria pacotes de distribuição automaticamente quando uma nova versão é marcada.
+# This workflow automates the application's build and release process.
+# It ensures that the project compiles correctly in a clean environment
+# and automatically creates distribution packages when a new version is tagged.
 # SPDX-License-Identifier: Apache-2.0
 
-name: Build e Release do gitph (Arch Linux)
+name: Build and Release gitph (For Arch-like Linux systems)
 
-# Gatilhos do workflow:
+# Workflow triggers:
 on:
   push:
-    branches: [ "main" ] # Executa quando há um push para a branch main
+    branches: [ "main" ] # Runs on pushes to the main branch
     tags:
-      - 'v*'          # Executa quando uma tag como v1.0.0 é criada
+      - 'v*'          # Runs when a tag like v1.0.0 is created
   pull_request:
-    branches: [ "main" ] # Executa em pull requests para a main
+    branches: [ "main" ] # Runs on pull requests to the main branch
 
 jobs:
-  # Job principal de build que compila e verifica o projeto
+  # Main build job that compiles and verifies the project
   build:
-    name: Build e Teste (Arch Linux)
-    # ATENÇÃO: O GitHub não fornece runners Arch Linux.
-    # Você deve configurar um runner auto-hospedado (self-hosted) com Arch Linux.
+    name: Build and Test (Arch Linux)
+    # WARNING: GitHub does not provide Arch Linux runners.
+    # You must set up a self-hosted runner with Arch Linux.
     runs-on: archlinux
 
     steps:
-      # 1. Clona o repositório
-      - name: Checkout do código
+      # 1. Clone the repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Instala as dependências de sistema (C/C++, Lua, Curl)
-      #    ADAPTADO PARA ARCH LINUX: Usa pacman e os nomes de pacotes corretos.
-      - name: Instalar dependências do sistema
+      # 2. Install system dependencies (C/C++, Lua, Curl)
+      #    ADAPTED FOR ARCH LINUX: Uses pacman and the correct package names.
+      - name: Install system dependencies
         run: sudo pacman -Syu --noconfirm base-devel cmake lua curl nlohmann-json
 
-      # 3. Configura o ambiente Go
+      # 3. Set up the Go environment
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      # 4. Configura o ambiente Rust (com cache integrado)
+      # 4. Set up the Rust environment (with integrated cache)
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
 
-      # 5. Configura e compila o projeto usando CMake em modo Release
-      - name: Configurar CMake
+      # 5. Configure and compile the project using CMake in Release mode
+      - name: Configure CMake
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
-      - name: Compilar Projeto
+      - name: Compile Project
         run: cmake --build build --parallel
 
-      # 6. Salva os artefatos de build para o job de release poder usá-los
-      - name: Upload dos artefatos de build
+      # 6. Save the build artifacts for the release job to use
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: gitph-build-artifacts
@@ -65,57 +65,57 @@ jobs:
             src/plugins/
             LICENSE
 
-  # Job de release que só executa quando uma tag é criada
+  # Release job that only runs when a tag is created
   release:
-    name: Criar Release
-    needs: build # Depende do sucesso do job de build
-    # O job de release pode continuar em um runner ubuntu-latest,
-    # pois ele apenas empacota os artefatos já compilados.
+    name: Create Release
+    needs: build # Depends on the success of the build job
+    # The release job can continue on an ubuntu-latest runner,
+    # as it only packages the already compiled artifacts.
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
-      # 1. Clona o repositório (necessário para ter o contexto do Git)
-      - name: Checkout do código
+      # 1. Clone the repository (necessary to have the Git context)
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Baixa os artefatos compilados pelo job de build
-      - name: Download dos artefatos de build
+      # 2. Download the artifacts compiled by the build job
+      - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           name: gitph-build-artifacts
           path: artifacts/
 
-      # 3. Empacota os arquivos de release
-      - name: Empacotar para Release
+      # 3. Package the release files
+      - name: Package for Release
         run: |
-          # Determina a versão a partir da tag do Git e o nome do pacote
+          # Determine the version from the Git tag and the package name
           VERSION=${{ github.ref_name }}
-          # O nome do artefato reflete que foi compilado em Linux (arch)
+          # The artifact name reflects that it was compiled on Linux (arch)
           RELEASE_NAME="gitph-${VERSION}-linux-$(uname -m)"
           
-          # Cria a estrutura de diretórios final
+          # Create the final directory structure
           mkdir -p "release/${RELEASE_NAME}/modules"
           
-          # Copia os arquivos para a estrutura final
+          # Copy the files to the final structure
           cp -r artifacts/bin/* "release/${RELEASE_NAME}/"
           cp -r artifacts/plugins/* "release/${RELEASE_NAME}/modules/"
           cp artifacts/LICENSE "release/${RELEASE_NAME}/"
           
-          # Tira informações de debug dos binários para reduzir tamanho
-          echo "Removendo símbolos de debug..."
+          # Strip debug information from the binaries to reduce size
+          echo "Stripping debug symbols..."
           strip --strip-unneeded "release/${RELEASE_NAME}/gitph"
           find "release/${RELEASE_NAME}/modules" -type f -name "*.so" -exec strip --strip-unneeded {} +
           
-          # Cria o arquivo .tar.gz
-          echo "Criando o pacote .tar.gz..."
+          # Create the .tar.gz file
+          echo "Creating the .tar.gz package..."
           (cd release && tar -czf "${RELEASE_NAME}.tar.gz" "${RELEASE_NAME}")
           
-          # Exporta o caminho do pacote para o próximo passo
+          # Export the package path for the next step
           echo "RELEASE_PATH=release/${RELEASE_NAME}.tar.gz" >> $GITHUB_ENV
 
-      # 4. Cria a Release no GitHub e faz o upload do pacote .tar.gz
-      - name: Publicar Release no GitHub
+      # 4. Create the GitHub Release and upload the .tar.gz package
+      - name: Publish Release to GitHub
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.RELEASE_PATH }}
