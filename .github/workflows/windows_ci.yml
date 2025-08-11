@@ -11,9 +11,8 @@ jobs:
     name: Build no Windows
     runs-on: windows-latest
 
-    # Define onde vamos instalar o vcpkg no runner (variável usada nas etapas)
     env:
-      VCPKG_ROOT: ${{ runner.temp }}/vcpkg
+      # garante consistência, caso precise em etapas posteriores
       VCPKG_DEFAULT_TRIPLET: x64-windows
 
     steps:
@@ -30,59 +29,63 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Cache vcpkg (installed / buildtrees / downloads / archives)
+      - name: Cache vcpkg installed (opcional)
         uses: actions/cache@v4
         with:
           path: |
+            ${{ runner.temp }}/vcpkg-cache
+            # cache simples: cacheamos a pasta 'installed' que é a mais custosa
             ${{ env.VCPKG_ROOT }}/installed
-            ${{ env.VCPKG_ROOT }}/packages
-            ${{ env.VCPKG_ROOT }}/buildtrees
-            ${{ env.VCPKG_ROOT }}/downloads
-            ${{ env.VCPKG_ROOT }}/archives
-          # se tiver vcpkg.json na raiz do repositório, o hash muda quando as deps mudarem
-          key: vcpkg-${{ runner.os }}-${{ hashFiles('**/vcpkg.json') }}
+          key: vcpkg-installed-${{ hashFiles('**/vcpkg.json') }}-${{ runner.os }}
+          restore-keys: |
+            vcpkg-installed-${{ runner.os }}
 
-      - name: Install vcpkg (clone + bootstrap)
-        shell: pwsh
-        run: |
-          if (-not (Test-Path $env:VCPKG_ROOT)) {
-            git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
-          } else {
-            Write-Host "vcpkg já existe em $env:VCPKG_ROOT"
-          }
-          Push-Location $env:VCPKG_ROOT
-          .\bootstrap-vcpkg.bat -disableMetrics
-          Pop-Location
+      - name: Setup vcpkg
+        uses: microsoft/setup-vcpkg@v1.1
+        with:
+          vcpkg-commit-id: '1ab15041a41b5a2a8996a6d9106b0d95c4779848'
 
-      - name: Instalar dependências com vcpkg (curl, lua, nlohmann-json)
-        shell: pwsh
-        run: |
-          # Use o triplet definido (x64-windows). Ajuste se você usa x64-windows-static ou outro.
-          & "$env:VCPKG_ROOT\vcpkg.exe" install curl lua nlohmann-json --triplet $env:VCPKG_DEFAULT_TRIPLET
-
-      - name: Mostrar info vcpkg (debug)
+      - name: Mostrar VCPKG_ROOT (debug)
         shell: pwsh
         run: |
           Write-Host "VCPKG_ROOT = $env:VCPKG_ROOT"
-          & "$env:VCPKG_ROOT\vcpkg.exe" list
-          & "$env:VCPKG_ROOT\vcpkg.exe" integrate project || true
+          Get-ChildItem -Path $env:VCPKG_ROOT -Force | Select-Object -First 10
 
-      - name: Setup CMake (opcional - garante cmake disponível)
-        uses: lukka/get-cmake@v3
+      - name: Instalar dependências com vcpkg
+        shell: pwsh
+        run: |
+          # usa o vcpkg.exe diretamente garantindo que encontramos o binário
+          $v = Join-Path $env:VCPKG_ROOT 'vcpkg.exe'
+          if (-not (Test-Path $v)) {
+            Throw "vcpkg.exe não encontrado em $env:VCPKG_ROOT"
+          }
+          & $v install curl lua nlohmann-json --triplet x64-windows
+          # opcional: integrar (não obrigatório para CMake toolchain, mas útil)
+          & $v integrate install
+
+      - name: Garantir CMake (opcional)
+        uses: lukka/get-cmake@v4
+        with:
+          version: '3.27.0' # ou remova se confiar no CMake do runner
 
       - name: Configurar CMake com toolchain do vcpkg
         shell: pwsh
         run: |
           $toolchain = Join-Path $env:VCPKG_ROOT 'scripts\buildsystems\vcpkg.cmake'
-          cmake -S . -B build `
-            -DCMAKE_TOOLCHAIN_FILE="$toolchain" `
-            -DVCPKG_TARGET_TRIPLET=$env:VCPKG_DEFAULT_TRIPLET `
-            -DCMAKE_BUILD_TYPE=Release
+          if (-not (Test-Path $toolchain)) {
+            Throw "toolchain do vcpkg não encontrado em $toolchain"
+          }
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="$toolchain" -DCMAKE_BUILD_TYPE=Release
 
       - name: Compilar (Release)
         shell: pwsh
         run: |
           cmake --build build --config Release --parallel
+
+      - name: Listar binários gerados (debug)
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse -Path build -Filter *.exe,*.dll,*.lib | Select-Object FullName -First 50
 
       - name: Upload dos artefatos de build
         uses: actions/upload-artifact@v4
@@ -90,5 +93,7 @@ jobs:
           name: gitph-build-windows-artifacts
           path: |
             build/bin/
+            build/bin/**/*
+            build/**/Release/**
             src/plugins/
             LICENSE
