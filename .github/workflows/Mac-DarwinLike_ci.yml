@@ -1,13 +1,13 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
-# main_ci_macos.yml - Workflow de Integração Contínua para o projeto gitph em macOS.
+# main_ci_macos.yml - Continuous Integration workflow for the gitph project on macOS.
 #
-# Este workflow automatiza o processo de build e release da aplicação para macOS,
-# suportando arquiteturas Intel (x86_64) e Apple Silicon (arm64).
+# This workflow automates the build and release process of the application for macOS,
+# supporting both Intel (x86_64) and Apple Silicon (arm64) architectures.
 # SPDX-License-Identifier: Apache-2.0
 
-name: Build e Release do gitph (macOS)
+name: Build and Release gitph (macOS)
 
-# Gatilhos do workflow:
+# Workflow triggers:
 on:
   push:
     branches: [ "main" ]
@@ -17,10 +17,10 @@ on:
     branches: [ "main" ]
 
 jobs:
-  # Job de build que compila, testa e empacota o projeto para múltiplas arquiteturas macOS
+  # Build job that compiles, tests, and packages the project for multiple macOS architectures
   build-and-package:
-    name: Build para macOS (${{ matrix.arch }})
-    # Usa uma matriz para compilar para Intel e Apple Silicon
+    name: Build for macOS (${{ matrix.arch }})
+    # Uses a matrix to compile for both Intel and Apple Silicon
     strategy:
       matrix:
         include:
@@ -31,96 +31,99 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      # 1. Clona o repositório
-      - name: Checkout do código
+      # 1. Clone the repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Instala as dependências de sistema com Homebrew
-      - name: Instalar dependências (Homebrew)
+      # 2. Install system dependencies with Homebrew
+      - name: Install dependencies (Homebrew)
         run: brew install cmake pkg-config lua curl nlohmann-json
 
-      # 3. Configura o ambiente Go
+      # 3. Set up the Go environment
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      # 4. Configura o ambiente Rust (com cache integrado)
+      # 4. Set up the Rust environment (with integrated cache)
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
 
-      # 5. Configura e compila o projeto usando CMake em modo Release
-      - name: Configurar CMake
+      # 5. Configure and compile the project using CMake in Release mode
+      - name: Configure CMake
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
-      - name: Compilar Projeto
+      - name: Compile Project
         run: cmake --build build --parallel
 
-      # 6. Empacota os arquivos para o release (só executa em tags)
-      - name: Empacotar para Release
+      # 6. Package the files for release (only runs on tags)
+      - name: Package for Release
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          # Determina a versão a partir da tag e o nome do pacote com base no SO e arquitetura
+          # Determine the version from the tag and the package name based on the OS and architecture
           VERSION=${{ github.ref_name }}
-          # uname -s em macOS retorna "Darwin". tr o converte para "darwin".
-          # uname -m retorna "x86_64" ou "arm64" dependendo do runner.
+          # uname -s on macOS returns "Darwin". tr converts it to "darwin".
+          # uname -m returns "x86_64" or "arm64" depending on the runner.
           RELEASE_NAME="gitph-${VERSION}-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
           
-          # Cria a estrutura de diretórios final
+          # Create the final directory structure
           mkdir -p "release/${RELEASE_NAME}/modules"
           
-          # Copia os arquivos para a estrutura final
+          # Copy the files to the final structure
           cp -r build/bin/* "release/${RELEASE_NAME}/"
           cp -r src/plugins/* "release/${RELEASE_NAME}/modules/"
           cp LICENSE "release/${RELEASE_NAME}/"
           
-          # Tira informações de debug dos binários para reduzir tamanho
-          # O comando 'strip' no macOS funciona de forma similar ao do Linux para este propósito
-          echo "Removendo símbolos de debug..."
+          # Strip debug information from the binaries to reduce size
+          # The 'strip' command on macOS works similarly to the Linux one for this purpose
+          echo "Removing debug symbols..."
           strip -S "release/${RELEASE_NAME}/gitph"
           find "release/${RELEASE_NAME}/modules" -type f -name "*.so" -exec strip -S {} +
           
-          # Cria o arquivo .tar.gz
-          echo "Criando o pacote .tar.gz..."
+          # Create the .tar.gz file
+          echo "Creating the .tar.gz package..."
           (cd release && tar -czf "${RELEASE_NAME}.tar.gz" "${RELEASE_NAME}")
           
-          # Exporta o caminho do pacote para o próximo passo
+          # Export the package path for the next step
           echo "RELEASE_PATH=release/${RELEASE_NAME}.tar.gz" >> $GITHUB_ENV
 
-      # 7. Salva o pacote de release como um artefato (só executa em tags)
-      - name: Upload do pacote de Release
+      # 7. Save the release package as an artifact (only runs on tags)
+      - name: Upload Release Package
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
-          name: release-package-${{ matrix.arch }} # Nome do artefato único por arquitetura
+          # Unique artifact name per architecture
+          name: release-package-${{ matrix.arch }}
           path: ${{ env.RELEASE_PATH }}
 
-  # Job de release que só executa quando uma tag é criada
+  # Release job that only runs when a tag is created
   release:
-    name: Criar Release no GitHub
-    needs: build-and-package # Depende do sucesso de todos os jobs da matriz
+    name: Create GitHub Release
+    # Depends on the success of all jobs in the matrix
+    needs: build-and-package
     runs-on: ubuntu-latest
-    # A condição garante que este job só execute para tags
+    # The condition ensures this job only runs for tags
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
-      # 1. Baixa todos os pacotes de release compilados pela matriz
-      - name: Download dos pacotes de release
+      # 1. Download all release packages compiled by the matrix
+      - name: Download release packages
         uses: actions/download-artifact@v4
         with:
-          # O padrão `release-package-*` baixa os artefatos de ambas as arquiteturas
+          # The `release-package-*` pattern downloads artifacts from both architectures
           pattern: release-package-*
           path: release-assets
-          merge-multiple: true # Junta os artefatos em um único diretório
+          # Merges the artifacts into a single directory
+          merge-multiple: true
 
-      # 2. Cria a Release no GitHub e faz o upload de todos os pacotes .tar.gz
-      - name: Publicar Release no GitHub
+      # 2. Create the GitHub Release and upload all .tar.gz packages
+      - name: Publish Release to GitHub
         uses: softprops/action-gh-release@v2
         with:
-          # Usa um glob para encontrar e fazer upload de todos os pacotes
+          # Use a glob to find and upload all packages
           files: release-assets/*.tar.gz
-          # O corpo da release é preenchido automaticamente com as últimas mudanças
+          # The release body is automatically filled with the latest changes
           generate_release_notes: true
