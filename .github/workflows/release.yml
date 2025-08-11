@@ -97,20 +97,40 @@ jobs:
               tar -czf "../../release_packages/${RELEASE_NAME}.tar.gz" .
             )
           }
-
-          # Empacota cada artefato com o nome correto
-          if [ -d "gitph-build-artifacts-ubuntu" ]; then
-            create_package "gitph-build-artifacts-ubuntu" "Ubuntu-x86_64" "${{ env.VERSION }}"
+          
+          # Ubuntu
+          if [ -d "gitph-build-artifacts-ubuntu-x86_64" ]; then
+            create_package "gitph-build-artifacts-ubuntu-x86_64" "Ubuntu-x86_64" "${{ env.VERSION }}"
           fi
-          if [ -d "gitph-build-artifacts-windows" ]; then
-            create_package "gitph-build-artifacts-windows/Release" "Windows-x86_64" "${{ env.VERSION }}"
+          if [ -d "gitph-build-artifacts-ubuntu-arm64" ]; then
+            create_package "gitph-build-artifacts-ubuntu-arm64" "Ubuntu-arm64" "${{ env.VERSION }}"
           fi
-          if [ -d "gitph-build-artifacts-fedora" ]; then
-            create_package "gitph-build-artifacts-fedora" "Fedora-x86_64" "${{ env.VERSION }}"
+          
+          # Windows
+          if [ -d "gitph-build-artifacts-windows-x86_64/Release" ]; then
+            create_package "gitph-build-artifacts-windows-x86_64/Release" "Windows-x86_64" "${{ env.VERSION }}"
           fi
-          if [ -d "gitph-build-artifacts-arch" ]; then
-            create_package "gitph-build-artifacts-arch" "Arch-x86_64" "${{ env.VERSION }}"
+          if [ -d "gitph-build-artifacts-windows-arm64/Release" ]; then
+            create_package "gitph-build-artifacts-windows-arm64/Release" "Windows-arm64" "${{ env.VERSION }}"
           fi
+          
+          # Fedora
+          if [ -d "gitph-build-artifacts-fedora-x86_64" ]; then
+            create_package "gitph-build-artifacts-fedora-x86_64" "Fedora-x86_64" "${{ env.VERSION }}"
+          fi
+          if [ -d "gitph-build-artifacts-fedora-arm64" ]; then
+            create_package "gitph-build-artifacts-fedora-arm64" "Fedora-arm64" "${{ env.VERSION }}"
+          fi
+          
+          # Arch
+          if [ -d "gitph-build-artifacts-arch-x86_64" ]; then
+            create_package "gitph-build-artifacts-arch-x86_64" "Arch-x86_64" "${{ env.VERSION }}"
+          fi
+          if [ -d "gitph-build-artifacts-arch-arm64" ]; then
+            create_package "gitph-build-artifacts-arch-arm64" "Arch-arm64" "${{ env.VERSION }}"
+          fi
+          
+          # macOS (já tinha)
           if [ -d "gitph-build-artifacts-macos-x86_64" ]; then
             create_package "gitph-build-artifacts-macos-x86_64" "macOS-x86_64" "${{ env.VERSION }}"
           fi
