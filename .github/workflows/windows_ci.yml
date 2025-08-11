@@ -41,12 +41,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       # 4. Configura o vcpkg para gerenciar dependências C++
-      #    CORREÇÃO: Adicionado o 'github-token' para permitir que a action
-      #    consulte a API do GitHub e encontre a versão mais recente do vcpkg.
+      #    CORREÇÃO: O nome do parâmetro correto é 'token', e não 'github-token'.
       - name: Setup vcpkg
         uses: johnwason/vcpkg-action@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # 5. Instala as dependências C++ via vcpkg
       #    Exatamente como você faria localmente.
