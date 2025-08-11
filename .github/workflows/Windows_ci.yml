@@ -57,11 +57,12 @@ jobs:
       # A configuração do CMake é ajustada para usar o toolchain do vcpkg.
       # Isso permite que o CMake encontre automaticamente as bibliotecas instaladas.
       - name: Configure CMake
+        env:
+          LUA_DIR: ${{ env.VCPKG_ROOT }}/installed/x64-windows
         run: |
           cmake -S . -B build `
             -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake `
-            -DCMAKE_PREFIX_PATH=${{ env.VCPKG_ROOT }}/installed/x64-windows
+            -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
         shell: pwsh
 
       # O comando de compilação é similar, mas adicionamos --config Release,
