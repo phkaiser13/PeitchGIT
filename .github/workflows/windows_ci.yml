@@ -1,0 +1,82 @@
+# .github/workflows/windows_ci.yml
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
+#
+# Workflow de Integração Contínua para compilar a aplicação gitph no Windows.
+#
+# Este workflow automatiza o processo de build no ambiente Windows, espelhando
+# a configuração de desenvolvimento local que utiliza vcpkg para gerenciar
+# as dependências C++.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+name: Build do gitph no Windows
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-windows:
+    name: Build no Windows
+    runs-on: windows-latest
+
+    steps:
+      # 1. Clona o repositório
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      # 2. Configura o ambiente Go
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      # 3. Configura o ambiente Rust (com cache)
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+
+      # 4. Configura o vcpkg
+      # Esta action clona o vcpkg e o configura no ambiente,
+      # disponibilizando o toolchain file para o CMake.
+      - name: Setup vcpkg
+        uses: microsoft/setup-vcpkg@v1.1
+        with:
+          # Define a versão do vcpkg para garantir builds consistentes
+          vcpkg-commit-id: '1ab15041a41b5a2a8996a6d9106b0d95c4779848'
+
+      # 5. Instala as dependências C++ via vcpkg
+      # Instala as bibliotecas necessárias para o projeto.
+      # O vcpkg automaticamente as compila para a arquitetura do runner (x64-windows).
+      - name: Instalar dependências com vcpkg
+        run: |
+          vcpkg install curl lua nlohmann-json --triplet x64-windows
+
+      # 6. Configura o projeto com CMake
+      # Este é o passo crucial. Passamos a variável de ambiente $env:VCPKG_ROOT
+      # que a action 'setup-vcpkg' cria. O CMake usará o toolchain do vcpkg
+      # para encontrar automaticamente as bibliotecas que acabamos de instalar.
+      - name: Configurar CMake com o toolchain do vcpkg
+        run: |
+          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake
+
+      # 7. Compila o projeto
+      # Usa o mesmo comando de build do seu script build.bat.
+      - name: Compilar todos os módulos e o core
+        run: |
+          cmake --build build --parallel
+
+      # 8. (Opcional) Salva os artefatos de build
+      # Útil para debug ou para criar um release posteriormente.
+      - name: Upload dos artefatos de build
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitph-build-windows-artifacts
+          path: |
+            build/bin/
+            src/plugins/
+            LICENSE
