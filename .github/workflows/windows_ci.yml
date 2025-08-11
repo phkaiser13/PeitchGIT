@@ -1,4 +1,4 @@
-name: Build para Windows
+name: Build para Windows (Corrigido)
 
 on:
   push:
@@ -25,31 +25,43 @@ jobs:
       # 3. Setup Rust com cache
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
       - uses: Swatinem/rust-cache@v2
 
-      # 4. Instalar e configurar vcpkg manualmente
-      - name: Instalar vcpkg e dependências
-        shell: powershell
+      # 4. Instalar vcpkg e dependências (cache automático)
+      #    Esta action simplifica a instalação e o cache do vcpkg.
+      - name: Setup vcpkg
+        uses: microsoft/vcpkg-tool-action@main
+      
+      - name: Instalar dependências com vcpkg
         run: |
-          if (-Not (Test-Path C:/vcpkg/vcpkg.exe)) {
-            git clone https://github.com/microsoft/vcpkg.git C:/vcpkg
-            C:/vcpkg/bootstrap-vcpkg.bat
-          }
-          C:/vcpkg/vcpkg.exe install curl:x64-windows lua:x64-windows nlohmann-json:x64-windows
-          C:/vcpkg/vcpkg.exe integrate install
+          vcpkg install curl lua nlohmann-json --triplet x64-windows
 
-      # 5. Debug: listar pacotes instalados
-      - name: Listar pacotes vcpkg
-        shell: powershell
-        run: C:/vcpkg/vcpkg.exe list
-
-      # 6. Configurar CMake com toolchain do vcpkg (mantendo multiplataforma)
+      # 5. Configurar CMake com o toolchain do vcpkg
+      #    A action do vcpkg define a variável de ambiente VCPKG_ROOT,
+      #    que podemos usar para encontrar o toolchain file de forma confiável.
       - name: Configurar CMake
-        shell: powershell
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows
+        run: |
+          cmake -S . -B build `
+            -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake `
+            -DVCPKG_TARGET_TRIPLET=x64-windows
 
-      # 7. Compilar projeto
+      # 6. Compilar o projeto
       - name: Compilar projeto
         run: cmake --build build --config Release --parallel
+
+      # 7. (PASSO CRÍTICO) Copiar as DLLs necessárias para o diretório do executável
+      #    Isso garante que o gitph.exe consiga encontrar suas dependências ao ser executado.
+      - name: Copiar DLLs das dependências
+        run: |
+          $VCPKG_INSTALL_DIR = Join-Path $env:VCPKG_ROOT "installed/x64-windows/bin"
+          $OUTPUT_DIR = "build/bin/Release" # O CMake coloca o executável aqui no modo Release
+          Copy-Item -Path "$VCPKG_INSTALL_DIR/*.dll" -Destination $OUTPUT_DIR
+        shell: powershell
+        
+      # 8. (Opcional) Adicionar um passo para verificar se o executável funciona
+      - name: Verificar execução
+        run: |
+          cd build/bin/Release
+          ./gitph.exe --version
+        shell: bash
