@@ -1,0 +1,146 @@
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
+# windows_ci.yml - Continuous Integration workflow for gitph on Windows.
+#
+# This workflow automates the build, test, and release process for Windows,
+# supporting multiple architectures (x64, x86, ARM64).
+#
+# SPDX-License-Identifier: Apache-2.0
+
+name: Build and Release gitph (Windows)
+
+on:
+  push:
+    branches: [ "main" ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-package:
+    name: Build for Windows (${{ matrix.arch }})
+    runs-on: windows-latest
+    
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            vcpkg_triplet: x64-windows
+          - arch: x86
+            vcpkg_triplet: x86-windows
+          - arch: arm64
+            vcpkg_triplet: arm64-windows
+
+    steps:
+      # 1. Clona o repositório
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Configura o vcpkg para instalar dependências C++
+      - name: Setup vcpkg
+        uses: microsoft/vcpkg-action@v2
+        with:
+          vcpkg-triplet: ${{ matrix.vcpkg_triplet }}
+          vcpkg-dependencies: |
+            lua
+            libcurl
+            nlohmann-json
+          
+      # 3. Instala dependências de ferramentas com Chocolatey
+      - name: Install tools with Chocolatey
+        run: |
+          choco install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
+          choco install -y golang --version=1.21
+          choco install -y rust
+        shell: powershell
+
+      # 4. Atualiza o PATH para incluir as ferramentas instaladas
+      - name: Update Environment Path
+        run: |
+          echo "C:\Program Files\CMake\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          echo "C:\Go\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          echo "$((Get-Command rustc).path | Split-Path)" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        shell: powershell
+        
+      # 5. Configura o ambiente Go
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      # 6. Configura o ambiente Rust (com cache)
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+      
+      # 7. Configura e compila o projeto usando CMake
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
+        shell: cmd
+
+      - name: Compile Project
+        run: cmake --build build --config Release --parallel
+        shell: cmd
+
+      # 8. Empacota os arquivos para release (apenas para tags)
+      - name: Package for Release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          $version = "${{ github.ref_name }}"
+          $releaseName = "gitph-$version-windows-${{ matrix.arch }}"
+          $releaseDir = "release/$releaseName"
+          
+          # Cria a estrutura de diretórios final
+          New-Item -ItemType Directory -Force -Path "$releaseDir/modules"
+          
+          # Copia os artefatos de build
+          Copy-Item -Path "build/bin/Release/*" -Destination $releaseDir -Recurse -Force
+          Copy-Item -Path "src/plugins/*" -Destination "$releaseDir/modules" -Recurse -Force
+          Copy-Item -Path "LICENSE" -Destination $releaseDir
+          
+          # Remove símbolos de debug dos binários
+          echo "Stripping debug symbols..."
+          strip "$releaseDir/gitph.exe"
+          Get-ChildItem -Path "$releaseDir/modules" -Filter "*.dll" | ForEach-Object { strip $_.FullName }
+          
+          # Cria o arquivo .zip
+          echo "Creating .zip package..."
+          Compress-Archive -Path "$releaseDir/*" -DestinationPath "release/$releaseName.zip"
+          
+          # Exporta o caminho do pacote para o próximo passo
+          echo "RELEASE_PATH=release/$releaseName.zip" >> $env:GITHUB_ENV
+        shell: powershell
+
+      # 9. Salva o pacote de release como um artefato
+      - name: Upload Release Package
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-package-windows-${{ matrix.arch }}
+          path: ${{ env.RELEASE_PATH }}
+
+  # Job de release que só executa ao criar uma tag
+  release:
+    name: Create GitHub Release
+    needs: build-and-package
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      # 1. Baixa todos os pacotes de release compilados pela matrix
+      - name: Download release packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-package-windows-*
+          path: release-assets
+          merge-multiple: true
+
+      # 2. Cria a Release no GitHub e faz o upload de todos os pacotes .zip
+      - name: Publish Release to GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*.zip
+          generate_release_notes: true
