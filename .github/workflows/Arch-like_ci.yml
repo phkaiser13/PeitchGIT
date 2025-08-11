@@ -1,4 +1,4 @@
-name: Build and Release gitph (Arch-like - containerized)
+name: Build gitph (Arch-like - containerized)
 
 on:
   push:

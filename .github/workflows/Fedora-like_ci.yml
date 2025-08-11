@@ -5,7 +5,7 @@
 # práticas dos outros CI do projeto.
 # SPDX-License-Identifier: Apache-2.0
 
-name: Build and Release gitph (Fedora-like Linux)
+name: Build gitph (Fedora-like Linux)
 
 on:
   push:

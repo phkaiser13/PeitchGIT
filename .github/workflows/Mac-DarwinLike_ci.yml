@@ -1,26 +1,21 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
 # main_ci_macos.yml - Continuous Integration workflow for the gitph project on macOS.
 #
-# This workflow automates the build and release process of the application for macOS,
+# This workflow automates the build process of the application for macOS,
 # supporting both Intel (x86_64) and Apple Silicon (arm64) architectures.
 # SPDX-License-Identifier: Apache-2.0
 
-name: Build and Release gitph (macOS & Darwin systems)
+name: Build gitph (macOS & Darwin systems)
 
-# Workflow triggers:
 on:
   push:
     branches: [ "main" ]
-    tags:
-      - 'v*'
   pull_request:
     branches: [ "main" ]
 
 jobs:
-  # Build job that compiles, tests, and packages the project for multiple macOS architectures
-  build-and-package:
+  build:
     name: Build for macOS (${{ matrix.arch }})
-    # Uses a matrix to compile for both Intel and Apple Silicon
     strategy:
       matrix:
         include:
@@ -31,71 +26,25 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      # 1. Clone the repository
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Install system dependencies with Homebrew
       - name: Install dependencies (Homebrew)
         run: brew install cmake pkg-config lua curl nlohmann-json
 
-      # 3. Set up the Go environment
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      # 4. Set up the Rust environment (with integrated cache)
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
 
-      # 5. Configure and compile the project using CMake in Release mode
       - name: Configure CMake
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Compile Project
         run: cmake --build build --parallel
-
-      # 6. Package the files for release (only runs on tags)
-      - name: Package for Release
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          # Determine the version from the tag and the package name based on the OS and architecture
-          VERSION=${{ github.ref_name }}
-          # uname -s on macOS returns "Darwin". tr converts it to "darwin".
-          # uname -m returns "x86_64" or "arm64" depending on the runner.
-          RELEASE_NAME="gitph-${VERSION}-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
-          
-          # Create the final directory structure
-          mkdir -p "release/${RELEASE_NAME}/modules"
-          
-          # Copy the files to the final structure
-          cp -r build/bin/* "release/${RELEASE_NAME}/"
-          cp -r src/plugins/* "release/${RELEASE_NAME}/modules/"
-          cp LICENSE "release/${RELEASE_NAME}/"
-          
-          # Strip debug information from the binaries to reduce size
-          # The 'strip' command on macOS works similarly to the Linux one for this purpose
-          echo "Removing debug symbols..."
-          strip -S "release/${RELEASE_NAME}/gitph"
-          find "release/${RELEASE_NAME}/modules" -type f -name "*.so" -exec strip -S {} +
-          
-          # Create the .tar.gz file
-          echo "Creating the .tar.gz package..."
-          (cd release && tar -czf "${RELEASE_NAME}.tar.gz" "${RELEASE_NAME}")
-          
-          # Export the package path for the next step
-          echo "RELEASE_PATH=release/${RELEASE_NAME}.tar.gz" >> $GITHUB_ENV
-
-      # 7. Save the release package as an artifact (only runs on tags)
-      - name: Upload Release Package
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
-        with:
-          # Unique artifact name per architecture
-          name: release-package-${{ matrix.arch }}
-          path: ${{ env.RELEASE_PATH }}
-
