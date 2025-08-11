@@ -1,16 +1,7 @@
-# Copyright (C) 2025 Pedro Henrique / phkaiser13
-# windows_build.yml - Workflow de Integração Contínua para Windows.
-#
-# Este workflow valida a compilação do projeto no ambiente Windows,
-# garantindo que todas as dependências (C++, Rust, Go) são resolvidas
-# e que o projeto compila com sucesso usando o toolchain do Visual Studio
-# e o gerenciador de pacotes vcpkg.
-#
-# SPDX-License-Identifier: Apache-2.0
+# windows_build.yml - Workflow Windows com integração correta do vcpkg
 
 name: Build para Windows
 
-# Gatilhos do workflow:
 on:
   push:
     branches: [ "main" ]
@@ -23,46 +14,46 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      # 1. Clona o repositório
+      # 1. Checkout do código
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      # 2. Configura o ambiente Go
+      # 2. Setup Go
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      # 3. Configura o ambiente Rust (com cache integrado)
+      # 3. Setup Rust com cache
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
 
-      # 4. Setup vcpkg e Instalar dependências
-      #    CORREÇÃO 1: Adicionado 'run-vcpkg-integrate-install: true'.
-      #    Isso integra o vcpkg diretamente com o ambiente MSBuild do runner.
-      #    Agora, o compilador encontrará os headers (curl.h, nlohmann/json.hpp)
-      #    para TODOS os alvos, incluindo 'installer_main' e 'ci_cd_visualizer'.
-      - name: Setup vcpkg e Instalar dependências
+      # 4. Setup vcpkg e instalar dependências
+      - name: Setup vcpkg e instalar dependências
         id: vcpkg
         uses: johnwason/vcpkg-action@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           pkgs: curl lua nlohmann-json
           triplet: x64-windows
-          run-vcpkg-integrate-install: true # <-- ESTA É A LINHA CRÍTICA
+          run-vcpkg-integrate-install: true
 
-      # 5. Configura o projeto com CMake
-      #    Mantemos a configuração explícita para garantir que o CMake e o vcpkg
-      #    estejam alinhados desde o início.
-      - name: Configurar CMake
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 ${{ steps.vcpkg.outputs.vcpkg-cmake-config }}
+      # 5. Debug para confirmar toolchain vcpkg
+      - name: Confirmar toolchain do vcpkg
+        run: |
+          echo "Verificando toolchain file"
+          dir C:/vcpkg/scripts/buildsystems
+          Test-Path C:/vcpkg/scripts/buildsystems/vcpkg.cmake
         shell: powershell
 
-      # 6. Compila o projeto
-      #    Este passo agora funcionará porque o MSBuild (invocado pelo CMake)
-      #    sabe onde encontrar as bibliotecas do vcpkg graças à integração.
+      # 6. Configurar CMake usando toolchain do vcpkg explicitamente
+      - name: Configurar CMake
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+        shell: powershell
+
+      # 7. Compilar projeto
       - name: Compilar Projeto
         run: cmake --build build --config Release --parallel
