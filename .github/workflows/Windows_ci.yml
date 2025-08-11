@@ -38,7 +38,7 @@ jobs:
       # CMake e curl já vêm pré-instalados nos runners do Windows.
       - name: Install dependencies (vcpkg)
         run: |
-          ${{ env.VCPKG_ROOT }}/vcpkg.exe install lua:x64-windows nlohmann-json:x64-windows
+          ${{ env.VCPKG_ROOT }}/vcpkg.exe install lua:x64-windows nlohmann-json:x64-windows curl:x64-windows
         shell: pwsh
 
       # O setup do Go é multiplataforma e permanece o mesmo.
