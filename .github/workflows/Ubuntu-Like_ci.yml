@@ -1,5 +1,5 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
-# main_ci.yml - Workflow de Integração Contínua para o projeto gitph.
+# Ubuntu-Like_ci.yml - Workflow de Integração Contínua para o projeto gitph.
 #
 # Este workflow automatiza o processo de build e release da aplicação.
 # Ele garante que o projeto compila corretamente em um ambiente limpo
@@ -63,60 +63,3 @@ jobs:
             build/bin/
             src/plugins/
             LICENSE
-
-  # Job de release que só executa quando uma tag é criada
-  release:
-    name: Criar Release
-    needs: build # Depende do sucesso do job de build
-    runs-on: ubuntu-latest
-    # A condição 'if' garante que este job só execute para tags
-    if: startsWith(github.ref, 'refs/tags/v')
-
-    steps:
-      # 1. Clona o repositório (necessário para ter o contexto do Git)
-      - name: Checkout do código
-        uses: actions/checkout@v4
-
-      # 2. Baixa os artefatos compilados pelo job de build
-      - name: Download dos artefatos de build
-        uses: actions/download-artifact@v4
-        with:
-          name: gitph-build-artifacts
-          path: artifacts/
-
-      # 3. Empacota os arquivos de release
-      #    MELHORIA: Script simplificado para ser mais robusto e direto.
-      - name: Empacotar para Release
-        run: |
-          # Determina a versão a partir da tag do Git e o nome do pacote
-          VERSION=${{ github.ref_name }}
-          RELEASE_NAME="gitph-${VERSION}-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
-          
-          # Cria a estrutura de diretórios final diretamente
-          mkdir -p "release/${RELEASE_NAME}/modules"
-          
-          # Copia os arquivos para a estrutura final
-          cp -r artifacts/bin/* "release/${RELEASE_NAME}/"
-          cp -r artifacts/plugins/* "release/${RELEASE_NAME}/modules/"
-          cp artifacts/LICENSE "release/${RELEASE_NAME}/"
-          
-          # Tira informações de debug dos binários para reduzir tamanho
-          # Usando 'find' para ser mais seguro caso não hajam módulos
-          echo "Removendo símbolos de debug..."
-          strip --strip-unneeded "release/${RELEASE_NAME}/gitph"
-          find "release/${RELEASE_NAME}/modules" -type f -name "*.so" -exec strip --strip-unneeded {} +
-          
-          # Cria o arquivo .tar.gz
-          echo "Criando o pacote .tar.gz..."
-          (cd release && tar -czf "${RELEASE_NAME}.tar.gz" "${RELEASE_NAME}")
-          
-          # Exporta o caminho do pacote para o próximo passo
-          echo "RELEASE_PATH=release/${RELEASE_NAME}.tar.gz" >> $GITHUB_ENV
-
-      # 4. Cria a Release no GitHub e faz o upload do pacote .tar.gz
-      - name: Publicar Release no GitHub
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ env.RELEASE_PATH }}
-          # O corpo da release é preenchido automaticamente com as últimas mudanças
-          generate_release_notes: true
