@@ -1,0 +1,88 @@
+name: Build gitph (Windows)
+
+on:
+  push:
+    branches: [ "main" ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: Build and Test (Windows)
+    runs-on: windows-latest
+    env:
+      VCPKG_ROOT: C:\vcpkg
+      VCPKG_TRIPLET: x64-windows
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Setup Rust (toolchain)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache do Rust
+        uses: Swatinem/rust-cache@v2
+
+      # Instala vcpkg (opcional — só faz diferença se seu projeto usar vcpkg)
+      - name: Instalar vcpkg (opcional)
+        shell: pwsh
+        run: |
+          if (-not (Test-Path -Path $env:VCPKG_ROOT)) {
+            Write-Host "Clonando vcpkg em $env:VCPKG_ROOT ..."
+            git clone --depth=1 https://github.com/microsoft/vcpkg $env:VCPKG_ROOT
+            & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat"
+          } else {
+            Write-Host "vcpkg já existe em $env:VCPKG_ROOT"
+          }
+          # Se houver um arquivo vcpkg.json no repo, tenta instalar as dependências declaradas
+          if (Test-Path -Path "$(System.DefaultWorkingDirectory)\vcpkg.json") {
+            Write-Host "vcpkg.json encontrado — instalando dependências declaradas..."
+            & "$env:VCPKG_ROOT\vcpkg.exe" install --triplet $env:VCPKG_TRIPLET
+          } else {
+            Write-Host "vcpkg.json não encontrado — pulando instalação de pacotes."
+          }
+
+      # Configurar e Compilar com CMake (usar gerador Visual Studio e toolchain se vcpkg existir)
+      - name: Configurar e Compilar com CMake
+        shell: cmd
+        run: |
+          rem Forçar gerador Visual Studio 17 2022 e arquitetura x64
+          if exist "%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" (
+            set "TOOLCHAIN=-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake"
+          ) else (
+            set "TOOLCHAIN="
+          )
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release %TOOLCHAIN%
+          cmake --build build --config Release --parallel
+
+      - name: Rodar testes unitários (se existirem)
+        if: always()
+        shell: cmd
+        run: |
+          if exist build\CTestTestfile.cmake (
+            cd build
+            ctest -C Release --output-on-failure
+          ) else (
+            echo "Nenhum teste configurado (build\CTestTestfile.cmake não encontrado)."
+          )
+
+      - name: Upload dos artefatos de build
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitph-build-artifacts-windows
+          path: |
+            build/**/Release/**
+            build/bin/**
+            src/plugins/**
+            LICENSE
+          if-no-files-found: ignore
