@@ -24,42 +24,47 @@ jobs:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      # 2. Instala dependências via choco (Chocolatey)
-      #    Instala build-essential equivalente: Visual Studio Build Tools + cmake + pkg-config + Lua + curl + nlohmann-json
-      - name: Instalar dependências do sistema
+      # 2. Instala Visual Studio Build Tools (obrigatório para compilação C++)
+      - name: Instalar Visual Studio Build Tools
+        uses: microsoft/setup-msbuild@v1.1
+        with:
+          vs-version: 'latest'
+
+      # 3. Instalar CMake via ação oficial
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v1.9.0
+        with:
+          cmake-version: '3.26.4' # ou a versão que preferir
+
+      # 4. Instalar vcpkg e as dependências via vcpkg
+      - name: Instalar vcpkg e dependências
         shell: powershell
         run: |
-          # Instala Chocolatey caso não esteja instalado
-          if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
-            Set-ExecutionPolicy Bypass -Scope Process -Force
-            iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-          }
+          git clone https://github.com/microsoft/vcpkg.git
+          cd vcpkg
+          .\bootstrap-vcpkg.bat
 
-          choco install -y visualstudio2019buildtools cmake pkgconfiglite lua curl nlohmann-json
+          # Instala as bibliotecas necessárias
+          .\vcpkg.exe install lua:x64-windows curl:x64-windows nlohmann-json:x64-windows pkgconf:x64-windows
 
-      # 3. Setup Go
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
+          # Opcional: integração do vcpkg com o MSBuild
+          .\vcpkg.exe integrate install
 
-      # 4. Setup Rust
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@v2
-
-      # 5. Configurar CMake e build
-      - name: Configurar CMake
+      # 5. Configurar variáveis de ambiente para usar o toolchain do vcpkg
+      - name: Configurar toolchain vcpkg
         shell: powershell
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: |
+          echo "##vso[task.setvariable variable=VCPKG_ROOT]${{ github.workspace }}\vcpkg"
+          echo "##vso[task.setvariable variable=CMAKE_TOOLCHAIN_FILE]${{ github.workspace }}\vcpkg\scripts\buildsystems\vcpkg.cmake"
 
-      - name: Compilar Projeto
+      # 6. Configurar CMake, passando o toolchain do vcpkg
+      - name: Configurar CMake e Build
         shell: powershell
-        run: cmake --build build --parallel
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}\vcpkg\scripts\buildsystems\vcpkg.cmake
+          cmake --build build --parallel
 
-      # 6. Upload dos artefatos de build
+      # 7. Upload dos artefatos de build
       - name: Upload dos artefatos de build
         uses: actions/upload-artifact@v4
         with:
