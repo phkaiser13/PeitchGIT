@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
-# Windows-Like_ci.yml - Workflow de Integração Contínua para o projeto gitph (Windows).
+# Windows-ci.yml - Workflow de Integração Contínua para o projeto gitph no Windows.
 #
-# Este workflow automatiza o processo de build e upload de artefatos em runners Windows.
+# Automatiza build, testes e upload de artefatos no Windows.
 # SPDX-License-Identifier: Apache-2.0
 
 name: Build do gitph (Windows)
@@ -16,77 +16,54 @@ on:
 
 jobs:
   build:
-    name: Build e Teste (Windows)
+    name: Build e Teste no Windows
     runs-on: windows-latest
 
     steps:
+      # 1. Clona o repositório
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Instalar ferramentas via Chocolatey (se necessário)
+      # 2. Instala dependências via choco (Chocolatey)
+      #    Instala build-essential equivalente: Visual Studio Build Tools + cmake + pkg-config + Lua + curl + nlohmann-json
+      - name: Instalar dependências do sistema
         shell: powershell
         run: |
-          # Alguns runners já possuem essas ferramentas; instalar caso não estejam disponíveis.
-          choco install -y ninja cmake || Write-Host "choco install returned non-zero (ok if already presente)"
+          # Instala Chocolatey caso não esteja instalado
+          if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+            Set-ExecutionPolicy Bypass -Scope Process -Force
+            iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+          }
 
+          choco install -y visualstudio2019buildtools cmake pkgconfiglite lua curl nlohmann-json
+
+      # 3. Setup Go
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      - name: Setup Rust (toolchain + cache)
+      # 4. Setup Rust
+      - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
+      - uses: Swatinem/rust-cache@v2
 
-      - name: Cache do Rust
-        uses: Swatinem/rust-cache@v2
-
-      - name: Instalar vcpkg e bibliotecas via vcpkg
+      # 5. Configurar CMake e build
+      - name: Configurar CMake
         shell: powershell
-        run: |
-          Set-StrictMode -Version Latest
-          if (-not (Test-Path vcpkg)) {
-            git clone --depth 1 https://github.com/microsoft/vcpkg.git vcpkg
-            & .\vcpkg\bootstrap-vcpkg.bat
-          } else {
-            Write-Host "vcpkg já presente"
-          }
-          # Instala as bibliotecas equivalentes à sua versão Linux. Ajuste os nomes/triplets conforme necessário.
-          .\vcpkg\vcpkg.exe install lua:x64-windows curl:x64-windows nlohmann-json:x64-windows
-          Write-Host "VCPKG_ROOT_PATH=$PWD\vcpkg"
-      
-      - name: Configurar CMake (usando toolchain do vcpkg)
-        shell: powershell
-        run: |
-          $vcpkgToolchain = Join-Path $PWD "vcpkg\scripts\buildsystems\vcpkg.cmake"
-          if (-not (Test-Path $vcpkgToolchain)) {
-            Write-Error "vcpkg toolchain file não encontrado: $vcpkgToolchain"
-            exit 1
-          }
-          cmake -S . -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="$vcpkgToolchain" -DVCPKG_TARGET_TRIPLET=x64-windows
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Compilar Projeto
         shell: powershell
-        run: |
-          cmake --build build --parallel
+        run: cmake --build build --parallel
 
-      - name: Executar testes (opcional)
-        shell: powershell
-        run: |
-          if (Test-Path ./build) {
-            # Se você tiver testes via CTest:
-            if (Get-Command ctest -ErrorAction SilentlyContinue) {
-              cmake --build build --target test
-            } else {
-              Write-Host "ctest não disponível — pulei os testes"
-            }
-          }
-
+      # 6. Upload dos artefatos de build
       - name: Upload dos artefatos de build
         uses: actions/upload-artifact@v4
         with:
-          name: gitph-build-artifacts-windows
+          name: gitph-build-artifacts
           path: |
             build\bin\
             src\plugins\
