@@ -41,6 +41,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       # 4. Setup vcpkg e Instalar dependências
+      #    CORREÇÃO 1: Adicionado 'run-vcpkg-integrate-install: true'.
+      #    Isso integra o vcpkg diretamente com o ambiente MSBuild do runner.
+      #    Agora, o compilador encontrará os headers (curl.h, nlohmann/json.hpp)
+      #    para TODOS os alvos, incluindo 'installer_main' e 'ci_cd_visualizer'.
       - name: Setup vcpkg e Instalar dependências
         id: vcpkg
         uses: johnwason/vcpkg-action@v7
@@ -48,15 +52,17 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           pkgs: curl lua nlohmann-json
           triplet: x64-windows
+          run-vcpkg-integrate-install: true # <-- ESTA É A LINHA CRÍTICA
 
       # 5. Configura o projeto com CMake
-      #    CORREÇÃO: Adicionado o gerador explícito "Visual Studio 17 2022" e a arquitetura "x64".
-      #    Isso garante que o CMake use o mesmo ambiente para o qual o vcpkg instalou as
-      #    dependências (x64-windows), resolvendo os erros "Cannot open include file".
+      #    Mantemos a configuração explícita para garantir que o CMake e o vcpkg
+      #    estejam alinhados desde o início.
       - name: Configurar CMake
         run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 ${{ steps.vcpkg.outputs.vcpkg-cmake-config }}
         shell: powershell
 
       # 6. Compila o projeto
+      #    Este passo agora funcionará porque o MSBuild (invocado pelo CMake)
+      #    sabe onde encontrar as bibliotecas do vcpkg graças à integração.
       - name: Compilar Projeto
         run: cmake --build build --config Release --parallel
