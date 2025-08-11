@@ -1,0 +1,52 @@
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
+# release.yml - Workflow para automatizar a criação de releases no GitHub.
+#
+# Este workflow é acionado manualmente e orquestra o processo de:
+# 1. Realizar um build limpo do projeto no modo Release.
+# 2. Executar o script 'release.sh' para empacotar os artefatos.
+# 3. Usar o GitHub CLI para criar uma nova tag e release, fazendo o upload do pacote.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+name: Create GitHub Release
+
+on:
+  workflow_dispatch: # Permite que este workflow seja acionado manualmente pela UI do GitHub Actions
+
+jobs:
+  create-release:
+    name: Build and Create Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Instalar dependências de build (Ubuntu)
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            build-essential cmake pkg-config liblua5.4-dev libcurl4-openssl-dev nlohmann-json3-dev \
+            golang rustc
+        
+      - name: Construir e empacotar a release
+        id: package
+        run: |
+          # Executa o script de release existente
+          ./scripts/release.sh
+          # Captura o nome do arquivo gerado para usar no próximo passo
+          RELEASE_ARCHIVE=$(find release -name "*.tar.gz" -print)
+          echo "ARCHIVE_PATH=$RELEASE_ARCHIVE" >> $GITHUB_ENV
+          # Extrai a versão do nome do arquivo para usar na tag
+          VERSION=$(echo $RELEASE_ARCHIVE | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+')
+          echo "RELEASE_VERSION=v$VERSION" >> $GITHUB_ENV
+
+      - name: Criar a Release no GitHub
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Criando release para a versão ${{ env.RELEASE_VERSION }} com o arquivo ${{ env.ARCHIVE_PATH }}"
+          gh release create ${{ env.RELEASE_VERSION }} \
+             --title "Release ${{ env.RELEASE_VERSION }}" \
+             --notes "Release automatizada da versão ${{ env.RELEASE_VERSION }}." \
+             --generate-notes \
+             "${{ env.ARCHIVE_PATH }}"
