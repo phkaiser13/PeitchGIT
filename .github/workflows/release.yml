@@ -1,77 +1,71 @@
 #
-# release.yml - Creates a GitHub Release when a new version tag is pushed.
+# release.yml - Creates a GitHub Release after all build workflows complete successfully.
 #
-# This workflow is triggered ONLY when a tag starting with 'v' is pushed.
-# It depends on the successful completion of all build workflows (Ubuntu, Arch,
-# Fedora, macOS, Windows), which are responsible for creating the release packages.
-#
-# Its sole purpose is to:
-# 1. Download all the platform-specific package artifacts (.tar.gz, .zip).
-# 2. Create a single, formal GitHub Release associated with the tag.
-# 3. Upload all the downloaded packages as assets to that release.
+# This workflow uses the 'workflow_run' trigger, which is the correct way to
+# orchestrate dependent workflows. It ensures that this job only starts AFTER
+# the specified build workflows have finished.
 #
 
 name: Create GitHub Release
 
-# This workflow runs ONLY on a push event for tags matching the 'v*' pattern.
+# This workflow is triggered on the completion of other specified workflows.
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_run:
+    # A list of the EXACT names of the workflows that must complete before this one runs.
+    # The names are taken from the 'name:' field in each build YAML file.
+    workflows:
+      - "Build gitph (Arch-like - containerized)"
+      - "Build gitph (Fedora-like Linux)"
+      - "Build gitph (macOS & Darwin systems)"
+      - "Build gitph (Ubuntu/Debian-like Systems)"
+      - "Build gitph (Windows)"
+    # The type of event that triggers this workflow. 'completed' means it runs after the others finish.
+    types:
+      - completed
 
 # Define permissions required for the job.
-# 'contents: write' is necessary to create a release and upload assets.
 permissions:
   contents: write
 
 jobs:
   create-release:
     name: Create Release
+    # This job will only run if the workflows that triggered it were successful AND were for a tag.
+    if: github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v')
     runs-on: ubuntu-latest
 
     steps:
       # Step 1: Checkout the repository.
-      # This is needed to access the repository content, like a CHANGELOG file,
-      # and for the release action to work correctly.
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2: Download all release package artifacts from the build jobs.
-      # The 'actions/download-artifact' action will fetch all artifacts produced
-      # in the same workflow run (triggered by the same tag push).
-      # We place them all into a single directory for easy upload later.
+      # Step 2: Download all release package artifacts from the COMPLETED build run.
+      # We must specify the ID of the run that triggered this workflow.
       - name: Download all release artifacts
         uses: actions/download-artifact@v4
         with:
+          # The ID of the workflow run that triggered this one. This is crucial.
+          run-id: ${{ github.event.workflow_run.id }}
           # The destination path for all downloaded artifacts.
           path: release-assets/
 
-      # Step 3: (Optional but recommended) List downloaded files for debugging.
-      # This helps verify that all expected artifacts were downloaded correctly
-      # before attempting to create the release.
+      # Step 3: List downloaded files for debugging.
+      # This will now correctly show all the downloaded packages.
       - name: List downloaded files
         run: ls -R release-assets/
 
       # Step 4: Create the GitHub Release and upload the assets.
-      # This uses a popular and reliable third-party action to handle the release creation.
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          # The name of the tag that triggered the workflow (e.g., "v1.2.3").
-          # This ensures the release is associated with the correct tag.
-          tag_name: ${{ github.ref_name }}
-          # The title of the release (e.g., "Release v1.2.3").
-          name: Release ${{ github.ref_name }}
-          # You can manually write release notes here or point to a file.
-          # For example, you could use `body_path: "CHANGELOG.md"` if you have one.
-          body: "Official release of version ${{ github.ref_name }}. See assets below for platform-specific packages."
-          # Set to 'false' to publish the release immediately.
-          # Set to 'true' if you want to review it before publishing.
+          # The tag name is retrieved from the 'workflow_run' event context.
+          tag_name: ${{ github.event.workflow_run.head_branch }}
+          # The title of the release.
+          name: Release ${{ github.event.workflow_run.head_branch }}
+          # A generic body for the release.
+          body: "Official release of version ${{ github.event.workflow_run.head_branch }}. See assets below for platform-specific packages."
           draft: false
-          # Set to 'true' if this is a pre-release version (e.g., v1.0.0-alpha).
           prerelease: false
-          # A glob pattern to find all the files to upload as release assets.
-          # This will grab every file from the 'release-assets' directory,
-          # which contains all the sub-directories and files downloaded by the artifact step.
+          # The glob pattern now correctly finds all files inside the downloaded artifact folders.
           files: |
             release-assets/*/*
