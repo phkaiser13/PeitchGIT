@@ -27,7 +27,6 @@ jobs:
         with:
           # Lista de pacotes necessários para o seu projeto.
           # nlohmann-json é incluído para acelerar o build, evitando o FetchContent.
-          vcpkgGitCommitId: 'b583134733ad5e4a87bd7e8d22a4368952396e3a' # Trava a versão do vcpkg para builds consistentes
           vcpkgJsonGlob: '**/vcpkg.json'
           vcpkgTriplet: 'x64-windows' 
 
