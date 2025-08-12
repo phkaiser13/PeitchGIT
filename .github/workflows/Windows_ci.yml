@@ -1,8 +1,8 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
 # main_ci_windows.yml - Continuous Integration workflow for the gitph project on Windows.
 #
-# This workflow automates the build process of the application for Windows,
-# using the Visual Studio toolchain provided by GitHub-hosted runners.
+# This workflow automates the build process of the application for Windows
+# using the MSVC toolchain and vcpkg for dependency management.
 # SPDX-License-Identifier: Apache-2.0
 
 name: Build gitph (Windows)
@@ -17,22 +17,20 @@ jobs:
   build:
     name: Build for Windows (MSVC)
     runs-on: windows-latest
-
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup vcpkg
-        run: |
-          git clone https://github.com/microsoft/vcpkg.git
-          ./vcpkg/bootstrap-vcpkg.bat
-          echo "VCPKG_ROOT=$PWD/vcpkg" >> $env:GITHUB_ENV
-        shell: pwsh
+      - name: Install C/C++ dependencies (vcpkg)
+        uses: lukka/run-vcpkg@v11
+        with:
+          # Lista de pacotes necessários para o seu projeto.
+          # nlohmann-json é incluído para acelerar o build, evitando o FetchContent.
+          vcpkgGitCommitId: 'b583134733ad5e4a87bd7e8d22a4368952396e3a' # Trava a versão do vcpkg para builds consistentes
+          vcpkgJsonGlob: '**/vcpkg.json'
+          vcpkgTriplet: 'x64-windows' 
 
-      - name: Install dependencies (vcpkg)
-        run: |
-          ${{ env.VCPKG_ROOT }}/vcpkg.exe install lua:x64-windows nlohmann-json:x64-windows curl:x64-windows
-        shell: pwsh
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -43,19 +41,22 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@v2
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
 
-      # A configuração do CMake é ajustada para usar o toolchain do vcpkg.
-      # A lógica de busca do FindLua.cmake é instável neste ambiente.
-      # Em vez de forçá-la, ativamos o fallback para pkg-config (já existente no CMakeLists.txt)
-      # definindo a variável de ambiente PKG_CONFIG_PATH.
+
       - name: Configure CMake
-        run: |
-          $env:PKG_CONFIG_PATH = "${{ env.VCPKG_ROOT }}/installed/x64-windows/lib/pkgconfig"
-          cmake -S . -B build `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
-        shell: pwsh
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
 
       - name: Compile Project
         run: cmake --build build --config Release --parallel
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitph-windows-msvc
+          path: |
+            build/bin/gitph.exe
+            build/bin/modules/
+            build/installer/installer_main.exe
