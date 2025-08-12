@@ -1,71 +1,207 @@
 #
-# release.yml - Creates a GitHub Release after all build workflows complete successfully.
+# release.yml - Unified Build and Release Workflow
 #
-# This workflow uses the 'workflow_run' trigger, which is the correct way to
-# orchestrate dependent workflows. It ensures that this job only starts AFTER
-# the specified build workflows have finished.
+# This single workflow handles the entire release process. It is triggered ONLY when a tag
+# is pushed. It builds the project on all target platforms in parallel, and once ALL
+# builds are successful, it proceeds to create a single GitHub Release with all the
+# compiled packages attached as assets.
+#
+# This approach uses the `needs` keyword to create a dependency graph, which is the
+# most reliable way to ensure the release job waits for the build jobs.
 #
 
-name: Create GitHub Release
+name: Build and Create Release
 
-# This workflow is triggered on the completion of other specified workflows.
+# This workflow runs ONLY on a push event for tags matching the 'v*' pattern.
 on:
-  workflow_run:
-    # A list of the EXACT names of the workflows that must complete before this one runs.
-    # The names are taken from the 'name:' field in each build YAML file.
-    workflows:
-      - "Build gitph (Arch-like - containerized)"
-      - "Build gitph (Fedora-like Linux)"
-      - "Build gitph (macOS & Darwin systems)"
-      - "Build gitph (Ubuntu/Debian-like Systems)"
-      - "Build gitph (Windows)"
-    # The type of event that triggers this workflow. 'completed' means it runs after the others finish.
-    types:
-      - completed
-
-# Define permissions required for the job.
-permissions:
-  contents: write
+  push:
+    tags:
+      - 'v*'
 
 jobs:
-  create-release:
-    name: Create Release
-    # This job will only run if the workflows that triggered it were successful AND were for a tag.
-    if: github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v')
+  #====================================================
+  # JOB 1: BUILD ON UBUNTU
+  #====================================================
+  build-ubuntu:
+    name: Build on Ubuntu
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake pkg-config liblua5.4-dev libcurl4-openssl-dev nlohmann-json3-dev
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.21' }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { toolchain: stable }
+      - uses: Swatinem/rust-cache@v2
+      - name: Configure and Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+      - name: Create Package
+        run: tar -czvf gitph-ubuntu-linux.tar.gz -C build/bin . src/plugins/ LICENSE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gitph-release-package-ubuntu
+          path: gitph-ubuntu-linux.tar.gz
+
+  #====================================================
+  # JOB 2: BUILD ON ARCH LINUX
+  #====================================================
+  build-arch:
+    name: Build on Arch Linux
+    runs-on: ubuntu-latest
+    container: { image: archlinux:latest }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          pacman-key --init && pacman-key --populate archlinux
+          pacman -Syu --noconfirm --needed base-devel cmake lua curl nlohmann-json go rust git pkgconf
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.21' }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { toolchain: stable }
+      - uses: Swatinem/rust-cache@v2
+      - name: Configure and Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+      - name: Create Package
+        run: tar -czvf gitph-arch-linux.tar.gz -C build/bin . src/plugins/ LICENSE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gitph-release-package-arch
+          path: gitph-arch-linux.tar.gz
+
+  #====================================================
+  # JOB 3: BUILD ON FEDORA
+  #====================================================
+  build-fedora:
+    name: Build on Fedora
+    runs-on: ubuntu-latest
+    container: { image: fedora:latest }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          dnf -y update && dnf install -y gcc-c++ make cmake pkgconf-pkg-config lua-devel libcurl-devel openssl-devel nlohmann-json-devel git tar gzip
+          dnf clean all
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.21' }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { toolchain: stable }
+      - uses: Swatinem/rust-cache@v2
+      - name: Configure and Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+      - name: Create Package
+        run: tar -czvf gitph-fedora-linux.tar.gz -C build/bin . src/plugins/ LICENSE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gitph-release-package-fedora
+          path: gitph-fedora-linux.tar.gz
+
+  #====================================================
+  # JOB 4: BUILD ON MACOS
+  #====================================================
+  build-macos:
+    name: Build on macOS (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-13, arch: x86_64 }
+          - { os: macos-14, arch: arm64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: brew install cmake pkg-config lua curl nlohmann-json
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.21' }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { toolchain: stable }
+      - uses: Swatinem/rust-cache@v2
+      - name: Configure and Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+      - name: Create Package
+        run: tar -czvf gitph-macos-${{ matrix.arch }}.tar.gz -C build/bin . src/plugins/ LICENSE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gitph-release-package-macos-${{ matrix.arch }}
+          path: gitph-macos-${{ matrix.arch }}.tar.gz
+
+  #====================================================
+  # JOB 5: BUILD ON WINDOWS
+  #====================================================
+  build-windows:
+    name: Build on Windows
+    runs-on: windows-latest
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jwlawson/actions-setup-cmake@v1
+        with: { cmake-version: '3.29.3' }
+      - name: Install vcpkg and libraries
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          cd $env:VCPKG_ROOT
+          .\bootstrap-vcpkg.bat
+          .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
+        shell: pwsh
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with: { toolchain: stable }
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.21' }
+      - name: Configure and Build
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --parallel
+        shell: pwsh
+      - name: Create Package
+        run: |
+          mkdir staging
+          copy-item build/Release/*.exe staging/
+          copy-item build/Release/*.dll staging/
+          copy-item src/plugins staging/ -Recurse
+          copy-item LICENSE staging/
+          Compress-Archive -Path staging/* -DestinationPath gitph-windows-x64.zip
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gitph-release-package-windows-x64
+          path: gitph-windows-x64.zip
+
+  #====================================================
+  # JOB 6: CREATE THE RELEASE (THE FINAL STEP)
+  #====================================================
+  release:
+    name: Create GitHub Release
+    # This job requires that ALL build jobs complete successfully before it starts.
+    needs: [build-ubuntu, build-arch, build-fedora, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to create a release
 
     steps:
-      # Step 1: Checkout the repository.
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # Step 2: Download all release package artifacts from the COMPLETED build run.
-      # We must specify the ID of the run that triggered this workflow.
       - name: Download all release artifacts
         uses: actions/download-artifact@v4
         with:
-          # The ID of the workflow run that triggered this one. This is crucial.
-          run-id: ${{ github.event.workflow_run.id }}
-          # The destination path for all downloaded artifacts.
           path: release-assets/
 
-      # Step 3: List downloaded files for debugging.
-      # This will now correctly show all the downloaded packages.
-      - name: List downloaded files
+      - name: List downloaded files for debugging
         run: ls -R release-assets/
 
-      # Step 4: Create the GitHub Release and upload the assets.
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          # The tag name is retrieved from the 'workflow_run' event context.
-          tag_name: ${{ github.event.workflow_run.head_branch }}
-          # The title of the release.
-          name: Release ${{ github.event.workflow_run.head_branch }}
-          # A generic body for the release.
-          body: "Official release of version ${{ github.event.workflow_run.head_branch }}. See assets below for platform-specific packages."
-          draft: false
-          prerelease: false
-          # The glob pattern now correctly finds all files inside the downloaded artifact folders.
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          body: "Official release of version ${{ github.ref_name }}. See assets below for platform-specific packages."
           files: |
             release-assets/*/*
