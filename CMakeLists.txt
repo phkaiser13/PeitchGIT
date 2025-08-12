@@ -317,8 +317,11 @@ install(
     FILES_MATCHING PATTERN "*.so" PATTERN "*.dll" PATTERN "*.dylib"
 )
 
-# Installer binary
-add_executable(installer_main installer/src/installer_main.c installer/src/download.c)
-# Link installer to libcurl via the same resolved target
-target_link_libraries(installer_main PRIVATE ${CURL_TARGET_NAME})
-set_target_properties(installer_main PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/installer")
+# CORREÇÃO: Consolidado a criação do executável do instalador em um único bloco.
+# Este helper só será compilado no Windows, para ser usado pelo NSIS.
+if(WIN32)
+    add_executable(installer_helper installer/src/installer_main.c installer/src/download.c)
+    # Link installer to libcurl via the same resolved target
+    target_link_libraries(installer_helper PRIVATE ${CURL_TARGET_NAME})
+    set_target_properties(installer_helper PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/installer")
+endif()
