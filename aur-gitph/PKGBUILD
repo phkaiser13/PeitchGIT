@@ -1,0 +1,45 @@
+# Maintainer: Pedro Henrique / phkaiser13 <your-email>
+# Contributor: Your Name <your-email>
+#
+# This is a PKGBUILD script for Arch Linux. It tells the `makepkg` utility
+# how to build and package gitph from source. This file is what you would
+# submit to the Arch User Repository (AUR).
+
+# Package metadata
+pkgname='gitph'
+_pkgname='peitchgit' # The name of the repo
+# TODO: Update pkgver for every new release.
+pkgver='1.0.0'
+pkgrel=1
+pkgdesc="The Polyglot Assistant for Git & DevOps Workflows"
+arch=('x86_64')
+url="https://github.com/phkaiser13/peitchgit"
+license=('Apache-2.0')
+
+# Dependencies
+depends=('git' 'curl' 'lua' 'nlohmann-json')
+makedepends=('cmake' 'go' 'rust')
+
+# Source code location
+source=("${_pkgname}-${pkgver}.tar.gz::https://github.com/phkaiser13/${_pkgname}/archive/refs/tags/v${pkgver}.tar.gz")
+# TODO: Update the sha256sum for every new release.
+# Run `updpkgsums` in the directory containing this PKGBUILD to generate it.
+sha256sums=('YOUR_SHA256_HASH_HERE')
+
+# The build() function contains the compilation commands.
+build() {
+  cd "${srcdir}/${_pkgname}-${pkgver}"
+  
+  # Standard CMake build process
+  cmake -B build -S . \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr
+  
+  cmake --build build
+}
+
+# The package() function copies the built files into the final package layout.
+package() {
+  cd "${srcdir}/${_pkgname}-${pkgver}"
+  DESTDIR="${pkgdir}" cmake --install build
+}
