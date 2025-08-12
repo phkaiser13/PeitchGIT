@@ -1,0 +1,196 @@
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
+# SPDX-License-Identifier: Apache-2.0
+
+name: 'Create Release Installers'
+
+# Aciona o workflow somente em push de tags no formato 'v*' (ex: v1.0, v2.3.4)
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  #================================================#
+  #== JOB 1: Criar Instalador .exe para Windows ===#
+  #================================================#
+  build-windows:
+    name: 'Build Windows Installer (.exe)'
+    runs-on: windows-latest
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+
+    steps:
+      - name: 'Checkout code'
+        uses: actions/checkout@v4
+
+      - name: 'Install vcpkg, NSIS, and libraries'
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          cd $env:VCPKG_ROOT
+          .\bootstrap-vcpkg.bat
+          .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
+          # Instala o compilador NSIS via Chocolatey
+          choco install nsis -y
+        shell: pwsh
+
+      - name: 'Setup Rust and Go'
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.21' }
+
+      - name: 'Configure and Build Project (CMake)'
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --parallel
+        shell: pwsh
+        
+      - name: 'Get version from tag'
+        id: get_version
+        run: echo "VERSION=${{ github.ref_name }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf-8
+        shell: bash
+
+      - name: 'Build Installer with NSIS'
+        run: |
+          # O NSIS precisa saber a versão para nomear o arquivo de saída
+          makensis.exe /DVERSION=${{ env.VERSION }} installer/nsis/gitph_installer.nsi
+        shell: pwsh
+
+      - name: 'Upload Installer Artifact'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitph-installer-windows-x64
+          path: gitph_installer_v${{ env.VERSION }}.exe
+
+  #============================================#
+  #== JOB 2: Criar Pacote .deb para Debian ====#
+  #============================================#
+  build-debian:
+    name: 'Build Debian Package (.deb)'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout code'
+        uses: actions/checkout@v4
+
+      - name: 'Install build dependencies'
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake pkg-config liblua5.4-dev libcurl4-openssl-dev nlohmann-json3-dev
+
+      - name: 'Setup Rust and Go'
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.21' }
+
+      - name: 'Configure and Build Project'
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+
+      - name: 'Create .deb package structure'
+        run: |
+          set -x
+          VERSION=$(echo "${{ github.ref_name }}" | sed 's/v//')
+          PKG_DIR="gitph_${VERSION}_amd64"
+          mkdir -p "${PKG_DIR}/DEBIAN"
+          mkdir -p "${PKG_DIR}/usr/local/bin"
+          mkdir -p "${PKG_DIR}/usr/share/gitph/modules"
+          mkdir -p "${PKG_DIR}/usr/share/gitph/plugins"
+          
+          # Copia os binários e módulos para a estrutura do pacote
+          cp build/bin/gitph "${PKG_DIR}/usr/local/bin/"
+          cp build/bin/modules/* "${PKG_DIR}/usr/share/gitph/modules/"
+          cp src/plugins/* "${PKG_DIR}/usr/share/gitph/plugins/"
+
+          # Cria o arquivo de controle essencial para o .deb
+          cat <<EOF > "${PKG_DIR}/DEBIAN/control"
+          Package: gitph
+          Version: ${VERSION}
+          Architecture: amd64
+          Maintainer: Pedro Henrique / phkaiser13
+          Description: The Polyglot Assistant for Git & DevOps Workflows.
+           A modern, extensible, and high-performance command-line tool.
+          Depends: git, libcurl4, liblua5.4-0
+          EOF
+          
+      - name: 'Build .deb package'
+        run: |
+          VERSION=$(echo "${{ github.ref_name }}" | sed 's/v//')
+          dpkg-deb --build "gitph_${VERSION}_amd64"
+
+      - name: 'Upload .deb Artifact'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitph-installer-debian-amd64
+          path: "*.deb"
+          
+  #======================================================#
+  #== JOB 3: Criar Pacote .dmg para macOS (Universal) ===#
+  #======================================================#
+  build-macos:
+    name: 'Build macOS Universal Package (.dmg)'
+    runs-on: macos-13 # Usamos uma versão que suporte a criação de DMG
+    steps:
+      - name: 'Checkout code'
+        uses: actions/checkout@v4
+
+      - name: 'Install dependencies (Homebrew)'
+        run: brew install cmake pkg-config lua curl nlohmann-json
+
+      - name: 'Setup Rust and Go'
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.21' }
+
+      - name: 'Configure and Build Project'
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+
+      - name: 'Create .dmg package'
+        run: |
+          VERSION="${{ github.ref_name }}"
+          DMG_NAME="gitph-${VERSION}-universal.dmg"
+          STAGING_DIR="staging"
+          
+          mkdir -p "${STAGING_DIR}"
+          cp build/bin/gitph "${STAGING_DIR}/"
+          
+          # Cria um link simbólico para a pasta de Aplicações ou binários
+          ln -s /usr/local/bin "${STAGING_DIR}/Drop here to install"
+          
+          hdiutil create -volname "gitph ${VERSION}" -srcfolder "${STAGING_DIR}" -ov -format UDZO "${DMG_NAME}"
+
+      - name: 'Upload .dmg Artifact'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitph-installer-macos-universal
+          path: "*.dmg"
+
+  #====================================================#
+  #== JOB FINAL: Criar a Release e Anexar os Assets ===#
+  #====================================================#
+  create-release:
+    name: 'Create GitHub Release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Permissão para criar releases
+    needs: [build-windows, build-debian, build-macos] # Executa após todos os builds
+    
+    steps:
+      - name: 'Download all installer artifacts'
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets/
+
+      - name: 'List downloaded files for verification'
+        run: ls -R release-assets/
+      
+      - name: 'Create GitHub Release and Upload Assets'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: 'Release ${{ github.ref_name }}'
+          body: |
+            Release oficial da versão ${{ github.ref_name }}.
+            Baixe o instalador para o seu sistema operacional abaixo.
+          files: |
+            release-assets/*/*
