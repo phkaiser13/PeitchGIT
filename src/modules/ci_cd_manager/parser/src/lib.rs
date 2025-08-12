@@ -156,7 +156,7 @@ pub unsafe extern "C" fn ParseWorkflowToJSON(filepath: *const c_char) -> *mut c_
 /// # Safety
 /// This function is `unsafe` because it takes ownership of a raw pointer
 /// and will deallocate it. Calling it with an invalid pointer (or calling
-*// it more than once on the same pointer) will lead to undefined behavior.
+/// it more than once on the same pointer) will lead to undefined behavior.
 #[no_mangle]
 pub unsafe extern "C" fn FreeJSONString(s: *mut c_char) {
     if !s.is_null() {
