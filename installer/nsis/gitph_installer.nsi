@@ -3,6 +3,8 @@
 
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
+!include "WordFunc.nsh"
+!include "EnvVarUpdate.nsh"
 
 Name "gitph"
 OutFile "gitph_installer_v${VERSION}.exe"
@@ -14,10 +16,19 @@ RequestExecutionLevel user
 
 Var IsGitInstalled
 
+!insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
+!insertmacro MUI_PAGE_FINISH
+
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+
+!insertmacro MUI_LANGUAGE "PortugueseBR"
+
 Function .onInit
-    ; Checa se o Git está instalado de forma silenciosa.
     nsExec::ExecToLog 'git --version'
-    Pop $0 ; Pega o código de retorno
+    Pop $0
     ${If} $0 == 0
         StrCpy $IsGitInstalled "true"
     ${Else}
@@ -25,44 +36,53 @@ Function .onInit
     ${EndIf}
 FunctionEnd
 
-Section "gitph Core" SecInstall
+Section "gitph Core" SecCore
     SectionIn RO
     SetOutPath $INSTDIR
-    ; Empacota os arquivos principais do gitph
-    File "build\\bin\\gitph.exe"
-    File /r "build\\bin\\modules"
-    ; Empacota o nosso helper de instalação
-    File "build\\installer\\installer_helper.exe"
+    
+    ; Define o diretório de build a partir da raiz do repositório no runner do GitHub Actions
+    File /r "build\bin\*"
+    File "build\installer\installer_helper.exe"
+    
     WriteUninstaller "$INSTDIR\uninstall.exe"
 SectionEnd
 
-; ... (outras seções como PATH, atalhos, etc.) ...
+Section "Add to PATH" SecPath
+    ; Adiciona o diretório de instalação ao PATH do usuário
+    ${EnvVarUpdate} $0 "PATH" "A" "HKCU" "$INSTDIR"
+SectionEnd
 
 Function .onInstSuccess
     ${If} $IsGitInstalled == "false"
         MessageBox MB_YESNO|MB_ICONQUESTION \
-          "Git is not found. It is required for gitph to work. Do you want to download and install it now?" \
+          "Git não foi encontrado. Ele é necessário para o gitph funcionar. Deseja baixar e instalar agora?" \
           IDYES download_git
         Goto end_git_check
 
     download_git:
-        ; Extrai e executa o nosso downloader em C para uma experiência de usuário superior
-        SetOutPath $PLUGINSDIR
-        
-        ; Executa o downloader profissional em C que você criou para baixar o Git
         ExecWait '"$INSTDIR\installer_helper.exe" "${GIT_INSTALLER_URL}" "$PLUGINSDIR\${GIT_INSTALLER_FILENAME}"'
-        
-        ; Após o download, executa o instalador do Git de forma silenciosa
         ExecWait '"$PLUGINSDIR\${GIT_INSTALLER_FILENAME}" /VERYSILENT /NORESTART'
 
-        ; Re-verifica se a instalação do Git foi bem-sucedida
         nsExec::ExecToLog 'git --version'
         Pop $0
         ${If} $0 == 0
-            MessageBox MB_OK|MB_ICONINFORMATION "Git was successfully installed!"
+            MessageBox MB_OK|MB_ICONINFORMATION "Git foi instalado com sucesso!"
         ${Else}
-            MessageBox MB_OK|MB_ICONEXCLAMATION "Git installation may not have completed successfully. gitph might not work."
+            MessageBox MB_OK|MB_ICONEXCLAMATION "A instalação do Git pode não ter sido concluída com sucesso. O gitph pode não funcionar."
         ${EndIf}
     ${EndIf}
 end_git_check:
 FunctionEnd
+
+Section "Uninstall"
+    ; Remove do PATH
+    ${EnvVarUpdate} $0 "PATH" "R" "HKCU" "$INSTDIR"
+
+    ; Remove os arquivos
+    Delete "$INSTDIR\gitph.exe"
+    Delete "$INSTDIR\installer_helper.exe"
+    RMDir /r "$INSTDIR\modules"
+    
+    Delete "$INSTDIR\uninstall.exe"
+    RMDir "$INSTDIR"
+SectionEnd
