@@ -13,7 +13,6 @@ jobs:
     runs-on: windows-latest
     env:
       VCPKG_DEFAULT_TRIPLET: x64-windows
-      # VCPKG_ROOT será definido pela action run-vcpkg; exposto como env para etapas seguintes.
 
     steps:
       - name: Checkout repository
@@ -21,24 +20,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Install CMake + Ninja (get-cmake installs ninja too)
-      - name: Install CMake & Ninja
-        uses: lukka/get-cmake@v3
-        # você pode fixar versão, ex: @v3.27
+      # Install specific CMake version
+      - name: Install CMake
+        uses: jwlawson/actions-setup-cmake@v1
+        with:
+          cmake-version: '3.29.3'
 
-      # Bootstrap vcpkg (uses run-vcpkg@v11 : preps vcpkg + binary cache integration)
-      - name: Setup vcpkg (bootstrap + binary cache)
+      # Install Ninja via Chocolatey
+      - name: Install Ninja
+        run: choco install ninja -y
+
+      # Setup vcpkg (bootstrap + binary cache)
+      - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
-        # Não pedimos para instalar libs aqui; preferimos que o toolchain do CMake
-        # invoque vcpkg automaticamente se houver vcpkg.json no root (recomendado).
 
-      # Setup Rust (cargo) so cargo builds in CMake custom commands succeed
+      # Setup Rust
       - name: Setup Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
 
-      # Cache cargo (registry + git) and target to speed up rust module builds
       - name: Cache Cargo
         uses: actions/cache@v4
         with:
@@ -48,7 +49,7 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      # Setup Go (needed for go modules that are built via go build -buildmode=c-shared)
+      # Setup Go
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
@@ -62,7 +63,7 @@ jobs:
             ~/go/bin
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
 
-      # Configure CMake (uses vcpkg toolchain so vcpkg.json -> vcpkg install happens automatically)
+      # Configure CMake with vcpkg toolchain
       - name: Configure CMake
         run: |
           cmake -S . -B build `
@@ -71,12 +72,12 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake"
         shell: pwsh
 
-      # Build (parallel)
+      # Build
       - name: Build (CMake)
         run: cmake --build build --config Release --parallel
         shell: pwsh
 
-      # (Opcional) Run unit tests if presentes
+      # Run tests if available
       - name: Run tests (ctest)
         run: |
           if (Test-Path build) {
@@ -86,7 +87,7 @@ jobs:
         shell: pwsh
         continue-on-error: true
 
-      # Upload build artifacts (binaries + modules)
+      # Upload build artifacts
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
