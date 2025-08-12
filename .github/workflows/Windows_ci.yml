@@ -3,95 +3,119 @@ name: Build gitph (Windows)
 on:
   push:
     branches: [ "main" ]
+    # Run when a tag like v1.0.0 is created
+    tags:
+      - 'v*'
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
   build:
+    name: Build and Package (Windows x64)
     runs-on: windows-latest
+    
+    # Environment variables required for vcpkg and the build process.
+    # These are critical and should not be changed without careful testing.
     env:
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
       VCPKG_DEFAULT_TRIPLET: x64-windows
       RUSTFLAGS: ""
 
     steps:
+      # Step 1: Checkout repository code.
+      # fetch-depth: 0 is important for workflows that need tag information.
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # Step 2: Install a specific version of CMake.
       - name: Install CMake
         uses: jwlawson/actions-setup-cmake@v1
         with:
           cmake-version: '3.29.3'
 
-      - name: Ensure Ninja (optional, used by some build steps)
+      # Step 3: Install Ninja build system via Chocolatey package manager.
+      - name: Install Ninja
         run: choco install ninja -y
 
-      # Install vcpkg and needed libs (MSVC triplet)
+      # Step 4: Install vcpkg and required C++ libraries.
+      # This is a highly specific setup for the MSVC (x64-windows) triplet.
       - name: Install vcpkg and libraries
         run: |
           git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
           cd $env:VCPKG_ROOT
           .\bootstrap-vcpkg.bat
-          # instala libs para x64-windows (MSVC)
           .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
         shell: pwsh
 
-      # Setup Rust only (sem run de cache que quebre se não houver Cargo.toml)
+      # Step 5: Setup the Rust toolchain.
       - name: Setup Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
 
-      # Setup Go
+      # Step 6: Setup the Go environment.
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
           
-      - name: Debug vcpkg installed files
-        run: |
-          Write-Host "VCPKG_ROOT = $env:VCPKG_ROOT"
-          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\share" -Recurse -Depth 2 | Select-Object -First 200
-          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\lib" -Recurse -Depth 1 | Select-Object -First 200
-        shell: pwsh
-        
-      - name: Configure CMake (MSVC, Visual Studio generator)
+      # Step 7: Configure the project using CMake.
+      # This command is precisely tailored for a Visual Studio 2022 MSVC build,
+      # linking against the libraries installed by vcpkg.
+      - name: Configure CMake (Visual Studio)
         run: |
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" `
-            -DCMAKE_PREFIX_PATH="${{ env.VCPKG_ROOT }}\installed\x64-windows\share" `
-            -DLua_FOUND=TRUE `
-            -DLUA_INCLUDE_DIR="${{ env.VCPKG_ROOT }}\installed\x64-windows\include" `
-            -DLUA_LIBRARY="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
-            -DLUA_LIBRARIES="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
             -DCMAKE_BUILD_TYPE=Release
         shell: pwsh
 
-
-
-      # Build (usando configuração Release do Visual Studio)
-      - name: Build
+      # Step 8: Build the project using the 'Release' configuration.
+      - name: Build Project
         run: cmake --build build --config Release --parallel
         shell: pwsh
 
-      # Run tests (se houver)
-      - name: Run tests
+      # Step 9: Create a distributable package, but ONLY for tags.
+      # This step uses PowerShell's native compression tool to create a .zip file.
+      - name: Create Release Package (only for tags)
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
-          cmake --build build --config Release --target test || true
-          ctest --test-dir build --output-on-failure -C Release || true
+          # Create a staging directory to gather all files for the release package.
+          mkdir staging
+          # Copy the main binaries from the build output directory.
+          # For Visual Studio generators, output is in a subdirectory named after the configuration (e.g., 'Release').
+          cp -Recurse build/bin/Release/* staging/
+          # Copy plugins and the license file into the staging directory.
+          cp -Recurse src/plugins staging/
+          cp LICENSE staging/
+          # Create the final .zip file from the contents of the staging directory.
+          Compress-Archive -Path staging/* -DestinationPath gitph-windows-x64.zip
         shell: pwsh
-        continue-on-error: true
 
-      - name: Upload artifacts
+      # Step 10: Upload the final release package as an artifact, ONLY for tags.
+      # This artifact will be consumed by the 'release.yml' workflow.
+      - name: Upload Release Package Artifact (only for tags)
+        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
-          name: gitph-windows-build
+          # A unique and descriptive name for the release artifact.
+          name: gitph-release-package-windows-x64
+          path: gitph-windows-x64.zip
+          retention-days: 7
+
+      # Step 11: Upload intermediate build artifacts for non-tag builds (CI).
+      # This step runs for pushes and pull requests, but NOT for tags.
+      - name: Upload CI Build Artifacts (not for tags)
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          # A different artifact name to avoid confusion with the release package.
+          name: gitph-build-artifacts-windows-x64
+          # Upload the essential build outputs for debugging and inspection.
           path: |
-            build/bin
-            build/*.exe
-            build/**/Release/*.dll
-            build/**/Release/*.pdb
-            bin/modules
+            build/bin/Release/
+            src/plugins/
+            LICENSE
+          retention-days: 3
