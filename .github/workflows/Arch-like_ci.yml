@@ -1,59 +1,122 @@
 name: Build gitph (Arch-like - containerized)
 
+#
+# Triggers for the workflow
+#
 on:
+  # Run on pushes to the main branch
   push:
     branches: [ "main" ]
+    # Also run when a tag starting with 'v' (e.g., v1.0, v2.3.4) is pushed
     tags:
       - 'v*'
+  # Run on pull requests targeting the main branch
   pull_request:
     branches: [ "main" ]
 
 jobs:
   build:
-    name: Build and Test (Arch-Like Linux)
+    # Job name for the UI
+    name: Build and Package (Arch-Like Linux)
+    # Run the job on the latest Ubuntu runner provided by GitHub
     runs-on: ubuntu-latest
-    # Define o contêiner no nível do job. O GitHub Actions gerencia o resto.
+    # Use a container for the build environment to ensure consistency.
+    # This pulls the latest Arch Linux image to run all subsequent steps inside.
     container:
       image: archlinux:latest
 
     steps:
+      # Step 1: Check out the repository's code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Cada comando é agora um passo separado, tornando o debug mais fácil.
+      # Step 2: Initialize Pacman keyring.
+      # This is a necessary step for Arch Linux containers in CI environments
+      # to be able to securely download and install packages.
       - name: Initialize Pacman Keyring
         run: |
           pacman-key --init
           pacman-key --populate archlinux
 
+      # Step 3: Install system dependencies using Pacman.
+      # -Syu updates the system and package database.
+      # --noconfirm skips interactive prompts.
+      # --needed prevents re-installing packages that are already up-to-date.
       - name: Install system dependencies (Arch)
         run: |
           pacman -Syu --noconfirm --needed \
             base-devel cmake lua curl nlohmann-json go rust git pkgconf
 
+      # Step 4: Set up the Go environment.
+      # This action downloads and configures a specific version of Go.
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
+      # Step 5: Set up the Rust toolchain.
+      # This action ensures the stable Rust toolchain is available.
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@v2
+      
+      # Step 6: Cache Rust dependencies.
+      # This significantly speeds up subsequent builds by caching `target` and cargo directories.
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
 
+      # Step 7: Configure the project using CMake.
+      # -S . specifies the source directory is the current directory.
+      # -B build specifies that the build files will be placed in a 'build' directory.
+      # -DCMAKE_BUILD_TYPE=Release enables optimizations for the final build.
       - name: Configure CMake
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
+      # Step 8: Compile the project.
+      # --build build tells CMake to execute the build process in the 'build' directory.
+      # --parallel uses multiple cores to speed up compilation.
       - name: Compile Project
         run: cmake --build build --parallel
 
-      - name: Upload build artifacts
+      # Step 9: Create a distributable package, but ONLY for tags.
+      # This step runs conditionally. The `if` condition checks if the Git reference
+      # that triggered the workflow starts with 'refs/tags/', which is true only for tags.
+      - name: Create Release Package (only for tags)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          # Create a compressed tarball (.tar.gz) containing the necessary release files.
+          # This creates a single, easy-to-distribute file.
+          # The file is named to clearly identify its content and platform.
+          tar -czvf gitph-arch-linux.tar.gz -C build/bin . src/plugins/ LICENSE
+
+      # Step 10: Upload the final release package as an artifact, ONLY for tags.
+      # This artifact will be downloaded by the separate 'release.yml' workflow.
+      # The `if` condition ensures this step only runs for tag events.
+      - name: Upload Release Package Artifact (only for tags)
+        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
-          # Nome de artefato único para evitar conflitos no job de release
-          name: gitph-build-artifacts-arch 
+          # The name of the artifact is critical. The release workflow will use this name to find it.
+          name: gitph-release-package-arch
+          # Path to the file to be uploaded.
+          path: gitph-arch-linux.tar.gz
+          # Retention period for the artifact.
+          retention-days: 7
+
+      # Step 11: Upload intermediate build artifacts for non-tag builds (CI).
+      # This is useful for debugging or for other jobs that might need the raw build output.
+      # The `if` condition ensures this step runs for pushes and pull requests, but NOT for tags.
+      - name: Upload CI Build Artifacts (not for tags)
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          # A different artifact name to avoid confusion with the release package.
+          name: gitph-build-artifacts-arch
+          # Upload the contents of the build directory for inspection.
           path: |
-            build/bin/
+            build/
             src/plugins/
             LICENSE
+          # Shorter retention for CI artifacts is common.
+          retention-days: 3
