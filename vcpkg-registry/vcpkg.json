@@ -1,0 +1,12 @@
+{
+  "name": "gitph",
+  "version": "1.0.0",
+  "description": "The Polyglot Assistant for Git & DevOps Workflows.",
+  "homepage": "https://github.com/phkaiser13/peitchgit",
+  "license": "Apache-2.0",
+  "dependencies": [
+    "curl",
+    "lua",
+    "nlohmann-json"
+  ]
+}
