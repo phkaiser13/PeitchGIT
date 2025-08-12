@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    name: Build and Test (Arch Linux Container)
+    name: Build and Test (Arch-Like Linux)
     runs-on: ubuntu-latest
     # Define o contêiner no nível do job. O GitHub Actions gerencia o resto.
     container:
