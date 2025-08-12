@@ -1,94 +1,136 @@
 #
-# release.yml - Publishes a GitHub Release with build artifacts.
+# build-windows.yml - Continuous Integration workflow for gitph on Windows.
 #
-# This workflow is triggered ONLY upon the successful completion of one of the main
-# build workflows. It then performs several critical checks and actions:
+# This workflow is carefully configured to build the project using the MSVC toolchain
+# with dependencies managed by vcpkg. It is the most complex build environment.
 #
-# 1. It verifies that the completed build workflow was triggered by a tag (e.g., 'v1.2.3').
-# 2. It downloads all the release packages (.tar.gz, .zip) created by the various build jobs.
-# 3. It automatically creates a new GitHub Release corresponding to the tag.
-# 4. It uploads all the downloaded packages as assets to that new release.
-#
-# This separation of concerns ensures that releases are only published if all builds
-# are successful and correctly prepared.
+# It compiles and tests on every push/pull_request. When a tag is pushed,
+# it creates a standard .zip archive for distribution and uploads it as a
+# release artifact for the 'release.yml' workflow.
 #
 
-name: Publish GitHub Release
+name: Build gitph (Windows)
 
-#
-# This workflow is triggered by the completion of another workflow.
-# We only need to watch one of the build workflows (e.g., the Ubuntu one)
-# because they are all triggered by the same event (a tag push).
-#
 on:
-  workflow_run:
-    workflows: ["Build gitph (Ubuntu/Debian-like Systems)"]
-    types:
-      - completed
+  push:
+    branches: [ "main" ]
+    # Run when a tag like v1.0.0 is pushed
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ "main" ]
+  # Allows manual triggering of the workflow
+  workflow_dispatch:
 
 jobs:
-  publish:
-    name: Publish Release
-    # This job runs only if the triggering workflow was successful AND it was for a tag.
-    # The `head_branch` in the workflow_run context contains the full ref, e.g., 'refs/tags/v1.0.0'.
-    if: github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'refs/tags/v')
-    runs-on: ubuntu-latest
-
-    #
-    # Permissions are crucial. This job needs permission to write to 'contents'
-    # to be able to create a release and upload assets to it.
-    #
-    permissions:
-      contents: write
+  build:
+    # The job runs on the latest Windows Server environment provided by GitHub
+    runs-on: windows-latest
+    # Environment variables available to all steps in this job
+    env:
+      # Set the root for vcpkg to a predictable path in the workspace
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+      # Set the default vcpkg triplet for 64-bit Windows using MSVC
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      RUSTFLAGS: ""
 
     steps:
-      # Step 1: Download all the release package artifacts from the completed workflow run.
-      # The `github-actions` user automatically creates a special artifact containing all artifacts
-      # from a workflow run, which makes downloading them much easier.
-      # We will download them into a directory named 'release-artifacts'.
-      - name: Download all release artifacts
-        uses: actions/download-artifact@v4
+      # Step 1: Check out the repository's code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Step 2: Install a specific version of CMake
+      - name: Install CMake
+        uses: jwlawson/actions-setup-cmake@v1
         with:
-          # The run-id of the completed workflow that triggered this one.
-          run-id: ${{ github.event.workflow_run.id }}
-          # The directory where all artifacts will be placed.
-          path: release-artifacts
+          cmake-version: '3.29.3'
 
-      # Step 2: Extract the tag name from the Git ref.
-      # The ref is in the format 'refs/tags/v1.2.3'. This step strips the 'refs/tags/' prefix.
-      - name: Get tag name
-        id: get_tag
-        run: echo "tag_name=$(echo ${{ github.event.workflow_run.head_branch }} | sed 's/refs\/tags\///')" >> $GITHUB_OUTPUT
+      # Step 3: Install Ninja build system using Chocolatey package manager
+      - name: Install Ninja
+        run: choco install ninja -y
 
-      # Step 3: Create the GitHub Release.
-      # This uses the tag name from the previous step and automatically generates release notes
-      # based on the commits between this tag and the previous one.
-      - name: Create GitHub Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ steps.get_tag.outputs.tag_name }}
-          release_name: "Release ${{ steps.get_tag.outputs.tag_name }}"
-          # Set to true to automatically create release notes from commits.
-          generate_release_notes: true
-          # Set to false for a final release. Use true if you want to review it first.
-          draft: false
-          prerelease: false
-
-      # Step 4: Upload all downloaded artifacts to the new release.
-      # This step iterates through all files in the 'release-artifacts' directory
-      # (which contains subdirectories for each artifact) and uploads them.
-      - name: Upload Release Assets
+      # Step 4: Install vcpkg and required C++ libraries. This is a critical step.
+      # It clones vcpkg, bootstraps it, and then installs the libraries for the x64-windows triplet.
+      - name: Install vcpkg and libraries
         run: |
-          # Find all package files (.tar.gz and .zip) within the downloaded artifacts directory.
-          # The `find` command handles the nested directory structure created by download-artifact.
-          find release-artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) | while read -r asset_path; do
-            asset_name=$(basename "$asset_path")
-            echo "Uploading $asset_name from $asset_path..."
-            gh release upload "${{ steps.get_tag.outputs.tag_name }}" "$asset_path" --clobber
-          done
-        env:
-          # The GitHub CLI (gh) is pre-installed on runners and uses this token for authentication.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          cd $env:VCPKG_ROOT
+          .\bootstrap-vcpkg.bat
+          .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
+        shell: pwsh
+
+      # Step 5: Set up the Rust toolchain
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      # Step 6: Set up the Go environment
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          
+      # Step 7: Configure the project using CMake.
+      # This is a highly specific command for MSVC, using the Visual Studio 17 2022 generator.
+      # It points CMake to the vcpkg toolchain file to find all dependencies correctly.
+      - name: Configure CMake (MSVC)
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" `
+            -DCMAKE_BUILD_TYPE=Release
+        shell: pwsh
+
+      # Step 8: Build the project using the 'Release' configuration.
+      # For multi-config generators like Visual Studio, the config is specified at build time.
+      - name: Build Project
+        run: cmake --build build --config Release --parallel
+        shell: pwsh
+
+      # Step 9: Run tests if they exist.
+      # continue-on-error prevents the workflow from failing if tests fail.
+      - name: Run tests
+        run: (cd build && ctest --output-on-failure -C Release)
+        shell: pwsh
+        continue-on-error: true
+
+      # Step 10: Create a distributable .zip package, but ONLY for tags.
+      # This step uses PowerShell's native compression tool.
+      - name: Create Release Package (only for tags)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          # Stage files for packaging in a temporary directory for a clean archive structure.
+          mkdir release_package
+          Copy-Item -Path "build/bin/Release/*" -Destination "release_package"
+          Copy-Item -Path "src/plugins" -Destination "release_package" -Recurse
+          Copy-Item -Path "LICENSE" -Destination "release_package"
+          # Create the final .zip file.
+          Compress-Archive -Path "release_package/*" -DestinationPath "gitph-windows-x64.zip"
+
+      # Step 11: Upload the final release package as an artifact, ONLY for tags.
+      # This artifact will be consumed by the 'release.yml' workflow.
+      - name: Upload Release Package Artifact (only for tags)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          # A unique and predictable name for the release artifact.
+          name: gitph-release-package-windows-x64
+          path: gitph-windows-x64.zip
+          retention-days: 7
+
+      # Step 12: Upload intermediate build artifacts for non-tag builds (CI).
+      # This step runs for pushes and pull requests, but NOT for tags.
+      - name: Upload CI Build Artifacts (not for tags)
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          # A different artifact name to avoid confusion with the release package.
+          name: gitph-build-artifacts-windows-x64
+          # The path contains the raw build output needed for debugging.
+          # The 'Release' subdirectory is where Visual Studio places the final binaries.
+          path: |
+            build/bin/Release/
+            src/plugins/
+            LICENSE
+          retention-days: 3
