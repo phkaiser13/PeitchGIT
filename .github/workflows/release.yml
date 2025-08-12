@@ -13,11 +13,11 @@ on:
   workflow_run:
     # Aciona este workflow quando os workflows de build listados terminam na branch main
     workflows:
-      - "Build do gitph"                                # Nome do workflow Ubuntu-Like_ci.yml
-      - "Build gitph (Fedora-like Linux)"               # Nome do workflow Fedora-like_ci.yml
-      - "Build gitph (Arch-like - containerized)"       # Nome do workflow Arch-like_ci.yml
-      - "Build gitph (Windows)"                         # Nome do workflow Windows_ci.yml
-      - "Build gitph (macOS & Darwin systems)"          # Nome do workflow Mac-DarwinLike_ci.yml
+      - "Build do gitph (Ubuntu/Debian-Like linux Systems)"
+      - "Build gitph (Fedora-like Linux)"
+      - "Build gitph (Arch-like - containerized)"
+      - "Build gitph (Windows)"
+      - "Build gitph (macOS & Darwin systems)"
     types:
       - completed
     branches:
@@ -33,10 +33,10 @@ jobs:
       contents: write # Permissão necessária para criar a release
 
     steps:
-      - name: 'Checkout do código'
+      - name: '1. Checkout do código'
         uses: actions/checkout@v4
 
-      - name: 'Extrair versão do CMakeLists.txt'
+      - name: '2. Extrair versão do CMakeLists.txt'
         id: get_version
         run: |
           # Extrai a versão do projeto do arquivo CMakeLists.txt para nomear a tag da release
@@ -44,16 +44,16 @@ jobs:
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "Tag da Release: v${VERSION}"
 
-      - name: 'Baixar todos os artefatos dos builds'
+      - name: '3. Baixar todos os artefatos dos builds'
         uses: actions/download-artifact@v4
         with:
           # Associa os artefatos ao workflow que acionou este
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
           # O download-artifact criará diretórios com os nomes dos artefatos
-          # Ex: ./gitph-build-artifacts-arch-x86_64/, ./gitph-build-artifacts-ubuntu-x86_64/, etc.
+          # Ex: ./gitph-build-artifacts-arch/, ./gitph-build-artifacts-ubuntu-x86_64/, etc.
 
-      - name: 'Organizar e empacotar artefatos'
+      - name: '4. Organizar e empacotar artefatos'
         run: |
           # Cria o diretório de releases
           mkdir -p release_packages
@@ -63,7 +63,6 @@ jobs:
             local ARTIFACT_DIR=$1
             local PLATFORM_NAME=$2
             local VERSION=$3
-            # Nome do projeto corrigido para 'gitph'
             local RELEASE_NAME="gitph-v${VERSION}-${PLATFORM_NAME}"
             
             echo "Empacotando o conteúdo de '${ARTIFACT_DIR}' em '${RELEASE_NAME}.tar.gz'"
@@ -77,30 +76,24 @@ jobs:
             tar -czf "release_packages/${RELEASE_NAME}.tar.gz" -C "${ARTIFACT_DIR}" .
           }
           
-          # Ubuntu
-          create_package "gitph-build-artifacts-ubuntu-x86_64" "ubuntu-x86_64" "${{ env.VERSION }}"
-          create_package "gitph-build-artifacts-ubuntu-arm64" "ubuntu-arm64" "${{ env.VERSION }}"
-          
-          # Windows
-          create_package "gitph-build-artifacts-windows-x86_64/Release" "windows-x86_64" "${{ env.VERSION }}"
-          create_package "gitph-build-artifacts-windows-arm64/Release" "windows-arm64" "${{ env.VERSION }}"
-          
-          # Fedora
-          create_package "gitph-build-artifacts-fedora-x86_64" "fedora-x86_64" "${{ env.VERSION }}"
-          create_package "gitph-build-artifacts-fedora-arm64" "fedora-arm64" "${{ env.VERSION }}"
-          
-          # Arch (NOVA SEÇÃO PARA AS MÚLTIPLAS ARQUITETURAS)
-          create_package "gitph-build-artifacts-arch-x86_64" "arch-x86_64" "${{ env.VERSION }}"
-          create_package "gitph-build-artifacts-arch-aarch64" "arch-aarch64" "${{ env.VERSION }}"
-          
-          # macOS
-          create_package "gitph-build-artifacts-macos-x86_64" "macos-x86_64" "${{ env.VERSION }}"
-          create_package "gitph-build-artifacts-macos-arm64" "macos-arm64" "${{ env.VERSION }}"
+          # Itera sobre todos os diretórios de artefatos baixados
+          for dir in *-build-artifacts*; do
+            if [ -d "$dir" ]; then
+                # Extrai o nome da plataforma do nome do diretório do artefato
+                platform_name=$(echo "$dir" | sed -e 's/gitph-build-artifacts-//' -e 's/build-artifacts-//')
+                # Lida com o caso do Windows que tem um subdiretório 'Release'
+                if [[ "$platform_name" == "windows"* && -d "$dir/Release" ]]; then
+                    create_package "$dir/Release" "$platform_name" "${{ env.VERSION }}"
+                else
+                    create_package "$dir" "$platform_name" "${{ env.VERSION }}"
+                fi
+            fi
+          done
 
           echo "Pacotes de release prontos:"
           ls -l release_packages
 
-      - name: 'Criar Release e Anexar Pacotes'
+      - name: '5. Criar Release e Anexar Pacotes'
         uses: softprops/action-gh-release@v2
         with:
           # Usa a versão extraída como nome da tag
