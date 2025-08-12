@@ -12,6 +12,7 @@ jobs:
     name: Build (windows-latest)
     runs-on: windows-latest
     env:
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
       VCPKG_DEFAULT_TRIPLET: x64-windows
 
     steps:
@@ -30,9 +31,14 @@ jobs:
       - name: Install Ninja
         run: choco install ninja -y
 
-      # Setup vcpkg (bootstrap + binary cache)
-      - name: Setup vcpkg
-        uses: lukka/run-vcpkg@v11
+      # Install vcpkg and dependencies
+      - name: Install vcpkg and libraries
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          cd $env:VCPKG_ROOT
+          .\bootstrap-vcpkg.bat
+          .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
+        shell: pwsh
 
       # Setup Rust
       - name: Setup Rust toolchain
