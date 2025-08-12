@@ -6,7 +6,7 @@
 # e cria pacotes de distribuição automaticamente quando uma nova versão é marcada.
 # SPDX-License-Identifier: Apache-2.0
 
-name: Build do gitph
+name: Build do gitph (Ubuntu/Debian-Like linux Systems)
 
 # Gatilhos do workflow:
 on:
