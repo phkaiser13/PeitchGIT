@@ -1,65 +1,59 @@
 name: Build gitph (Arch-like - containerized)
 
 on:
-push:
-branches: [ "main" ]
-tags:
-- 'v*'
-pull_request:
-branches: [ "main" ]
+  push:
+    branches: [ "main" ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
-build:
-name: Build and Test (Arch Linux Container)
-runs-on: ubuntu-latest
-# Define o contêiner no nível do job. O GitHub Actions gerencia o resto.
-container:
-image: archlinux:latest
+  build:
+    name: Build and Test (Arch Linux Container)
+    runs-on: ubuntu-latest
+    # Define o contêiner no nível do job. O GitHub Actions gerencia o resto.
+    container:
+      image: archlinux:latest
 
-code
-Code
-download
-content_copy
-expand_less
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-steps:
-  - name: Checkout code
-    uses: actions/checkout@v4
+      # Cada comando é agora um passo separado, tornando o debug mais fácil.
+      - name: Initialize Pacman Keyring
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
 
-  # Cada comando é agora um passo separado, tornando o debug mais fácil.
-  - name: Initialize Pacman Keyring
-    run: |
-      pacman-key --init
-      pacman-key --populate archlinux
+      - name: Install system dependencies (Arch)
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel cmake lua curl nlohmann-json go rust git pkgconf
 
-  - name: Install system dependencies (Arch)
-    run: |
-      pacman -Syu --noconfirm --needed \
-        base-devel cmake lua curl nlohmann-json go rust git pkgconf
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
 
-  - name: Setup Go
-    uses: actions/setup-go@v5
-    with:
-      go-version: '1.21'
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
 
-  - name: Setup Rust
-    uses: dtolnay/rust-toolchain@stable
-    with:
-      toolchain: stable
-  - uses: Swatinem/rust-cache@v2
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
-  - name: Configure CMake
-    run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Compile Project
+        run: cmake --build build --parallel
 
-  - name: Compile Project
-    run: cmake --build build --parallel
-
-  - name: Upload build artifacts
-    uses: actions/upload-artifact@v4
-    with:
-      # Nome de artefato único para evitar conflitos no job de release
-      name: gitph-build-artifacts-arch 
-      path: |
-        build/bin/
-        src/plugins/
-        LICENSE
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          # Nome de artefato único para evitar conflitos no job de release
+          name: gitph-build-artifacts-arch 
+          path: |
+            build/bin/
+            src/plugins/
+            LICENSE
