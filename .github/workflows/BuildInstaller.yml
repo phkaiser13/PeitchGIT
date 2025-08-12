@@ -1,1 +1,170 @@
+# .github/workflows/BuildInstaller.yml
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+# Este workflow é responsável por construir os instaladores e pacotes de distribuição
+# para múltiplas plataformas e criar uma release no GitHub quando uma nova tag é enviada.
 
+name: 'Build & Release Installer'
+
+on:
+  push:
+    tags:
+      - 'v*.*.*' # Aciona o workflow quando uma tag como v1.0.0 é criada
+  workflow_dispatch: # Permite o acionamento manual
+
+jobs:
+  # --- JOB DE BUILD ---
+  # Este job é executado em uma matriz de diferentes sistemas operacionais e arquiteturas.
+  build_package:
+    name: Build para ${{ matrix.platform_name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          # --- Plataformas de Build ---
+          - os: windows-latest
+            platform_name: "win-x64"
+            asset_name_suffix: "win-x64.exe"
+            nsis: true # Flag para indicar que devemos usar o NSIS
+          - os: macos-13 # Intel
+            platform_name: "mac-x64"
+            asset_name_suffix: "mac-x64.tar.gz"
+          - os: macos-14 # Apple Silicon
+            platform_name: "mac-arm64"
+            asset_name_suffix: "mac-arm64.tar.gz"
+          - os: ubuntu-latest
+            platform_name: "linux-x64"
+            asset_name_suffix: "linux-x64.tar.gz"
+
+    steps:
+      - name: '1. Checkout do código'
+        uses: actions/checkout@v4
+
+      - name: '2. Extrair versão do CMakeLists.txt'
+        id: get_version
+        shell: bash
+        run: |
+          # Extrai a versão para usar nos nomes dos arquivos
+          VERSION=$(grep -oP 'project\(gitph VERSION \K[0-9.]+' CMakeLists.txt)
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+
+      # --- Bloco de instalação de dependências específico para Windows ---
+      - name: '3. Instalar dependências (Windows)'
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          # Instala o compilador de instaladores NSIS
+          choco install nsis -y
+          # Instala dependências C++ via vcpkg, como no seu workflow existente
+          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          cd $env:VCPKG_ROOT
+          .\bootstrap-vcpkg.bat
+          .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
+
+      # --- Bloco de instalação de dependências específico para macOS ---
+      - name: '3. Instalar dependências (macOS)'
+        if: runner.os == 'macOS'
+        run: brew install cmake pkg-config lua curl nlohmann-json
+
+      # --- Bloco de instalação de dependências específico para Linux ---
+      - name: '3. Instalar dependências (Linux)'
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake pkg-config liblua5.4-dev libcurl4-openssl-dev nlohmann-json3-dev
+
+      - name: '4. Configurar toolchains (Go & Rust)'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: '5. Configurar e Compilar com CMake'
+        shell: bash
+        run: |
+          # Configura e compila o projeto em modo Release
+          # Para Windows, passa o toolchain file do vcpkg
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+              -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+          else
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          fi
+          cmake --build build --config Release --parallel
+
+      # --- Bloco de empacotamento para Windows (NSIS) ---
+      - name: '6. Empacotar Instalador (Windows)'
+        if: matrix.nsis == true
+        shell: bash
+        run: |
+          # Define o nome final do instalador com a versão
+          INSTALLER_NAME="peightgit-v${{ env.VERSION }}-${{ matrix.asset_name_suffix }}"
+          echo "INSTALLER_NAME=${INSTALLER_NAME}" >> $GITHUB_ENV
+          # Roda o compilador NSIS para criar o .exe
+          makensis -DVERSION=${{ env.VERSION }} installer/nsis/gitph_installer.nsi
+          # Move o instalador gerado para um diretório de upload
+          mkdir -p artifacts
+          mv "gitph_installer_v${{ env.VERSION }}.exe" "artifacts/${INSTALLER_NAME}"
+          
+      # --- Bloco de empacotamento para macOS/Linux (tar.gz) ---
+      - name: '6. Empacotar Arquivo (macOS/Linux)'
+        if: matrix.nsis != true
+        shell: bash
+        run: |
+          # Nome do pacote e do diretório de release
+          RELEASE_NAME="peightgit-v${{ env.VERSION }}-${{ matrix.platform_name }}"
+          PACKAGE_NAME="peightgit-v${{ env.VERSION }}-${{ matrix.asset_name_suffix }}"
+          RELEASE_DIR="release/${RELEASE_NAME}"
+          echo "PACKAGE_NAME=${PACKAGE_NAME}" >> $GITHUB_ENV
+
+          echo "--> Montando arquivos em '${RELEASE_DIR}'..."
+          mkdir -p "${RELEASE_DIR}"
+
+          # Copia os binários e arquivos necessários para a pasta de release
+          cp -r build/bin/* "${RELEASE_DIR}/"
+          cp -r src/plugins "${RELEASE_DIR}/"
+          cp LICENSE "${RELEASE_DIR}/"
+          cp README.md "${RELEASE_DIR}/"
+
+          echo "--> Criando pacote ${PACKAGE_NAME}..."
+          (cd release && tar -czf "${PACKAGE_NAME}" "${RELEASE_NAME}")
+          
+          # Move o pacote para o diretório de upload
+          mkdir -p artifacts
+          mv "release/${PACKAGE_NAME}" "artifacts/"
+
+      - name: '7. Upload do Pacote'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.INSTALLER_NAME || env.PACKAGE_NAME }}
+          path: artifacts/
+
+  # --- JOB DE RELEASE ---
+  # Este job só é executado após todos os builds terem sucesso.
+  release:
+    name: 'Criar Release no GitHub'
+    needs: build_package # Depende do job de build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Permissão necessária para criar a release
+
+    steps:
+      - name: '1. Baixar todos os pacotes de instalação'
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/ # Baixa todos os artefatos para a pasta 'dist'
+
+      - name: '2. Listar arquivos para release'
+        run: |
+          echo "Arquivos que serão anexados à release:"
+          ls -R dist
+
+      - name: '3. Criar Release e Anexar Pacotes'
+        uses: softprops/action-gh-release@v2
+        with:
+          # Anexa todos os arquivos (.exe, .tar.gz) de todos os subdiretórios
+          files: dist/*/*
+          # Gera o corpo da release automaticamente com base nos commits desde a última tag
+          generate_release_notes: true
