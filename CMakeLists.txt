@@ -10,7 +10,8 @@
 # *
 # * It has been updated to handle the full migration to Rust modules, replacing
 # * all previous Go build commands with robust Rust/Cargo integration.
-# *
+# * 
+# * Important: Some comments still in portuguese. 
 # * SPDX-License-Identifier: Apache-2.0 */
 
 cmake_minimum_required(VERSION 3.15)

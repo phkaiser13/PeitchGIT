@@ -117,6 +117,7 @@ out/
 .cache/
 *.lock
 .lock/
+target/
 
 ###################################
 # OS-specific

@@ -60,11 +60,17 @@ pub struct ModuleInfo {
     commands: *const *const c_char,
 }
 
+// SAFETY: This is safe because the pointers in ModuleInfo point to the data
+// of other `static Lazy` variables. This data is guaranteed to be valid for
+// the entire lifetime of the program and is immutable. Therefore, sharing
+// ModuleInfo across threads (Sync) and sending it between threads (Send) is safe.
+unsafe impl Send for ModuleInfo {}
+unsafe impl Sync for ModuleInfo {}
+
+
 // --- Global State Management ---
 
 // A global, thread-safe, lazily-initialized Tokio runtime.
-// This is the standard pattern for using an async runtime from a sync context (like FFI).
-// `Lazy` from `once_cell` ensures the runtime is created only once, on first use.
 static RUNTIME: Lazy<Runtime> = Lazy::new(|| {
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -73,7 +79,6 @@ static RUNTIME: Lazy<Runtime> = Lazy::new(|| {
 });
 
 // The core context provided by the host application.
-// We wrap it in a Mutex for thread-safe access.
 static CORE_CONTEXT: Mutex<Option<CoreContext>> = Mutex::new(None);
 
 // --- Logging Helper ---
@@ -83,10 +88,8 @@ fn log_to_core(level: LogLevel, message: &str) {
     let context_guard = CORE_CONTEXT.lock().unwrap();
     if let Some(context) = *context_guard {
         if let Some(log_fn) = context.log {
-            // Create C-compatible strings. These must not outlive this function.
             let module_name = CString::new("API_CLIENT_RUST").unwrap();
             let msg = CString::new(message).unwrap();
-            // Call the C function pointer.
             log_fn(level, module_name.as_ptr(), msg.as_ptr());
         }
     }
@@ -101,17 +104,33 @@ static MODULE_VERSION: Lazy<CString> = Lazy::new(|| CString::new("1.1.0").unwrap
 static MODULE_DESCRIPTION: Lazy<CString> = Lazy::new(|| CString::new("Client for interacting with Git provider APIs (e.g., GitHub) [Rust]").unwrap());
 static SRP_COMMAND: Lazy<CString> = Lazy::new(|| CString::new("srp").unwrap());
 
-// The null-terminated array of command strings for the C side.
-static SUPPORTED_COMMANDS: Lazy<[*const c_char; 2]> = Lazy::new(|| [
-    SRP_COMMAND.as_ptr(),
-    ptr::null(), // Null terminator
-]);
+// --- FIX: WRAP THE POINTER ARRAY IN A THREAD-SAFE STRUCT ---
+
+// A wrapper struct for the C-compatible command list.
+struct CommandList {
+    ptrs: [*const c_char; 2],
+}
+
+// SAFETY: This is safe because the pointers in the array point to static,
+// immutable CString data that lives for the program's entire duration.
+// This makes the wrapper struct safe to send and share across threads.
+unsafe impl Send for CommandList {}
+unsafe impl Sync for CommandList {}
+
+// The null-terminated array of command strings for the C side, now wrapped.
+static SUPPORTED_COMMANDS: Lazy<CommandList> = Lazy::new(|| CommandList {
+    ptrs: [
+        SRP_COMMAND.as_ptr(),
+        ptr::null(), // Null terminator
+    ],
+});
 
 static MODULE_INFO: Lazy<ModuleInfo> = Lazy::new(|| ModuleInfo {
     name: MODULE_NAME.as_ptr(),
     version: MODULE_VERSION.as_ptr(),
     description: MODULE_DESCRIPTION.as_ptr(),
-    commands: SUPPORTED_COMMANDS.as_ptr(),
+    // We now get the pointer from our wrapper struct.
+    commands: SUPPORTED_COMMANDS.ptrs.as_ptr(),
 });
 
 // --- C-compatible API Implementation ---
@@ -126,10 +145,8 @@ pub extern "C" fn module_get_info() -> *const ModuleInfo {
 #[no_mangle]
 pub extern "C" fn module_init(context: *const CoreContext) -> Status {
     if context.is_null() {
-        // We can't log here as we have no context.
         return Status::ErrorInitFailed;
     }
-    // Safely store the context from C.
     let mut context_guard = CORE_CONTEXT.lock().unwrap();
     *context_guard = Some(unsafe { *context });
 
@@ -140,7 +157,6 @@ pub extern "C" fn module_init(context: *const CoreContext) -> Status {
 /// Executes a command passed from the core.
 #[no_mangle]
 pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> Status {
-    // Convert C's argc/argv to a safe, idiomatic Vec<String>.
     let args = unsafe { c_args_to_vec(argc, argv) };
     if args.is_empty() {
         log_to_core(LogLevel::Error, "Execution called with no command.");
@@ -151,11 +167,9 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> Status
     let command_args = &args[1..];
     log_to_core(LogLevel::Debug, &format!("Dispatching command: {}", command));
 
-    // Use the global runtime to execute our async logic and wait for it to complete.
     let result = RUNTIME.block_on(async {
         match command.as_str() {
             "srp" => {
-                // For now, we hardcode the GitHub provider.
                 let provider: Box<dyn ApiProvider> = Box::new(GitHubHandler::new());
                 set_repository(provider, command_args).await
             }
@@ -176,8 +190,6 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> Status
 #[no_mangle]
 pub extern "C" fn module_cleanup() {
     log_to_core(LogLevel::Info, "api_client (Rust) module cleaned up.");
-    // Rust's `once_cell::sync::Lazy` handles the memory for our statics automatically.
-    // There is nothing to free here, which is safer than the C/Go approach.
 }
 
 // --- Helper Functions ---
@@ -193,7 +205,6 @@ unsafe fn c_args_to_vec(argc: c_int, argv: *const *const c_char) -> Vec<String> 
         let arg_ptr = *argv.add(i as usize);
         if !arg_ptr.is_null() {
             let c_str = CStr::from_ptr(arg_ptr);
-            // We convert to a Rust String, handling potential UTF-8 errors.
             result.push(c_str.to_string_lossy().into_owned());
         }
     }
