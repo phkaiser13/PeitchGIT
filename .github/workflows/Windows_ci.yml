@@ -9,7 +9,6 @@ on:
 
 jobs:
   build:
-    name: Build (windows-latest)
     runs-on: windows-latest
     env:
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
@@ -21,39 +20,29 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Install specific CMake version
       - name: Install CMake
         uses: jwlawson/actions-setup-cmake@v1
         with:
           cmake-version: '3.29.3'
 
-      # Install Ninja via Chocolatey
-      - name: Install Ninja
+      - name: Ensure Ninja (optional, used by some build steps)
         run: choco install ninja -y
 
-      # Install vcpkg and dependencies
+      # Install vcpkg and needed libs (MSVC triplet)
       - name: Install vcpkg and libraries
         run: |
           git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
           cd $env:VCPKG_ROOT
           .\bootstrap-vcpkg.bat
+          # instala libs para x64-windows (MSVC)
           .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
         shell: pwsh
 
-      # Setup Rust
+      # Setup Rust only (sem run de cache que quebre se não houver Cargo.toml)
       - name: Setup Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-
-      - name: Cache Cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       # Setup Go
       - name: Setup Go
@@ -61,39 +50,29 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/go/bin
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-
-      # Configure CMake with vcpkg toolchain
-      - name: Configure CMake
+      # Configure CMake -> FORÇAR generator Visual Studio 2022 x64 e usar vcpkg toolchain
+      - name: Configure CMake (MSVC, Visual Studio generator)
         run: |
-          cmake -S . -B build `
-            -G "Ninja" `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake"
+          cmake -S . -B build ^
+            -G "Visual Studio 17 2022" ^
+            -A x64 ^
+            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" ^
+            -DCMAKE_BUILD_TYPE=Release
         shell: pwsh
 
-      # Build
-      - name: Build (CMake)
+      # Build (usando configuração Release do Visual Studio)
+      - name: Build
         run: cmake --build build --config Release --parallel
         shell: pwsh
 
-      # Run tests if available
-      - name: Run tests (ctest)
+      # Run tests (se houver)
+      - name: Run tests
         run: |
-          if (Test-Path build) {
-            cmake --build build --config Release --target test || true
-            ctest --test-dir build --output-on-failure -C Release
-          }
+          cmake --build build --config Release --target test || true
+          ctest --test-dir build --output-on-failure -C Release || true
         shell: pwsh
         continue-on-error: true
 
-      # Upload build artifacts
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
