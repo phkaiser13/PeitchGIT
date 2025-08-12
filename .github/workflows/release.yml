@@ -1,104 +1,68 @@
-# .github/workflows/release.yml
-# Copyright (C) 2025 Pedro Henrique / phkaiser13
 #
-# SPDX-License-Identifier: Apache-2.0
+# release.yml - Workflow to publish a GitHub Release.
 #
-# Este workflow é responsável por criar uma release no GitHub.
-# Ele é acionado após a conclusão bem-sucedida dos workflows de build
-# e empacota os artefatos de cada plataforma em um formato de distribuição.
+# This workflow is triggered ONLY when a new tag starting with 'v' is pushed.
+# Its sole responsibility is to:
+# 1. Download all the release packages (.tar.gz, .zip) created by the various build workflows.
+# 2. Create a single, formal GitHub Release associated with the tag.
+# 3. Automatically generate release notes based on commit history since the last tag.
+# 4. Upload all the downloaded packages as assets to that GitHub Release.
+#
+# This ensures a clean separation of concerns: build workflows build, release workflow releases.
+#
 
-name: 'Criação de Release'
+name: Create GitHub Release
 
 on:
-  workflow_run:
-    # Aciona este workflow quando os workflows de build listados terminam na branch main
-    workflows:
-      - "Build do gitph (Ubuntu/Debian-Like linux Systems)"
-      - "Build gitph (Fedora-like Linux)"
-      - "Build gitph (Arch-like - containerized)"
-      - "Build gitph (Windows)"
-      - "Build gitph (macOS & Darwin systems)"
-    types:
-      - completed
-    branches:
-      - main
+  # This workflow runs ONLY when a tag starting with 'v' (e.g., v1.0, v2.3.4) is pushed.
+  push:
+    tags:
+      - 'v*'
 
 jobs:
-  release:
-    name: 'Criar Release e Empacotar Artefatos'
-    # Executa apenas se o workflow acionador foi bem-sucedido e se for um push (não em PRs)
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
+  # The single job in this workflow is to publish the release.
+  publish-release:
+    name: Publish GitHub Release
+    # Runs on the latest Ubuntu runner, which is sufficient for API calls and file handling.
     runs-on: ubuntu-latest
+    
+    # This is a critical security best practice.
+    # The workflow needs 'contents: write' permission to create a release and upload assets.
+    # By explicitly granting only this permission, we follow the principle of least privilege.
     permissions:
-      contents: write # Permissão necessária para criar a release
+      contents: write
 
     steps:
-      - name: '1. Checkout do código'
-        uses: actions/checkout@v4
-
-      - name: '2. Extrair versão do CMakeLists.txt'
-        id: get_version
-        run: |
-          # Extrai a versão do projeto do arquivo CMakeLists.txt para nomear a tag da release
-          VERSION=$(grep -oP 'project\(gitph VERSION \K[0-9.]+' CMakeLists.txt)
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
-          echo "Tag da Release: v${VERSION}"
-
-      - name: '3. Baixar todos os artefatos dos builds'
+      # Step 1: Download all release artifacts from the current workflow run.
+      # When a tag is pushed, all build workflows and this release workflow are triggered.
+      # This step will automatically find and download all artifacts that were uploaded
+      # by the parallel build jobs (Arch, Fedora, Ubuntu, macOS, Windows).
+      - name: Download all release artifacts
         uses: actions/download-artifact@v4
         with:
-          # Associa os artefatos ao workflow que acionou este
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ github.event.workflow_run.id }}
-          # O download-artifact criará diretórios com os nomes dos artefatos
-          # Ex: ./gitph-build-artifacts-arch/, ./gitph-build-artifacts-ubuntu-x86_64/, etc.
+          # The destination path for the downloaded artifacts.
+          # Each artifact will be placed in its own subdirectory here.
+          path: release-artifacts
 
-      - name: '4. Organizar e empacotar artefatos'
-        run: |
-          # Cria o diretório de releases
-          mkdir -p release_packages
+      # Step 2 (Optional but Recommended): Display the downloaded file structure.
+      # This is extremely useful for debugging to ensure all packages were downloaded correctly
+      # before attempting to upload them.
+      - name: Display structure of downloaded files
+        run: ls -R release-artifacts
 
-          # Função para criar o pacote tar.gz
-          create_package() {
-            local ARTIFACT_DIR=$1
-            local PLATFORM_NAME=$2
-            local VERSION=$3
-            local RELEASE_NAME="gitph-v${VERSION}-${PLATFORM_NAME}"
-            
-            echo "Empacotando o conteúdo de '${ARTIFACT_DIR}' em '${RELEASE_NAME}.tar.gz'"
-            
-            if [ ! -d "${ARTIFACT_DIR}" ]; then
-              echo "Aviso: Diretório do artefato '${ARTIFACT_DIR}' não encontrado. Pulando."
-              return
-            fi
-
-            # Empacota o conteúdo do diretório, não o diretório em si, usando -C
-            tar -czf "release_packages/${RELEASE_NAME}.tar.gz" -C "${ARTIFACT_DIR}" .
-          }
-          
-          # Itera sobre todos os diretórios de artefatos baixados
-          for dir in *-build-artifacts*; do
-            if [ -d "$dir" ]; then
-                # Extrai o nome da plataforma do nome do diretório do artefato
-                platform_name=$(echo "$dir" | sed -e 's/gitph-build-artifacts-//' -e 's/build-artifacts-//')
-                # Lida com o caso do Windows que tem um subdiretório 'Release'
-                if [[ "$platform_name" == "windows"* && -d "$dir/Release" ]]; then
-                    create_package "$dir/Release" "$platform_name" "${{ env.VERSION }}"
-                else
-                    create_package "$dir" "$platform_name" "${{ env.VERSION }}"
-                fi
-            fi
-          done
-
-          echo "Pacotes de release prontos:"
-          ls -l release_packages
-
-      - name: '5. Criar Release e Anexar Pacotes'
+      # Step 3: Create the GitHub Release and upload the assets.
+      # This action is the standard for creating releases. It's powerful and reliable.
+      - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          # Usa a versão extraída como nome da tag
-          tag_name: "v${{ env.VERSION }}"
-          # Anexa todos os pacotes .tar.gz criados
-          files: release_packages/*.tar.gz
-          # Gera o corpo da release automaticamente com base nos commits
+          # The action will automatically find files matching these patterns
+          # within the workspace and upload them as release assets.
+          # The patterns are designed to find the .tar.gz and .zip files inside
+          # the subdirectories created by the download-artifact step.
+          files: |
+            release-artifacts/**/*.tar.gz
+            release-artifacts/**/*.zip
+          
+          # This fantastic feature automatically creates release notes
+          # by summarizing the commits since the last release tag.
           generate_release_notes: true
