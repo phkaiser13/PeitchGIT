@@ -1,34 +1,36 @@
-# Copyright (C) 2025 Pedro Henrique / phkaiser13
-# Fedora-like_ci.yml - Workflow de Integração Contínua para o projeto gitph em Fedora Linux.
-#
-# Esta é uma versão corrigida e funcional do workflow, alinhada com as melhores
-# práticas dos outros CI do projeto.
-# SPDX-License-Identifier: Apache-2.0
-
 name: Build gitph (Fedora-like Linux)
 
 on:
+  # Run on pushes to the main branch
   push:
     branches: [ "main" ]
+    # Also run when a tag starting with 'v' is pushed
     tags:
       - 'v*'
+  # Run on pull requests targeting the main branch
   pull_request:
     branches: [ "main" ]
 
 jobs:
   build:
-    name: Build and Test (Fedora Container)
+    # Job name for the UI
+    name: Build and Package (Fedora Container)
+    # Run the job on the latest Ubuntu runner provided by GitHub
     runs-on: ubuntu-latest
+    # Use a Fedora container for a consistent build environment
     container:
       image: fedora:latest
 
     steps:
-      - name: Checkout do código
+      # Step 1: Check out the repository's code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Instalar dependências de sistema (Fedora)
+      # Step 2: Install system dependencies using DNF package manager.
+      # -y flag automatically answers 'yes' to prompts.
+      # A single dnf command is used to install all dependencies efficiently.
+      - name: Install system dependencies (Fedora)
         run: |
-          # Atualiza os metadados e instala todas as dependências de uma vez
           dnf -y update
           dnf install -y \
             gcc-c++ \
@@ -44,42 +46,74 @@ jobs:
             tar \
             gzip \
             which
-          # Limpa o cache para otimizar
+          # Clean dnf cache to reduce layer size
           dnf clean all
 
-      - name: Configurar ambiente Go
+      # Step 3: Set up the Go environment
+      - name: Setup Go environment
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      - name: Configurar ambiente Rust
+      # Step 4: Set up the Rust toolchain and cache dependencies
+      - name: Setup Rust environment
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-      - name: Cache do Rust
+      - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Configurar e Compilar com CMake
-        run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --parallel
+      # Step 5: Configure the project using CMake
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
-      - name: Rodar testes unitários (se existirem)
+      # Step 6: Compile the project
+      - name: Compile Project
+        run: cmake --build build --parallel
+
+      # Step 7: Run unit tests (if they are configured with CTest)
+      # The `if: always()` condition ensures this step runs even if previous steps fail,
+      # which can be useful for test reporting.
+      - name: Run unit tests
         if: always()
         run: |
+          # Check if CTest configuration exists before trying to run it
           if [ -f build/CTestTestfile.cmake ]; then
             (cd build && ctest --output-on-failure)
           else
-            echo "Nenhum teste configurado (CTestTestfile.cmake não encontrado)."
+            echo "No tests configured (CTestTestfile.cmake not found)."
           fi
 
-      - name: Upload dos artefatos de build
+      # Step 8: Create a distributable package, but ONLY for tags.
+      # This step runs conditionally based on the Git reference.
+      - name: Create Release Package (only for tags)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          # Create a compressed tarball containing the release files.
+          # The file is named to clearly identify its content and platform.
+          tar -czvf gitph-fedora-linux.tar.gz -C build/bin . src/plugins/ LICENSE
+
+      # Step 9: Upload the final release package as an artifact, ONLY for tags.
+      # This artifact will be consumed by the 'release.yml' workflow.
+      - name: Upload Release Package Artifact (only for tags)
+        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
+          # The artifact name must be unique and predictable.
+          name: gitph-release-package-fedora
+          path: gitph-fedora-linux.tar.gz
+          retention-days: 7
+
+      # Step 10: Upload intermediate build artifacts for non-tag builds (CI).
+      # This step runs for pushes and pull requests, but NOT for tags.
+      - name: Upload CI Build Artifacts (not for tags)
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          # A different artifact name to avoid confusion with the release package.
           name: gitph-build-artifacts-fedora
           path: |
             build/bin/
             src/plugins/
             LICENSE
-
-
+          retention-days: 3
