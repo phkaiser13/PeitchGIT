@@ -1,11 +1,8 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
-# main_ci_windows.yml - Continuous Integration workflow for the gitph project on Windows.
-#
-# This workflow automates the build process of the application for Windows
-# using the MSVC toolchain and vcpkg for dependency management.
+# main_ci_windows.yml - Continuous Integration workflow for gitph on Windows (MSVC)
 # SPDX-License-Identifier: Apache-2.0
 
-name: Build gitph (Windows)
+name: Build gitph (Windows - MSVC)
 
 on:
   push:
@@ -13,49 +10,149 @@ on:
   pull_request:
     branches: [ "main" ]
 
+env:
+  # padrão de triplet; força x64 MSVC
+  VCPKG_DEFAULT_TRIPLET: "x64-windows"
+  BUILD_TYPE: "Release"
+
 jobs:
   build:
-    name: Build for Windows (MSVC)
-    runs-on: windows-latest
-    
+    name: Build (windows-2022)
+    runs-on: windows-2022
+    timeout-minutes: 120
     steps:
+
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Install C/C++ dependencies (vcpkg)
-        uses: lukka/run-vcpkg@v11
         with:
-          # Lista de pacotes necessários para o seu projeto.
-          # nlohmann-json é incluído para acelerar o build, evitando o FetchContent.
-          vcpkgJsonGlob: '**/vcpkg.json'
-          vcpkgTriplet: 'x64-windows' 
+          submodules: recursive
 
+      - name: Install CMake & Ninja
+        uses: lukka/get-cmake@v3
+        with:
+          cmake-version: "3.27.5"    # pin ou remova para latest
+          ninja: true
+
+      - name: Setup MSVC Developer Command Prompt (x64)
+        # garante que cl/msbuild/vcvars estejam prontos no ambiente do job
+        uses: ilammy/msvc-dev-cmd@v3
+        with:
+          arch: x64
+
+      - name: Setup vcpkg (bootstrap + binary-cache)
+        uses: lukka/run-vcpkg@v11
+        id: run_vcpkg
+        with:
+          # procura por vcpkg.json (se tiver) e executa 'vcpkg install'
+          runVcpkgInstall: true
+          vcpkgJsonGlob: '**/vcpkg.json'
+          doNotCache: false
+        # run-vcpkg will set VCPKG_ROOT and VCPKG_DEFAULT_TRIPLET envs for downstream steps
+
+      - name: Show vcpkg info
+        run: |
+          echo "VCPKG_ROOT = $env:VCPKG_ROOT"
+          echo "VCPKG_DEFAULT_TRIPLET = $env:VCPKG_DEFAULT_TRIPLET"
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}\go-build
+            ${{ env.GOMODCACHE }}
+          key: go-mod-${{ hashFiles('**/go.mod') }}-${{ matrix.os || 'win' }}
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup Rust (toolchain + cache)
+        uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+          profile: minimal
+      - name: Cache cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CARGO_HOME }}\registry
+            ${{ env.CARGO_HOME }}\git
+            ${GITHUB_WORKSPACE}\cargo_target
+          key: cargo-cache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
+      - name: Configure CMake (with vcpkg toolchain)
+        shell: pwsh
+        run: |
+          # garante que VCPKG_ROOT foi definido pela action run-vcpkg
+          if (-not $env:VCPKG_ROOT) {
+            Write-Error "VCPKG_ROOT not set; run-vcpkg step failed or didn't set env."
+            exit 1
+          }
+          cmake -S . -B build -G "Ninja" `
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET="$env:VCPKG_DEFAULT_TRIPLET" `
+            -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}\install" `
+            -DNLOHMANN_JSON_FETCHCONTENT=OFF
 
-      - name: Configure CMake
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build (C++ core + modules output)
+        shell: pwsh
+        run: |
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+          cmake --install build --config ${{ env.BUILD_TYPE }}
 
+      - name: Run unit tests (if any)
+        shell: pwsh
+        run: |
+          if (Test-Path build\CTestTestfile.cmake) {
+            cmake --build build --target test --config ${{ env.BUILD_TYPE }}
+          } else {
+            Write-Host "No CTest tests found - skipping"
+          }
 
-      - name: Compile Project
-        run: cmake --build build --config Release --parallel
+      - name: Build Rust modules (cargo -> copy to modules folder)
+        shell: pwsh
+        run: |
+          # compila cada módulo rust (ajuste nomes se precisar)
+          pushd src\modules\git_ops
+          cargo build --release --target-dir "${{ github.workspace }}\cargo_target"
+          popd
+          pushd src\modules\issue_tracker
+          cargo build --release --target-dir "${{ github.workspace }}\cargo_target"
+          popd
+          pushd src\modules\sync_engine
+          cargo build --release --target-dir "${{ github.workspace }}\cargo_target"
+          popd
+          # copia os artefatos .dll/.lib para pasta de módulos
+          mkdir -Force ${GITHUB_WORKSPACE}\bin\modules
+          Copy-Item "${GITHUB_WORKSPACE}\cargo_target\release\*" -Destination "${GITHUB_WORKSPACE}\bin\modules" -Recurse -Force -ErrorAction SilentlyContinue
 
-      - name: Upload Artifacts
+      - name: Build Go modules (c-shared)
+        shell: pwsh
+        run: |
+          pushd src\modules\api_client
+          go env -w GOPATH="${env:USERPROFILE}\go"
+          go build -buildmode=c-shared -o "${GITHUB_WORKSPACE}\bin\modules\api_client.dll" .
+          popd
+          pushd src\modules\devops_automation
+          go build -buildmode=c-shared -o "${GITHUB_WORKSPACE}\bin\modules\devops_automation.dll" .
+          popd
+          pushd src\modules\ci_cd_manager
+          go build -buildmode=c-shared -o "${GITHUB_WORKSPACE}\bin\modules\ci_cd_parser.dll" parser.go
+          popd
+
+      - name: Package / Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: gitph-windows-msvc
+          name: gitph-windows-build
           path: |
-            build/bin/gitph.exe
-            build/bin/modules/
-            build/installer/installer_main.exe
+            build\**\*
+            bin\**\*
+            installer\**\*
+            install\**\*
+
+      - name: Cleanup (optional)
+        if: always()
+        run: |
+          echo "Workflow finished"
+
