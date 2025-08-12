@@ -1,81 +1,65 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
-# windows-build-manual-vcpkg.yml - Workflow de Integração Contínua para o projeto gitph em Windows.
+# Ubuntu-Like_ci.yml - Workflow de Integração Contínua para o projeto gitph.
 #
-# Este workflow automatiza o build em ambiente Windows, realizando a clonagem manual
-# e configuração do vcpkg para gerenciar as dependências C++.
+# Este workflow automatiza o processo de build e release da aplicação.
+# Ele garante que o projeto compila corretamente em um ambiente limpo
+# e cria pacotes de distribuição automaticamente quando uma nova versão é marcada.
 # SPDX-License-Identifier: Apache-2.0
 
-name: Build do gitph (Windows com vcpkg manual)
+name: Build do gitph
 
+# Gatilhos do workflow:
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main" ] # Executa quando há um push para a branch main
     tags:
-      - 'v*'
+      - 'v*'          # Executa quando uma tag como v1.0.0 é criada
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main" ] # Executa em pull requests para a main
 
 jobs:
+  # Job principal de build que compila e verifica o projeto
   build:
-    name: Build e Teste (Windows)
-    runs-on: windows-latest
+    name: Build e Teste
+    runs-on: ubuntu-latest
 
     steps:
-      # 1. Clona o repositório do seu projeto
+      # 1. Clona o repositório
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      # 2. Clona, configura e instala as dependências com vcpkg manualmente
-      - name: Clonar e Instalar vcpkg
-        # Usamos o shell padrão do Windows runner, que é o PowerShell
-        shell: pwsh
-        run: |
-          # Clonamos o repositório oficial do vcpkg para um diretório fixo (C:\vcpkg)
-          git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
-          
-          # Executamos o script de bootstrap para compilar o próprio vcpkg
-          C:\vcpkg\bootstrap-vcpkg.bat
-          
-          # Instalamos as bibliotecas necessárias, especificando o triplet estático
-          C:\vcpkg\vcpkg.exe install lua curl nlohmann-json --triplet x64-windows-static
-          
-          # Adicionamos o caminho raiz do vcpkg a uma variável de ambiente do GitHub Actions
-          # para que os próximos passos possam encontrá-lo facilmente.
-          echo "VCPKG_ROOT=C:\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      # 2. Instala as dependências de sistema (C/C++, Lua, Curl)
+      #    CORREÇÃO: Adicionado 'pkg-config' para que o CMake possa encontrar as bibliotecas (como a Lua)
+      - name: Instalar dependências do sistema
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake pkg-config liblua5.4-dev libcurl4-openssl-dev nlohmann-json3-dev
 
       # 3. Configura o ambiente Go
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.21' # Usando uma versão mais recente do Go. Ajuste se o seu go.mod exigir 1.18.
 
       # 4. Configura o ambiente Rust (com cache integrado)
+      #    MELHORIA: Usando uma action específica para Rust que simplifica o cache.
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
 
-      # 5. Configura o projeto com CMake, apontando para o toolchain do vcpkg
+      # 5. Configura e compila o projeto usando CMake em modo Release
       - name: Configurar CMake
-        shell: pwsh
-        run: |
-          cmake -S . -B build `
-            -DCMAKE_BUILD_TYPE=Release `
-            -A x64 `
-            -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake `
-            -DVCPKG_TARGET_TRIPLET=x64-windows-static
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
-      # 6. Compila o projeto usando o CMake
       - name: Compilar Projeto
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build --parallel
 
-      # 7. Salva os artefatos de build
+      # 6. Salva os artefatos de build para o job de release poder usá-los
       - name: Upload dos artefatos de build
         uses: actions/upload-artifact@v4
         with:
-          name: gitph-build-artifacts-windows
+          name: gitph-build-artifacts
           path: |
-            build/bin/Release/gitph.exe
+            build/bin/
             src/plugins/
             LICENSE
