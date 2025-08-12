@@ -1,7 +1,3 @@
-Gemini, faça duas coisas nesse workflow>
-Primeiro, faça build para todas as arquiteturas do arch (arm, x86 e as outras),
-segundo, há um arquivo release.yml programado para releasar a build quando vier uma tag, ok?
-
 name: Build gitph (Arch-like - containerized)
 
 on:
