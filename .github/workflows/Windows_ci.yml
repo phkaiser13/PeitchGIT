@@ -56,19 +56,19 @@ jobs:
           Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\share" -Recurse -Depth 2 | Select-Object -First 200
           Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\lib" -Recurse -Depth 1 | Select-Object -First 200
         shell: pwsh
-  
+        
       - name: Configure CMake (MSVC, Visual Studio generator)
         run: |
-          cmake -S . -B build `
-            -G "Visual Studio 17 2022" `
-            -A x64 `
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" `
             -DCMAKE_PREFIX_PATH="${{ env.VCPKG_ROOT }}\installed\x64-windows\share" `
+            -DLua_FOUND=TRUE `
             -DLUA_INCLUDE_DIR="${{ env.VCPKG_ROOT }}\installed\x64-windows\include" `
             -DLUA_LIBRARY="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
             -DLUA_LIBRARIES="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
             -DCMAKE_BUILD_TYPE=Release
         shell: pwsh
+
 
 
       # Build (usando configuração Release do Visual Studio)
