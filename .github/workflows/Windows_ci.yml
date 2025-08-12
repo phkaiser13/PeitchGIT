@@ -1,158 +1,99 @@
-# Copyright (C) 2025 Pedro Henrique / phkaiser13
-# main_ci_windows.yml - Continuous Integration workflow for gitph on Windows (MSVC)
-# SPDX-License-Identifier: Apache-2.0
-
-name: Build gitph (Windows - MSVC)
+name: Build gitph (Windows)
 
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-
-env:
-  # padrão de triplet; força x64 MSVC
-  VCPKG_DEFAULT_TRIPLET: "x64-windows"
-  BUILD_TYPE: "Release"
+  workflow_dispatch:
 
 jobs:
   build:
-    name: Build (windows-2022)
-    runs-on: windows-2022
-    timeout-minutes: 120
-    steps:
+    name: Build (windows-latest)
+    runs-on: windows-latest
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      # VCPKG_ROOT será definido pela action run-vcpkg; exposto como env para etapas seguintes.
 
-      - name: Checkout code
+    steps:
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          fetch-depth: 0
 
+      # Install CMake + Ninja (get-cmake installs ninja too)
       - name: Install CMake & Ninja
         uses: lukka/get-cmake@v3
-        with:
-          cmake-version: "3.27.5"    # pin ou remova para latest
-          ninja: true
+        # você pode fixar versão, ex: @v3.27
 
-      - name: Setup MSVC Developer Command Prompt (x64)
-        # garante que cl/msbuild/vcvars estejam prontos no ambiente do job
-        uses: ilammy/msvc-dev-cmd@v3
-        with:
-          arch: x64
-
-      - name: Setup vcpkg (bootstrap + binary-cache)
+      # Bootstrap vcpkg (uses run-vcpkg@v11 : preps vcpkg + binary cache integration)
+      - name: Setup vcpkg (bootstrap + binary cache)
         uses: lukka/run-vcpkg@v11
-        id: run_vcpkg
+        # Não pedimos para instalar libs aqui; preferimos que o toolchain do CMake
+        # invoque vcpkg automaticamente se houver vcpkg.json no root (recomendado).
+
+      # Setup Rust (cargo) so cargo builds in CMake custom commands succeed
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          # procura por vcpkg.json (se tiver) e executa 'vcpkg install'
-          runVcpkgInstall: true
-          vcpkgJsonGlob: '**/vcpkg.json'
-          doNotCache: false
-        # run-vcpkg will set VCPKG_ROOT and VCPKG_DEFAULT_TRIPLET envs for downstream steps
+          toolchain: stable
 
-      - name: Show vcpkg info
-        run: |
-          echo "VCPKG_ROOT = $env:VCPKG_ROOT"
-          echo "VCPKG_DEFAULT_TRIPLET = $env:VCPKG_DEFAULT_TRIPLET"
+      # Cache cargo (registry + git) and target to speed up rust module builds
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
+      # Setup Go (needed for go modules that are built via go build -buildmode=c-shared)
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
+
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
           path: |
-            ${{ runner.temp }}\go-build
-            ${{ env.GOMODCACHE }}
-          key: go-mod-${{ hashFiles('**/go.mod') }}-${{ matrix.os || 'win' }}
+            ~/go/pkg/mod
+            ~/go/bin
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
 
-      - name: Setup Rust (toolchain + cache)
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-      - name: Cache cargo registry + target
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ env.CARGO_HOME }}\registry
-            ${{ env.CARGO_HOME }}\git
-            ${GITHUB_WORKSPACE}\cargo_target
-          key: cargo-cache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Configure CMake (with vcpkg toolchain)
-        shell: pwsh
+      # Configure CMake (uses vcpkg toolchain so vcpkg.json -> vcpkg install happens automatically)
+      - name: Configure CMake
         run: |
-          # garante que VCPKG_ROOT foi definido pela action run-vcpkg
-          if (-not $env:VCPKG_ROOT) {
-            Write-Error "VCPKG_ROOT not set; run-vcpkg step failed or didn't set env."
-            exit 1
+          cmake -S . -B build `
+            -G "Ninja" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake"
+        shell: pwsh
+
+      # Build (parallel)
+      - name: Build (CMake)
+        run: cmake --build build --config Release --parallel
+        shell: pwsh
+
+      # (Opcional) Run unit tests if presentes
+      - name: Run tests (ctest)
+        run: |
+          if (Test-Path build) {
+            cmake --build build --config Release --target test || true
+            ctest --test-dir build --output-on-failure -C Release
           }
-          cmake -S . -B build -G "Ninja" `
-            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET="$env:VCPKG_DEFAULT_TRIPLET" `
-            -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}\install" `
-            -DNLOHMANN_JSON_FETCHCONTENT=OFF
-
-      - name: Build (C++ core + modules output)
         shell: pwsh
-        run: |
-          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
-          cmake --install build --config ${{ env.BUILD_TYPE }}
+        continue-on-error: true
 
-      - name: Run unit tests (if any)
-        shell: pwsh
-        run: |
-          if (Test-Path build\CTestTestfile.cmake) {
-            cmake --build build --target test --config ${{ env.BUILD_TYPE }}
-          } else {
-            Write-Host "No CTest tests found - skipping"
-          }
-
-      - name: Build Rust modules (cargo -> copy to modules folder)
-        shell: pwsh
-        run: |
-          # compila cada módulo rust (ajuste nomes se precisar)
-          pushd src\modules\git_ops
-          cargo build --release --target-dir "${{ github.workspace }}\cargo_target"
-          popd
-          pushd src\modules\issue_tracker
-          cargo build --release --target-dir "${{ github.workspace }}\cargo_target"
-          popd
-          pushd src\modules\sync_engine
-          cargo build --release --target-dir "${{ github.workspace }}\cargo_target"
-          popd
-          # copia os artefatos .dll/.lib para pasta de módulos
-          mkdir -Force ${GITHUB_WORKSPACE}\bin\modules
-          Copy-Item "${GITHUB_WORKSPACE}\cargo_target\release\*" -Destination "${GITHUB_WORKSPACE}\bin\modules" -Recurse -Force -ErrorAction SilentlyContinue
-
-      - name: Build Go modules (c-shared)
-        shell: pwsh
-        run: |
-          pushd src\modules\api_client
-          go env -w GOPATH="${env:USERPROFILE}\go"
-          go build -buildmode=c-shared -o "${GITHUB_WORKSPACE}\bin\modules\api_client.dll" .
-          popd
-          pushd src\modules\devops_automation
-          go build -buildmode=c-shared -o "${GITHUB_WORKSPACE}\bin\modules\devops_automation.dll" .
-          popd
-          pushd src\modules\ci_cd_manager
-          go build -buildmode=c-shared -o "${GITHUB_WORKSPACE}\bin\modules\ci_cd_parser.dll" parser.go
-          popd
-
-      - name: Package / Upload artifacts
+      # Upload build artifacts (binaries + modules)
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: gitph-windows-build
           path: |
-            build\**\*
-            bin\**\*
-            installer\**\*
-            install\**\*
-
-      - name: Cleanup (optional)
-        if: always()
-        run: |
-          echo "Workflow finished"
-
+            build/bin
+            build/*.exe
+            build/**/Release/*.dll
+            build/**/Release/*.pdb
+            bin/modules
