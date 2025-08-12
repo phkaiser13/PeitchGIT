@@ -38,9 +38,9 @@ With a dual CLI and interactive TUI, and a powerful Lua scripting engine for unl
 +------------+-------------+-------------+-------------+
 | C++ Module | Rust Modules| Go Modules  | Lua Plugins |
 |------------|-------------|-------------|-------------|
-| - Visualizer | - Git Ops   | - API Client| - Aliases   |
-| - Logger     | - Sync Engine | - DevOps    | - Hooks     |
-|            | - Issue Tracker | - CI Parser |             |
+| - Visualizer | - Git Ops   | - API Client| - Aliases |
+| - Logger     | - Sync Engine | - DevOps    | - Hooks |
+|              | - Issue Tracker | - CI Parser |       |
 +------------+-------------+-------------+-------------+
 ```
 
