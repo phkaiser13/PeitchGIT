@@ -13,6 +13,7 @@ jobs:
     env:
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
       VCPKG_DEFAULT_TRIPLET: x64-windows
+      RUSTFLAGS: ""
 
     steps:
       - name: Checkout repository
