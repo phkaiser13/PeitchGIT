@@ -1,27 +1,27 @@
 /* Copyright (C) 2025 Pedro Henrique / phkaiser13
- * download.c - A robust file downloader using libcurl.
+ * download.c - Um downloader de arquivos robusto usando libcurl.
  *
- * This module provides reliable file download functionality for internal
- * application features, such as the self-updater. It uses libcurl's
- * callback mechanism for writing data and displaying a real-time progress bar.
+ * Este módulo fornece funcionalidade de download de arquivos confiável para
+ * o helper de instalação. Ele usa o mecanismo de callback do libcurl
+ * para escrever dados e exibir uma barra de progresso em tempo real.
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include <stdio.h>
 #include <curl/curl.h>
 
-// Struct de progresso aprimorada para um nome de exibição customizado.
+// Struct de progresso para um nome de exibição customizado.
 struct ProgressData {
-    const char* display_name; // Nome amigável para a UI (ex: "gitph v1.1.0")
+    const char* display_name; // Nome amigável para a UI (ex: "Git for Windows")
 };
 
-// A função write_data permanece exatamente a mesma.
+// Função de callback para escrever os dados recebidos em um arquivo.
 static size_t write_data(void* contents, size_t size, size_t nmemb, void* userdata) {
     FILE* fp = (FILE*)userdata;
     return fwrite(contents, size, nmemb, fp);
 }
 
-// A função de progresso agora usa o display_name.
+// Função de callback para desenhar a barra de progresso.
 static int progress_callback(void* clientp,
                              curl_off_t dltotal,
                              curl_off_t dlnow,
@@ -33,8 +33,7 @@ static int progress_callback(void* clientp,
         int bar_width = 50;
         int pos = bar_width * percentage / 100.0;
 
-        // **MUDANÇA CHAVE AQUI**
-        printf("\rDownloading %s: [", data->display_name);
+        printf("\rBaixando %s: [", data->display_name);
         for (int i = 0; i < bar_width; ++i) {
             if (i < pos) printf("=");
             else if (i == pos) printf(">");
@@ -47,12 +46,12 @@ static int progress_callback(void* clientp,
 }
 
 /**
- * @brief Downloads a file from a given URL to a specified destination path.
+ * @brief Baixa um arquivo de uma dada URL para um caminho de destino especificado.
  *
- * @param url The URL of the file to download.
- * @param outpath The local file path where the downloaded file will be saved.
- * @param display_name A user-friendly name for the download, shown in the progress bar.
- * @return 0 on success, -1 on failure.
+ * @param url A URL do arquivo para baixar.
+ * @param outpath O caminho do arquivo local onde o arquivo baixado será salvo.
+ * @param display_name Um nome amigável para o download, mostrado na barra de progresso.
+ * @return 0 em sucesso, -1 em falha.
  */
 int download_file(const char* url, const char* outpath, const char* display_name) {
     CURL* curl_handle;
@@ -63,18 +62,17 @@ int download_file(const char* url, const char* outpath, const char* display_name
     curl_global_init(CURL_GLOBAL_ALL);
     curl_handle = curl_easy_init();
     if (!curl_handle) {
-        fprintf(stderr, "Error: Failed to initialize curl handle.\n");
+        fprintf(stderr, "Erro: Falha ao inicializar o handle do curl.\n");
         return -1;
     }
 
     pagefile = fopen(outpath, "wb");
     if (!pagefile) {
-        fprintf(stderr, "Error: Cannot open output file %s\n", outpath);
+        fprintf(stderr, "Erro: Nao foi possivel abrir o arquivo de saida %s\n", outpath);
         curl_easy_cleanup(curl_handle);
         return -1;
     }
 
-    // Usa o novo display_name na struct de progresso.
     struct ProgressData progress_data = { .display_name = display_name };
 
     curl_easy_setopt(curl_handle, CURLOPT_URL, url);
@@ -84,16 +82,16 @@ int download_file(const char* url, const char* outpath, const char* display_name
     curl_easy_setopt(curl_handle, CURLOPT_XFERINFOFUNCTION, progress_callback);
     curl_easy_setopt(curl_handle, CURLOPT_XFERINFODATA, (void*)&progress_data);
     curl_easy_setopt(curl_handle, CURLOPT_FOLLOWLOCATION, 1L); // Seguir redirecionamentos
-    curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "gitph-updater/1.0"); // Bom para APIs
+    curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "gitph-installer/1.0"); // Boa prática para APIs
 
     res = curl_easy_perform(curl_handle);
-    printf("\n");
+    printf("\n"); // Nova linha após a barra de progresso
 
     if (res != CURLE_OK) {
-        fprintf(stderr, "Error: curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+        fprintf(stderr, "Erro: curl_easy_perform() falhou: %s\n", curl_easy_strerror(res));
         ret_code = -1;
     } else {
-        printf("Download of %s completed successfully.\n", display_name);
+        printf("Download de %s concluido com sucesso.\n", display_name);
     }
 
     fclose(pagefile);
