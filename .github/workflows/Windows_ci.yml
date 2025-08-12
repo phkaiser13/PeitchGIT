@@ -2,11 +2,11 @@
 # build-windows.yml - Continuous Integration workflow for gitph on Windows.
 #
 # This workflow is carefully configured to build the project using the MSVC toolchain
-# with dependencies managed by vcpkg. It is the most complex build environment.
+# with dependencies managed by vcpkg. It builds and tests on every push/pull_request.
+# When a tag is pushed, it creates a compressed .zip package ready for release.
 #
-# It compiles and tests on every push/pull_request. When a tag is pushed,
-# it creates a standard .zip archive for distribution and uploads it as a
-# release artifact for the 'release.yml' workflow.
+# NOTE: The vcpkg and CMake configuration steps are highly specific.
+# They should be modified with extreme caution.
 #
 
 name: Build gitph (Windows)
@@ -14,23 +14,19 @@ name: Build gitph (Windows)
 on:
   push:
     branches: [ "main" ]
-    # Run when a tag like v1.0.0 is pushed
+    # Added trigger for tags to enable release packaging
     tags:
       - 'v*'
   pull_request:
     branches: [ "main" ]
-  # Allows manual triggering of the workflow
   workflow_dispatch:
 
 jobs:
   build:
-    # The job runs on the latest Windows Server environment provided by GitHub
     runs-on: windows-latest
-    # Environment variables available to all steps in this job
+    # Environment variables required for vcpkg and the build process
     env:
-      # Set the root for vcpkg to a predictable path in the workspace
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
-      # Set the default vcpkg triplet for 64-bit Windows using MSVC
       VCPKG_DEFAULT_TRIPLET: x64-windows
       RUSTFLAGS: ""
 
@@ -38,6 +34,9 @@ jobs:
       # Step 1: Check out the repository's code
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # fetch-depth: 0 is important for workflows that need tag/branch history
+          fetch-depth: 0
 
       # Step 2: Install a specific version of CMake
       - name: Install CMake
@@ -49,8 +48,8 @@ jobs:
       - name: Install Ninja
         run: choco install ninja -y
 
-      # Step 4: Install vcpkg and required C++ libraries. This is a critical step.
-      # It clones vcpkg, bootstraps it, and then installs the libraries for the x64-windows triplet.
+      # Step 4: Install vcpkg and required C++ libraries for the x64-windows (MSVC) triplet.
+      # This is a critical step for dependency management on Windows.
       - name: Install vcpkg and libraries
         run: |
           git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
@@ -71,9 +70,17 @@ jobs:
         with:
           go-version: '1.21'
           
-      # Step 7: Configure the project using CMake.
-      # This is a highly specific command for MSVC, using the Visual Studio 17 2022 generator.
-      # It points CMake to the vcpkg toolchain file to find all dependencies correctly.
+      # Step 7: Debugging step to list installed vcpkg files and verify paths
+      - name: Debug vcpkg installed files
+        run: |
+          Write-Host "VCPKG_ROOT = $env:VCPKG_ROOT"
+          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\share" -Recurse -Depth 2 | Select-Object -First 200
+          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\lib" -Recurse -Depth 1 | Select-Object -First 200
+        shell: pwsh
+        
+      # Step 8: Configure the project using CMake.
+      # This uses the "Visual Studio 17 2022" generator and points to the vcpkg toolchain file.
+      # The flags explicitly help CMake find the libraries installed by vcpkg.
       - name: Configure CMake (MSVC)
         run: |
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
@@ -81,56 +88,54 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release
         shell: pwsh
 
-      # Step 8: Build the project using the 'Release' configuration.
-      # For multi-config generators like Visual Studio, the config is specified at build time.
+      # Step 9: Build the project using the 'Release' configuration.
       - name: Build Project
         run: cmake --build build --config Release --parallel
         shell: pwsh
 
-      # Step 9: Run tests if they exist.
-      # continue-on-error prevents the workflow from failing if tests fail.
+      # Step 10: Run tests if they exist, continuing on error.
       - name: Run tests
-        run: (cd build && ctest --output-on-failure -C Release)
+        run: |
+          cd build
+          ctest -C Release --output-on-failure
         shell: pwsh
         continue-on-error: true
 
-      # Step 10: Create a distributable .zip package, but ONLY for tags.
-      # This step uses PowerShell's native compression tool.
+      # Step 11: Create a distributable package, but ONLY for tags.
+      # This uses PowerShell's native compression tool to create a .zip file.
       - name: Create Release Package (only for tags)
         if: startsWith(github.ref, 'refs/tags/')
-        shell: pwsh
         run: |
-          # Stage files for packaging in a temporary directory for a clean archive structure.
-          mkdir release_package
-          Copy-Item -Path "build/bin/Release/*" -Destination "release_package"
-          Copy-Item -Path "src/plugins" -Destination "release_package" -Recurse
-          Copy-Item -Path "LICENSE" -Destination "release_package"
-          # Create the final .zip file.
-          Compress-Archive -Path "release_package/*" -DestinationPath "gitph-windows-x64.zip"
+          # Create a staging directory to gather all release assets cleanly
+          mkdir staging
+          # Copy the main executables and libraries from the Release build directory
+          copy-item build/Release/*.exe staging/
+          copy-item build/Release/*.dll staging/
+          # Copy plugins and the license file
+          copy-item src/plugins staging/ -Recurse
+          copy-item LICENSE staging/
+          # Create the final zip file
+          Compress-Archive -Path staging/* -DestinationPath gitph-windows-x64.zip
+        shell: pwsh
 
-      # Step 11: Upload the final release package as an artifact, ONLY for tags.
-      # This artifact will be consumed by the 'release.yml' workflow.
+      # Step 12: Upload the final release package as an artifact, ONLY for tags.
       - name: Upload Release Package Artifact (only for tags)
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
-          # A unique and predictable name for the release artifact.
           name: gitph-release-package-windows-x64
           path: gitph-windows-x64.zip
           retention-days: 7
 
-      # Step 12: Upload intermediate build artifacts for non-tag builds (CI).
-      # This step runs for pushes and pull requests, but NOT for tags.
+      # Step 13: Upload intermediate build artifacts for non-tag builds (CI).
       - name: Upload CI Build Artifacts (not for tags)
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
-          # A different artifact name to avoid confusion with the release package.
           name: gitph-build-artifacts-windows-x64
-          # The path contains the raw build output needed for debugging.
-          # The 'Release' subdirectory is where Visual Studio places the final binaries.
+          # Upload the entire Release directory for debugging, plus plugins and license
           path: |
-            build/bin/Release/
+            build/Release/
             src/plugins/
             LICENSE
           retention-days: 3
