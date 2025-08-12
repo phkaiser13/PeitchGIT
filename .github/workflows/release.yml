@@ -1,77 +1,225 @@
-#
-# release.yml - Creates a GitHub Release when a new version tag is pushed.
-#
-# This workflow is triggered ONLY when a tag starting with 'v' is pushed.
-# It depends on the successful completion of all build workflows (Ubuntu, Arch,
-# Fedora, macOS, Windows), which are responsible for creating the release packages.
-#
-# Its sole purpose is to:
-# 1. Download all the platform-specific package artifacts (.tar.gz, .zip).
-# 2. Create a single, formal GitHub Release associated with the tag.
-# 3. Upload all the downloaded packages as assets to that release.
-#
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
+# SPDX-License-Identifier: Apache-2.0
 
-name: Create GitHub Release
+name: Build and Release gitph
 
-# This workflow runs ONLY on a push event for tags matching the 'v*' pattern.
+# Este workflow executa SOMENTE em um push de tags que correspondem ao padrão 'v*'
 on:
   push:
     tags:
       - 'v*'
 
-# Define permissions required for the job.
-# 'contents: write' is necessary to create a release and upload assets.
-permissions:
-  contents: write
-
 jobs:
-  create-release:
-    name: Create Release
+  #--- JOB DE BUILD PARA UBUNTU/DEBIAN ---
+  build_ubuntu:
+    name: Build (Ubuntu)
     runs-on: ubuntu-latest
-
     steps:
-      # Step 1: Checkout the repository.
-      # This is needed to access the repository content, like a CHANGELOG file,
-      # and for the release action to work correctly.
       - name: Checkout code
         uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake pkg-config liblua5.4-dev libcurl4-openssl-dev nlohmann-json3-dev
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Compile Project
+        run: cmake --build build --parallel
+      - name: Create Release Package
+        run: tar -czvf gitph-ubuntu-linux-x86_64.tar.gz -C build/bin . src/plugins/ LICENSE
+      - name: Upload Release Package Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitph-release-package-ubuntu
+          path: gitph-ubuntu-linux-x86_64.tar.gz
+          retention-days: 7
 
-      # Step 2: Download all release package artifacts from the build jobs.
-      # The 'actions/download-artifact' action will fetch all artifacts produced
-      # in the same workflow run (triggered by the same tag push).
-      # We place them all into a single directory for easy upload later.
+  #--- JOB DE BUILD PARA FEDORA ---
+  build_fedora:
+    name: Build (Fedora)
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install system dependencies (Fedora)
+        run: |
+          dnf -y update && dnf install -y gcc-c++ make cmake pkgconf-pkg-config lua-devel libcurl-devel openssl-devel nlohmann-json-devel git tar gzip which && dnf clean all
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Compile Project
+        run: cmake --build build --parallel
+      - name: Create Release Package
+        run: tar -czvf gitph-fedora-linux-x86_64.tar.gz -C build/bin . src/plugins/ LICENSE
+      - name: Upload Release Package Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitph-release-package-fedora
+          path: gitph-fedora-linux-x86_64.tar.gz
+          retention-days: 7
+
+  #--- JOB DE BUILD PARA ARCH LINUX ---
+  build_arch:
+    name: Build (Arch Linux)
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Initialize Pacman Keyring
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+      - name: Install system dependencies (Arch)
+        run: pacman -Syu --noconfirm --needed base-devel cmake lua curl nlohmann-json go rust git pkgconf
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Compile Project
+        run: cmake --build build --parallel
+      - name: Create Release Package
+        run: tar -czvf gitph-arch-linux-x86_64.tar.gz -C build/bin . src/plugins/ LICENSE
+      - name: Upload Release Package Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitph-release-package-arch
+          path: gitph-arch-linux-x86_64.tar.gz
+          retention-days: 7
+
+  #--- JOB DE BUILD PARA MACOS (INTEL & APPLE SILICON) ---
+  build_macos:
+    name: Build (macOS ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-13
+            arch: x86_64
+          - os: macos-14
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install dependencies (Homebrew)
+        run: brew install cmake pkg-config lua curl nlohmann-json
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Compile Project
+        run: cmake --build build --parallel
+      - name: Create Release Package
+        run: tar -czvf gitph-macos-${{ matrix.arch }}.tar.gz -C build/bin . src/plugins/ LICENSE
+      - name: Upload Release Package Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitph-release-package-macos-${{ matrix.arch }}
+          path: gitph-macos-${{ matrix.arch }}.tar.gz
+          retention-days: 7
+
+  #--- JOB DE BUILD PARA WINDOWS ---
+  build_windows:
+    name: Build (Windows x64)
+    runs-on: windows-latest
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}\\vcpkg
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install vcpkg and libraries
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          cd $env:VCPKG_ROOT
+          .\bootstrap-vcpkg.bat
+          .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
+        shell: pwsh
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Configure CMake (MSVC)
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\\scripts\\buildsystems\\vcpkg.cmake" -DCMAKE_BUILD_TYPE=Release
+        shell: pwsh
+      - name: Build Project
+        run: cmake --build build --config Release --parallel
+        shell: pwsh
+      - name: Create Release Package
+        run: |
+          mkdir staging
+          copy-item build/Release/*.exe staging/
+          copy-item build/Release/*.dll staging/
+          copy-item -Path "build/bin/modules" -Destination "staging/" -Recurse
+          copy-item src/plugins staging/ -Recurse
+          copy-item LICENSE staging/
+          Compress-Archive -Path staging/* -DestinationPath gitph-windows-x64.zip
+        shell: pwsh
+      - name: Upload Release Package Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitph-release-package-windows-x64
+          path: gitph-windows-x64.zip
+          retention-days: 7
+
+  #--- JOB DE RELEASE ---
+  # Este job SÓ SERÁ EXECUTADO após todos os jobs listados em 'needs' terminarem com sucesso.
+  create_release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Permissão necessária para criar a release
+    needs: [build_ubuntu, build_fedora, build_arch, build_macos, build_windows]
+    steps:
       - name: Download all release artifacts
         uses: actions/download-artifact@v4
         with:
-          # The destination path for all downloaded artifacts.
-          path: release-assets/
+          path: release-assets/ # Baixa todos os artefatos para esta pasta
 
-      # Step 3: (Optional but recommended) List downloaded files for debugging.
-      # This helps verify that all expected artifacts were downloaded correctly
-      # before attempting to create the release.
-      - name: List downloaded files
+      - name: List downloaded files for verification
         run: ls -R release-assets/
 
-      # Step 4: Create the GitHub Release and upload the assets.
-      # This uses a popular and reliable third-party action to handle the release creation.
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          # The name of the tag that triggered the workflow (e.g., "v1.2.3").
-          # This ensures the release is associated with the correct tag.
           tag_name: ${{ github.ref_name }}
-          # The title of the release (e.g., "Release v1.2.3").
           name: Release ${{ github.ref_name }}
-          # You can manually write release notes here or point to a file.
-          # For example, you could use `body_path: "CHANGELOG.md"` if you have one.
           body: "Official release of version ${{ github.ref_name }}. See assets below for platform-specific packages."
-          # Set to 'false' to publish the release immediately.
-          # Set to 'true' if you want to review it before publishing.
           draft: false
-          # Set to 'true' if this is a pre-release version (e.g., v1.0.0-alpha).
           prerelease: false
-          # A glob pattern to find all the files to upload as release assets.
-          # This will grab every file from the 'release-assets' directory,
-          # which contains all the sub-directories and files downloaded by the artifact step.
           files: |
             release-assets/*/*
