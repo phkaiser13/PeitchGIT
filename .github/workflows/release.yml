@@ -26,8 +26,20 @@ jobs:
       - name: Setup NSIS
         uses: jakejarvis/setup-nsis@v1
       
-      - name: Configure CMake
-        run: cmake -B build -G "Ninja"
+      - name: Configure CMake (MSVC, Visual Studio generator)
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" `
+            -DCMAKE_PREFIX_PATH="${{ env.VCPKG_ROOT }}\installed\x64-windows\share" `
+            -DLua_FOUND=TRUE `
+            -DLUA_INCLUDE_DIR="${{ env.VCPKG_ROOT }}\installed\x64-windows\include" `
+            -DLUA_LIBRARY="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
+            -DLUA_LIBRARIES="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
+            -DCMAKE_BUILD_TYPE=Release
+          cmake -B build -G "Ninja"
+        shell: pwsh
+
+            
 
       - name: Build Project
         run: cmake --build build --target gitph installer_helper
