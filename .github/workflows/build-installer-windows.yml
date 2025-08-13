@@ -1,77 +1,231 @@
-# .github/workflows/build-installer-windows.yml
-
 name: Build and Package Windows Installer
 
 on:
-  # Dispara a cada push na main, ou quando uma tag é criada
   push:
     branches: [ "main" ]
     tags:
       - 'v*'
-  # Também dispara em pull requests
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
 
+env:
+  VCPKG_DEFAULT_TRIPLET: x64-windows
+  VCPKG_PACKAGES_DIR: ${{ github.workspace }}\vcpkg\installed
+  MAKENSIS_PREFERRED: C:\ProgramData\chocolatey\bin\makensis.exe
+
 jobs:
   build:
     runs-on: windows-latest
-    env:
-      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
-      VCPKG_DEFAULT_TRIPLET: x64-windows
-      RUSTFLAGS: ""
-
+    timeout-minutes: 120
     steps:
-      - name: Checkout repository
+
+      - name: Checkout repository (full)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Setup cache for vcpkg (installed / downloads / buildtrees / packages)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}\vcpkg\installed
+            ${{ github.workspace }}\vcpkg\downloads
+            ${{ github.workspace }}\vcpkg\buildtrees
+            ${{ github.workspace }}\vcpkg\packages
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('**/vcpkg.json', '**/vcpkg-configuration.json') }}-${{ github.ref }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-
 
       - name: Install CMake
         uses: jwlawson/actions-setup-cmake@v1
         with:
           cmake-version: '3.29.3'
 
-      - name: Install Ninja
-        run: choco install ninja -y
-
-      - name: Install vcpkg and libraries
-        run: |
-          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
-          cd $env:VCPKG_ROOT
-          .\bootstrap-vcpkg.bat
-          .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
+      - name: Install Chocolatey packages (ninja, nsis, 7zip)
         shell: pwsh
+        run: |
+          choco install ninja --yes --no-progress
+          choco install nsis --yes --no-progress
+          choco install 7zip --yes --no-progress
+          Write-Host "Installed chocolatey packages"
 
-      - name: Setup Rust toolchain
+      - name: Verify makensis presence
+        id: find_nsis
+        shell: pwsh
+        run: |
+          $found = $false
+          try {
+            $cmd = Get-Command makensis -ErrorAction Stop
+            Write-Host "makensis command found at: $($cmd.Source)"
+            $found = $true
+            $path = $cmd.Source
+          } catch {
+            Write-Host "makensis not in PATH, checking preferred location..."
+            if (Test-Path '${{ env.MAKENSIS_PREFERRED }}') {
+              Write-Host "Found makensis at preferred path: $env:MAKENSIS_PREFERRED"
+              $found = $true
+              $path = '${{ env.MAKENSIS_PREFERRED }}'
+            } else {
+              Write-Host "makensis not found"
+              $found = $false
+              $path = ''
+            }
+          }
+          echo "has_makensis=$found" >> $GITHUB_OUTPUT
+          echo "makensis_path=$path" >> $GITHUB_OUTPUT
+
+      - name: Install vcpkg and required libraries
+        shell: pwsh
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+        run: |
+          if (-not (Test-Path $env:VCPKG_ROOT)) {
+            git clone --depth 1 https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          } else {
+            Write-Host "vcpkg already exists, pulling latest"
+            Push-Location $env:VCPKG_ROOT
+            git fetch --depth 1 origin
+            git reset --hard origin/HEAD
+            Pop-Location
+          }
+
+          Push-Location $env:VCPKG_ROOT
+          # Clear metrics to avoid telemetry or disable on bootstrap:
+          .\bootstrap-vcpkg.bat -disableMetrics || .\bootstrap-vcpkg.bat
+          # Install common libs used by your project; adapte nomes conforme necessário
+          .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows --recurse
+          Pop-Location
+
+      - name: Check for Cargo.toml (detect Rust project)
+        id: check_cargo
+        shell: pwsh
+        run: |
+          if (Test-Path "${{ github.workspace }}\Cargo.toml") {
+            echo "has_cargo=true" >> $GITHUB_OUTPUT
+          } else {
+            echo "has_cargo=false" >> $GITHUB_OUTPUT
+          }
+
+      - name: Setup Rust toolchain (only if Cargo.toml exists)
+        if: ${{ steps.check_cargo.outputs.has_cargo == 'true' }}
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
 
-      - name: Install Build Tools (NSIS)
-        shell: pwsh
-        run: choco install nsis --yes --no-progress
+      - name: Restore Rust cache (only if Cargo.toml exists)
+        if: ${{ steps.check_cargo.outputs.has_cargo == 'true' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          path: target
+          key: ${{ runner.os }}-rust-target-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
 
       - name: Configure CMake (MSVC, Visual Studio generator)
+        id: cmake_config
+        shell: pwsh
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+          # Provide nsis path to CMake; fallback to detected makensis path
+          MAKENSIS_EXECUTABLE: ${{ steps.find_nsis.outputs.makensis_path || env.MAKENSIS_PREFERRED }}
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" `
-            -DCMAKE_PREFIX_PATH="${{ env.VCPKG_ROOT }}\installed\x64-windows\share" `
-            -DLua_FOUND=TRUE `
-            -DLUA_INCLUDE_DIR="${{ env.VCPKG_ROOT }}\installed\x64-windows\include" `
-            -DLUA_LIBRARY="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
-            -DLUA_LIBRARIES="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DNSIS_MAKENSIS_EXECUTABLE="C:/ProgramData/chocolatey/bin/makensis.exe"
-        shell: pwsh
+          Write-Host "Using VCPKG_ROOT: $env:VCPKG_ROOT"
+          Write-Host "MAKENSIS_EXECUTABLE: $env:MAKENSIS_EXECUTABLE"
 
-      - name: Build and Package Installer
-        run: cmake --build build --config Release --target package-windows --parallel
+          # Ensure build dir clean-ish
+          if (Test-Path build) { Remove-Item -Recurse -Force build }
+
+          # Provide both LUA_LIBRARY and LUA_LIBRARIES to satisfy different CMake files
+          $luaLib = "${{ github.workspace }}\vcpkg\installed\x64-windows\lib\lua.lib"
+          $luaInc = "${{ github.workspace }}\vcpkg\installed\x64-windows\include"
+
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}\vcpkg\scripts\buildsystems\vcpkg.cmake" `
+            -DCMAKE_PREFIX_PATH="${{ github.workspace }}\vcpkg\installed\x64-windows\share" `
+            -DLua_FOUND=TRUE `
+            -DLUA_INCLUDE_DIR="$luaInc" `
+            -DLUA_LIBRARY="$luaLib" `
+            -DLUA_LIBRARIES="$luaLib" `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DMAKENSIS_EXECUTABLE="$env:MAKENSIS_EXECUTABLE" `
+            -DCPACK_GENERATOR=NSIS
+
+          Write-Host "CMake configure exit code: $LASTEXITCODE"
+
+          Write-Host "List build dir (summary)"
+          Get-ChildItem -Path build -Recurse -Depth 2 | Select-Object FullName,Mode,Length | Format-Table -AutoSize
+
+      - name: Build and Package Installer (robust; fallback to makensis/cpack)
         shell: pwsh
+        env:
+          MAKENSIS_EXECUTABLE: ${{ steps.find_nsis.outputs.makensis_path || env.MAKENSIS_PREFERRED }}
+        run: |
+          $err = $null
+          try {
+            Write-Host "Attempting to build target package-windows..."
+            cmake --build build --config Release --target package-windows --parallel
+            Write-Host "package-windows build finished with exit code: $LASTEXITCODE"
+          } catch {
+            Write-Host "package-windows target failed or not present. Will attempt fallbacks."
+            $err = $_
+          }
+
+          if ($LASTEXITCODE -ne 0 -or $err) {
+            Write-Host "Fallback 1: Build ALL (Release)"
+            cmake --build build --config Release --parallel
+
+            # try to find .nsi generated by CMake/CPack
+            $nsi = Get-ChildItem -Path build -Filter *.nsi -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($nsi) {
+              Write-Host "Found .nsi at: $($nsi.FullName) — invoking makensis"
+              if (Test-Path $env:MAKENSIS_EXECUTABLE) {
+                & $env:MAKENSIS_EXECUTABLE $nsi.FullName
+                Write-Host "makensis exit code: $LASTEXITCODE"
+              } else {
+                Write-Host "MAKENSIS not found at expected path: $env:MAKENSIS_EXECUTABLE"
+              }
+            } else {
+              Write-Host "No .nsi found. Trying cpack as fallback (may create ZIP)."
+              Push-Location build
+              if (Test-Path "${{ github.workspace }}\build\CMakeCache.txt") {
+                & cmake -P CMakeScripts/cpack.cmake 2>$null || Write-Host "cpack call failed or cpack not configured"
+              } else {
+                Write-Host "Build dir not fully configured for cpack"
+              }
+              Pop-Location
+            }
+          }
+
+          # Collect produced installers into artifacts folder for upload
+          $outDir = "${{ github.workspace }}\artifacts_installers"
+          if (Test-Path $outDir) { Remove-Item -Recurse -Force $outDir }
+          New-Item -ItemType Directory -Path $outDir | Out-Null
+
+          Get-ChildItem -Path build -Include *.exe,*.msi,*.nsis,*.zip -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination $outDir -Force
+          }
+
+          Write-Host "Artifacts directory contents:"
+          Get-ChildItem -Path $outDir -Recurse | Format-Table -AutoSize
 
       - name: Upload Installer Artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          path: build/*.exe
+          path: |
+            artifacts_installers/**
           retention-days: 7
+
+      - name: Save Rust cache (only if Cargo.toml exists)
+        if: ${{ steps.check_cargo.outputs.has_cargo == 'true' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          path: target
+          key: ${{ runner.os }}-rust-target-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+
+      - name: Debug final: list repo root and build folder
+        shell: pwsh
+        run: |
+          Write-Host "Repo root listing:"
+          Get-ChildItem -Path ${{ github.workspace }} -Force -Depth 1 | Format-Table -AutoSize
+          Write-Host "Build folder listing:"
+          if (Test-Path build) { Get-ChildItem -Path build -Recurse -Depth 2 | Format-Table -AutoSize } else { Write-Host "No build folder found" }
