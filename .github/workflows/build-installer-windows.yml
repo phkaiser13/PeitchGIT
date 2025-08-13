@@ -3,12 +3,10 @@
 name: Build and Package Windows Installer
 
 on:
-  # Dispara a cada push na main, ou quando uma tag é criada
   push:
     branches: [ "main" ]
     tags:
       - 'v*'
-  # Também dispara em pull requests
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
@@ -50,9 +48,7 @@ jobs:
 
       - name: Install Build Tools (NSIS)
         shell: pwsh
-        run: |
-          choco install nsis --yes --no-progress
-          refreshenv || true
+        run: choco install nsis --yes --no-progress
 
       - name: Configure CMake (MSVC, Visual Studio generator)
         run: |
@@ -63,7 +59,8 @@ jobs:
             -DLUA_INCLUDE_DIR="${{ env.VCPKG_ROOT }}\installed\x64-windows\include" `
             -DLUA_LIBRARY="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
             -DLUA_LIBRARIES="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
-            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_BUILD_TYPE=Release `
+            -DNSIS_MAKENSIS_EXECUTABLE="C:/ProgramData/chocolatey/bin/makensis.exe"
         shell: pwsh
 
       - name: Build and Package Installer
@@ -74,6 +71,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          # O caminho para o instalador NSIS é definido no script CMakeLists.txt
           path: build/*.exe
           retention-days: 7
