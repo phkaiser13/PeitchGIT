@@ -19,7 +19,7 @@
 #include "spdlog/sinks/basic_file_sink.h"
 
 // Project-specific components
-#include "platform/platform_detector.h"
+#include "platform/platform_detector.hpp"
 
 // --- Project-specific Constants ---
 namespace phgit_installer::constants {
