@@ -1,0 +1,130 @@
+name: CI/CD - Multi-Platform Release
+
+# Este workflow é acionado quando uma nova tag (versão) é criada e pushada.
+# Ex: git tag v1.0.0 && git push origin v1.0.0
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  # ============================================
+  # 1. Job para Build e Pacote do Windows
+  # ============================================
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.25.x'
+          ninja-version: '1.11.x'
+
+      - name: Setup NSIS
+        uses: jakejarvis/setup-nsis@v1
+      
+      - name: Configure CMake
+        run: cmake -B build -G "Ninja"
+
+      - name: Build Project
+        run: cmake --build build --target gitph installer_helper
+
+      - name: Create NSIS Installer
+        run: makensis -DVERSION=${{ github.ref_name }} installer/windows/installer.nsi
+
+      - name: Upload Windows Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitph-windows-installer
+          path: gitph-installer-${{ github.ref_name }}.exe
+
+  # ============================================
+  # 2. Job para Build e Pacote do Linux (Ubuntu)
+  # ============================================
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential ninja-build g++-multilib debhelper rpm fakeroot
+          
+      - name: Configure CMake
+        run: cmake -B build -G "Ninja"
+
+      - name: Build Project
+        run: cmake --build build --target gitph
+
+      - name: Create DEB Package
+        # O script build_deb.sh precisa da variável de ambiente VERSION
+        run: VERSION=${{ github.ref_name }} installer/linux/build_deb.sh
+
+      - name: Create RPM Package
+        run: VERSION=${{ github.ref_name }} installer/linux/build_rpm.sh
+
+      - name: Upload Linux Packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitph-linux-packages
+          path: |
+            *.deb
+            *.rpm
+  
+  # ============================================
+  # 3. Job para Build e Pacote do macOS
+  # ============================================
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: cmake -B build -G "Ninja"
+
+      - name: Build Project
+        run: cmake --build build --target gitph
+
+      # Você não tem um script de empacotamento específico para macOS,
+      # então este é um exemplo de como você poderia usar CPack para gerar um arquivo .dmg
+      - name: Create macOS Package (CPack Example)
+        run: cpack --config CPackSourceConfig.cmake
+
+      - name: Upload macOS Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitph-macos-package
+          path: "*.dmg"
+        # O nome do pacote gerado pelo cpack pode variar. Verifique o nome correto.
+
+  # ============================================
+  # 4. Job para Criar o Release
+  # ============================================
+  create-release:
+    runs-on: ubuntu-latest
+    # Este job só roda depois que todos os jobs de build (windows, linux, macos) terminarem com sucesso.
+    needs: [build-windows, build-linux, build-macos]
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          # A release será nomeada com a tag que disparou o workflow (ex: v1.0.0).
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          # Anexa todos os artefatos baixados (os instaladores) ao release.
+          files: |
+            gitph-windows-installer/*.exe
+            gitph-linux-packages/*.deb
+            gitph-linux-packages/*.rpm
+            gitph-macos-package/*.dmg
