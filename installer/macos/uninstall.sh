@@ -1,32 +1,25 @@
 #!/bin/bash
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
-# File: install.sh
+# File: install.sh (for macOS)
 # This script provides a user-friendly, non-root installation method for phgit
-# on Linux systems. It handles installing the application and its C++ helper,
-# running the helper to manage dependencies (Terraform, Vault), and placing
-# the main executable in a standard user-local binary directory. It also
-# checks if this directory is in the user's PATH and provides instructions
-# if it is not.
+# on macOS systems. It mirrors the Linux installer's logic, installing the
+# application and its C++ helper, running the helper to manage dependencies,
+# and placing the main executable in a standard user-local binary directory.
+# It provides macOS-specific advice for PATH configuration.
 #
 # SPDX-License-Identifier: Apache-2.0
 
 # --- Script Configuration and Safety ---
+set -e # Exit immediately if a command exits with a non-zero status.
+set -u # Treat unset variables as an error when substituting.
 
-# Exit immediately if a command exits with a non-zero status.
-set -e
-# Treat unset variables as an error when substituting.
-set -u
-#
 # --- Helper Functions and Variables ---
-
-# Define color codes for user-friendly output.
 C_INFO='\033[0;34m'
 C_SUCCESS='\033[0;32m'
 C_WARN='\033[0;33m'
 C_ERROR='\033[0;31m'
 C_RESET='\033[0m'
 
-# Helper function for logging messages.
 info() {
     printf "${C_INFO}==> %s${C_RESET}\n" "$1"
 }
@@ -40,25 +33,21 @@ warn() {
 }
 
 # --- Main Installation Logic ---
-
 main() {
-    info "Starting phgit installation..."
+    info "Starting phgit installation for macOS..."
 
     # 1. Define installation paths.
-    # We install the core application to ~/.phgit
-    # and the executable to ~/.local/bin, which is the standard for user-local apps.
     local INSTALL_DIR="$HOME/.phgit"
     local BIN_DIR="$HOME/.local/bin"
     
     # Assume the script is run from the extracted archive root.
-    # The binaries should be located in a 'bin/' subdirectory.
     local SOURCE_BIN_DIR
-    SOURCE_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../bin" # Assumes script is in installer/linux
+    SOURCE_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../bin" # Assumes script is in installer/macos
 
     # 2. Verify that the source binaries exist.
     if [[ ! -f "$SOURCE_BIN_DIR/phgit" || ! -f "$SOURCE_BIN_DIR/installer_helper" ]]; then
         printf "${C_ERROR}FATAL: Could not find 'phgit' or 'installer_helper' in '%s'.\n" "$SOURCE_BIN_DIR"
-        printf "Please run this script from the correct directory.${C_RESET}\n"
+        printf "Please ensure you have the correct binaries for macOS.${C_RESET}\n"
         exit 1
     fi
 
@@ -83,19 +72,20 @@ main() {
     info "Dependency check complete."
 
     # 6. Create a symbolic link in the user's binary path.
-    # A symlink is preferred over a copy so that updates are easier.
     info "Placing phgit executable in $BIN_DIR"
     ln -sf "$INSTALL_DIR/phgit" "$BIN_DIR/phgit"
 
     # 7. Check if the installation directory is in the user's PATH.
     if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
         warn "Your PATH variable does not seem to include '$BIN_DIR'."
-        printf "To use the 'phgit' command, please add the following line to your shell's startup file (e.g., ~/.bashrc, ~/.zshrc):\n\n"
+        printf "To use the 'phgit' command, please add the following line to your shell's startup file.\n"
+        printf "For modern macOS (Catalina and later), this is likely ~/.zshrc:\n\n"
         printf "    ${C_SUCCESS}export PATH=\"\$HOME/.local/bin:\$PATH\"${C_RESET}\n\n"
-        printf "After adding it, please restart your terminal or run 'source ~/.bashrc' (or equivalent).\n"
+        printf "If you use Bash, add it to ~/.bash_profile instead.\n"
+        printf "After adding it, please restart your terminal or run 'source ~/.zshrc' (or equivalent).\n"
     fi
 
-    success "phgit has been installed successfully!"
+    success "phgit has been installed successfully on your Mac!"
     printf "You can now use the 'phgit' command. Try running 'phgit --version'.\n"
 }
 
