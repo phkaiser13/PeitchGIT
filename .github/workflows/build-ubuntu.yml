@@ -28,11 +28,6 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential cmake pkg-config liblua5.4-dev libcurl4-openssl-dev nlohmann-json3-dev
 
-      # Step 3: Set up the Go environment
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
 
       # Step 4: Set up the Rust toolchain and cache dependencies
       - name: Setup Rust
@@ -50,29 +45,7 @@ jobs:
       - name: Compile Project
         run: cmake --build build --parallel
 
-      # Step 7: Create a distributable package, but ONLY for tags.
-      # This step runs conditionally. The `if` condition checks if the Git reference
-      # that triggered the workflow starts with 'refs/tags/', which is true only for tags.
-      - name: Create Release Package (only for tags)
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          # Create a compressed tarball (.tar.gz) containing the necessary release files.
-          # The file is named to clearly identify its content and platform.
-          tar -czvf gitph-ubuntu-linux.tar.gz -C build/bin . src/plugins/ LICENSE
 
-      # Step 8: Upload the final release package as an artifact, ONLY for tags.
-      # This artifact will be downloaded by the separate 'release.yml' workflow.
-      # The `if` condition ensures this step only runs for tag events.
-      - name: Upload Release Package Artifact (only for tags)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
-        with:
-          # The name of the artifact is critical. The release workflow will use this name to find it.
-          name: gitph-release-package-ubuntu
-          # Path to the file to be uploaded.
-          path: gitph-ubuntu-linux.tar.gz
-          # Set a retention period for the artifact.
-          retention-days: 7
 
       # Step 9: Upload intermediate build artifacts for non-tag builds (CI).
       # This is useful for debugging or for other jobs that might need the raw build output.
