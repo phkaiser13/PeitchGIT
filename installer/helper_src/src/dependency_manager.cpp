@@ -1,24 +1,59 @@
 /* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * File: dependency_manager.cpp
  * This file implements the logic for the DependencyManager class. It handles
- * the platform-specific details of checking for installed software, fetching
- * the correct download URLs for the current OS and architecture, and executing
+ * the platform-specific details of checking for installed software, dynamically
+ * fetching download URLs from provider APIs (GitHub, HashiCorp), and executing
  * the installers with the appropriate silent flags.
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "dependency_manager.hpp"
-#include <iostream>
-#include <cstdlib>    // For system()
-#include <filesystem> // For std::filesystem::temp_directory_path, C++17
+#include "platform.hpp" // For platform detection
 
-// Platform-specific header for process creation if needed later,
-// but system() is sufficient for now.
-#ifdef _WIN32
-#include <windows.h>
-#endif
+#include <iostream>
+#include <cstdlib>
+#include <filesystem>
+#include <sstream>
+#include <nlohmann/json.hpp> // For parsing API responses
+#include <curl/curl.h>
+
+// Use a shorter alias for the json library namespace.
+using json = nlohmann::json;
 
 namespace ph {
+
+// Private helper function to perform an in-memory download of a URL's content.
+// This is needed to get the JSON response from APIs as a string.
+namespace {
+    size_t stringWriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+        static_cast<std::string*>(userp)->append(static_cast<char*>(contents), size * nmemb);
+        return size * nmemb;
+    }
+
+    std::string fetchUrlToString(const std::string& url) {
+        CURL* curl = curl_easy_init();
+        if (!curl) {
+            return "";
+        }
+
+        std::string response_string;
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "phgit-installer/1.0");
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+        curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stringWriteCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_string);
+
+        CURLcode res = curl_easy_perform(curl);
+        curl_easy_cleanup(curl);
+
+        if (res != CURLE_OK) {
+            std::cerr << "Error: Failed to fetch URL " << url << ": " << curl_easy_strerror(res) << std::endl;
+            return "";
+        }
+        return response_string;
+    }
+}
 
 DependencyManager::DependencyManager(std::shared_ptr<Downloader> downloader)
     : m_downloader(std::move(downloader)) {
@@ -31,162 +66,141 @@ bool DependencyManager::isInstalled(Dependency dep) const {
     std::string command;
     std::string executable = getExecutableName(dep);
 
-#ifdef _WIN32
-    // 'where' is a built-in command on modern Windows to find executables in PATH.
-    // Redirect output to NUL to keep the check silent.
-    command = "where " + executable + " > nul 2>&1";
-#else
-    // 'command -v' is the POSIX standard way to check if a command exists.
-    // It's more reliable than 'which'. Redirect to /dev/null.
-    command = "command -v " + executable + " > /dev/null 2>&1";
-#endif
-
-    // system() returns 0 on success.
+    if (platform::currentOS == platform::OperatingSystem::Windows) {
+        command = "where " + executable + " > nul 2>&1";
+    } else {
+        command = "command -v " + executable + " > /dev/null 2>&1";
+    }
     return (system(command.c_str()) == 0);
 }
 
 bool DependencyManager::ensureInstalled(Dependency dep) {
     std::cout << "Checking for " << getDisplayName(dep) << "..." << std::endl;
-
     if (isInstalled(dep)) {
         std::cout << "-> " << getDisplayName(dep) << " is already installed." << std::endl;
         return true;
     }
 
     std::cout << "-> " << getDisplayName(dep) << " not found. Starting installation process." << std::endl;
-
-    // 1. Get the correct download URL
     std::string url = getDownloadUrl(dep);
     if (url.empty()) {
-        std::cerr << "Error: Could not determine download URL for " << getDisplayName(dep)
-                  << " on this platform." << std::endl;
+        std::cerr << "Error: Could not find a valid download URL for " << getDisplayName(dep) << " for this system." << std::endl;
         return false;
     }
-    std::cout << "   - Found download URL: " << url << std::endl;
+    std::cout << "   - Found dynamic download URL: " << url << std::endl;
 
-    // 2. Determine a temporary path for the installer
-    std::filesystem::path tempPath = std::filesystem::temp_directory_path();
-    std::filesystem::path installerPath = tempPath / (getExecutableName(dep) + "_installer.tmp");
-
-    // 3. Download the installer
+    std::filesystem::path installerPath = std::filesystem::temp_directory_path() / (getExecutableName(dep) + "_installer.tmp");
     if (!m_downloader->downloadFile(url, installerPath.string(), getDisplayName(dep))) {
         std::cerr << "Error: Failed to download " << getDisplayName(dep) << "." << std::endl;
         return false;
     }
-    std::cout << "   - Download complete. Installer saved to: " << installerPath.string() << std::endl;
+    std::cout << "   - Download complete." << std::endl;
 
-    // 4. Run the installer
     if (!runInstaller(installerPath.string(), dep)) {
         std::cerr << "Error: Failed to install " << getDisplayName(dep) << "." << std::endl;
         return false;
     }
 
-    // 5. Final verification
-    std::cout << "   - Verifying installation..." << std::endl;
     if (isInstalled(dep)) {
         std::cout << "-> Successfully installed " << getDisplayName(dep) << "!" << std::endl;
         return true;
     } else {
-        std::cerr << "Error: Installation of " << getDisplayName(dep) << " completed, but it could not be found in the PATH. You may need to restart your terminal or PC." << std::endl;
+        std::cerr << "Error: Installation of " << getDisplayName(dep) << " finished, but it could not be found in the PATH." << std::endl;
         return false;
     }
 }
 
 std::string DependencyManager::getExecutableName(Dependency dep) const {
     switch (dep) {
-        case Dependency::Git:       return "git";
+        case Dependency::Git: return "git";
         case Dependency::Terraform: return "terraform";
-        case Dependency::Vault:     return "vault";
+        case Dependency::Vault: return "vault";
     }
-    return ""; // Should not happen
+    return "";
 }
 
 std::string DependencyManager::getDisplayName(Dependency dep) const {
     switch (dep) {
-        case Dependency::Git:       return "Git SCM";
+        case Dependency::Git: return "Git SCM";
         case Dependency::Terraform: return "HashiCorp Terraform";
-        case Dependency::Vault:     return "HashiCorp Vault";
+        case Dependency::Vault: return "HashiCorp Vault";
     }
-    return ""; // Should not happen
+    return "";
 }
 
 std::string DependencyManager::getDownloadUrl(Dependency dep) {
-    // NOTE: This is a simplified implementation with hardcoded URLs.
-    // A production-ready version should query the provider's API (GitHub, HashiCorp)
-    // to get the latest version and checksums dynamically.
+    // On Linux, always prefer the system package manager for Git.
+    if (dep == Dependency::Git && platform::currentOS == platform::OperatingSystem::Linux) {
+        std::cerr << "-> On Linux, Git should be installed via the system package manager (e.g., 'sudo apt install git')." << std::endl;
+        return ""; // Returning empty will cause a controlled failure message.
+    }
 
-#if defined(_WIN32) && defined(_M_X64)
-    // Windows x64
+    std::string apiUrl;
     switch (dep) {
-        case Dependency::Git:       return "https://github.com/git-for-windows/git/releases/download/v2.45.1.windows.1/Git-2.45.1-64-bit.exe";
-        case Dependency::Terraform: return "https://releases.hashicorp.com/terraform/1.8.2/terraform_1.8.2_windows_amd64.zip";
-        case Dependency::Vault:     return "https://releases.hashicorp.com/vault/1.16.2/vault_1.16.2_windows_amd64.zip";
+        case Dependency::Git:
+            apiUrl = "https://api.github.com/repos/git-for-windows/git/releases/latest";
+            break;
+        case Dependency::Terraform:
+            apiUrl = "https://api.releases.hashicorp.com/v1/releases/terraform/latest";
+            break;
+        case Dependency::Vault:
+            apiUrl = "https://api.releases.hashicorp.com/v1/releases/vault/latest";
+            break;
     }
-#elif defined(__APPLE__) && defined(__x86_64__)
-    // macOS x64 (Intel)
-    // For macOS, we typically download a zip/binary, not a .pkg installer.
-    // The user is often expected to use Homebrew, but we provide a fallback.
-    switch (dep) {
-        case Dependency::Git:       return "https://sourceforge.net/projects/git-osx-installer/files/git-2.44.0-intel-universal-mavericks.dmg/download"; // DMG is more complex, a direct binary or zip is better if available.
-        case Dependency::Terraform: return "https://releases.hashicorp.com/terraform/1.8.2/terraform_1.8.2_darwin_amd64.zip";
-        case Dependency::Vault:     return "https://releases.hashicorp.com/vault/1.16.2/vault_1.16.2_darwin_amd64.zip";
+
+    std::cout << "   - Querying API: " << apiUrl << std::endl;
+    std::string jsonResponse = fetchUrlToString(apiUrl);
+    if (jsonResponse.empty()) return "";
+
+    try {
+        json data = json::parse(jsonResponse);
+        if (dep == Dependency::Git) {
+            // GitHub API parsing
+            for (const auto& asset : data["assets"]) {
+                std::string assetName = asset["name"];
+                if (platform::currentOS == platform::OperatingSystem::Windows && platform::currentArch == platform::Architecture::x64 && assetName.find("64-bit.exe") != std::string::npos) {
+                    return asset["browser_download_url"];
+                }
+                // Add more conditions for other OS/Arch if Git needs to be downloaded there.
+            }
+        } else {
+            // HashiCorp API parsing
+            std::string os_str, arch_str;
+            if (platform::currentOS == platform::OperatingSystem::Windows) os_str = "windows";
+            else if (platform::currentOS == platform::OperatingSystem::MacOS) os_str = "darwin";
+            else if (platform::currentOS == platform::OperatingSystem::Linux) os_str = "linux";
+
+            if (platform::currentArch == platform::Architecture::x64) arch_str = "amd64";
+            else if (platform::currentArch == platform::Architecture::ARM64) arch_str = "arm64";
+
+            for (const auto& build : data["builds"]) {
+                if (build["os"] == os_str && build["arch"] == arch_str) {
+                    return build["url"];
+                }
+            }
+        }
+    } catch (const json::parse_error& e) {
+        std::cerr << "Error: Failed to parse JSON response: " << e.what() << std::endl;
+        return "";
     }
-#elif defined(__APPLE__) && defined(__aarch64__)
-    // macOS ARM64 (Apple Silicon)
-    switch (dep) {
-        case Dependency::Git:       return "https://sourceforge.net/projects/git-osx-installer/files/git-2.44.0-intel-universal-mavericks.dmg/download"; // Universal binary
-        case Dependency::Terraform: return "https://releases.hashicorp.com/terraform/1.8.2/terraform_1.8.2_darwin_arm64.zip";
-        case Dependency::Vault:     return "https://releases.hashicorp.com/vault/1.16.2/vault_1.16.2_darwin_arm64.zip";
-    }
-#elif defined(__linux__) && defined(__x86_64__)
-    // Linux x64
-    // For Linux, we download the binary zip. The installer script will handle placing it.
-    switch (dep) {
-        case Dependency::Git:       return ""; // On Linux, it's strongly recommended to use the system package manager (apt, yum, etc.). We won't download it.
-        case Dependency::Terraform: return "https://releases.hashicorp.com/terraform/1.8.2/terraform_1.8.2_linux_amd64.zip";
-        case Dependency::Vault:     return "https://releases.hashicorp.com/vault/1.16.2/vault_1.16.2_linux_amd64.zip";
-    }
-#endif
-    return ""; // Platform not supported or dependency not available
+    return ""; // Return empty if no suitable asset was found
 }
 
 bool DependencyManager::runInstaller(const std::string& installerPath, Dependency dep) {
     std::cout << "   - Running installer..." << std::endl;
     std::string command;
 
-    switch (dep) {
-        case Dependency::Git:
-#ifdef _WIN32
-            // Use /VERYSILENT for a non-interactive installation.
-            // The start /wait command ensures our program waits for the installer to finish.
-            command = "start /wait \"\" \"" + installerPath + "\" /VERYSILENT /NORESTART";
-#else
-            // On non-Windows, we'd handle a .dmg or prompt for package manager.
-            // For this example, we assume it's not a scenario we handle automatically.
-            std::cout << "   - Please install Git manually using your system's package manager (e.g., 'sudo apt install git' or 'brew install git')." << std::endl;
-            return true; // Return true to not block other installations.
-#endif
-            break;
-
-        case Dependency::Terraform:
-        case Dependency::Vault:
-            // For these, the "installer" is just a zip file.
-            // A real implementation needs to:
-            // 1. Unzip the file.
-            // 2. Find the executable inside.
-            // 3. Move it to a directory in the system's PATH (e.g., /usr/local/bin or the main app's install dir).
-            // This logic is complex and requires a zip library.
-            // We will STUB this for now.
-            std::cout << "   - NOTE: Automatic installation of " << getDisplayName(dep)
-                      << " from a .zip is not yet implemented." << std::endl;
-            std::cout << "   - Please manually unzip " << installerPath << " and move the executable to a directory in your PATH." << std::endl;
-            // We return true so the main installer can proceed with other tasks.
-            // In a real scenario, you'd return the result of the unzip/move operation.
-            return true;
+    if (dep == Dependency::Git && platform::currentOS == platform::OperatingSystem::Windows) {
+        command = "start /wait \"\" \"" + installerPath + "\" /VERYSILENT /NORESTART";
+    } else {
+        // For Terraform/Vault (zips) and Git on non-Windows, this requires more logic.
+        // A real implementation needs to unzip and move the binary.
+        std::cout << "   - NOTE: Automatic installation from a ZIP/DMG is not yet implemented." << std::endl;
+        std::cout << "   - Please manually handle the file: " << installerPath << std::endl;
+        return true; // Return true to not block other installations.
     }
 
-    int result = system(command.c_str());
-    return (result == 0);
+    return (system(command.c_str()) == 0);
 }
 
 } // namespace ph

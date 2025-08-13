@@ -1,23 +1,20 @@
 #!/bin/bash
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
-# File: install.sh (for macOS)
-# This script provides a user-friendly, non-root installation method for phgit
-# on macOS systems. It mirrors the Linux installer's logic, installing the
-# application and its C++ helper, running the helper to manage dependencies,
-# and placing the main executable in a standard user-local binary directory.
-# It provides macOS-specific advice for PATH configuration.
+# File: uninstall.sh (macOS)
+# This script cleanly removes a script-based installation of phgit from a
+# macOS system. It is the direct counterpart to the macOS install.sh script,
+# removing the application directory and the symbolic link. It includes a
+# confirmation prompt to prevent accidental uninstallation.
 #
 # SPDX-License-Identifier: Apache-2.0
 
 # --- Script Configuration and Safety ---
-set -e # Exit immediately if a command exits with a non-zero status.
-set -u # Treat unset variables as an error when substituting.
+set -u
 
 # --- Helper Functions and Variables ---
 C_INFO='\033[0;34m'
 C_SUCCESS='\033[0;32m'
 C_WARN='\033[0;33m'
-C_ERROR='\033[0;31m'
 C_RESET='\033[0m'
 
 info() {
@@ -28,66 +25,48 @@ success() {
     printf "${C_SUCCESS}==> %s${C_RESET}\n" "$1"
 }
 
-warn() {
-    printf "${C_WARN}==> WARNING: %s${C_RESET}\n" "$1"
-}
-
-# --- Main Installation Logic ---
+# --- Main Uninstallation Logic ---
 main() {
-    info "Starting phgit installation for macOS..."
+    info "Starting phgit uninstallation from macOS..."
 
-    # 1. Define installation paths.
+    # Define the paths where phgit was installed.
     local INSTALL_DIR="$HOME/.phgit"
     local BIN_DIR="$HOME/.local/bin"
-    
-    # Assume the script is run from the extracted archive root.
-    local SOURCE_BIN_DIR
-    SOURCE_BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../bin" # Assumes script is in installer/macos
+    local SYMLINK_PATH="$BIN_DIR/phgit"
 
-    # 2. Verify that the source binaries exist.
-    if [[ ! -f "$SOURCE_BIN_DIR/phgit" || ! -f "$SOURCE_BIN_DIR/installer_helper" ]]; then
-        printf "${C_ERROR}FATAL: Could not find 'phgit' or 'installer_helper' in '%s'.\n" "$SOURCE_BIN_DIR"
-        printf "Please ensure you have the correct binaries for macOS.${C_RESET}\n"
-        exit 1
+    # Safety first: Confirm with the user.
+    printf "${C_WARN}This will remove phgit from your system by deleting:\n"
+    printf " - The symbolic link: %s\n" "$SYMLINK_PATH"
+    printf " - The installation directory: %s\n${C_RESET}" "$INSTALL_DIR"
+    read -p "Are you sure you want to continue? [y/N] " -r REPLY
+    echo
+
+    if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
+        info "Uninstallation cancelled."
+        exit 0
     fi
 
-    # 3. Create installation directories.
-    info "Creating installation directory at $INSTALL_DIR"
-    mkdir -p "$INSTALL_DIR"
-    mkdir -p "$BIN_DIR"
-
-    # 4. Copy application files and set permissions.
-    info "Installing phgit files..."
-    cp "$SOURCE_BIN_DIR/phgit" "$INSTALL_DIR/phgit"
-    cp "$SOURCE_BIN_DIR/installer_helper" "$INSTALL_DIR/installer_helper"
-    chmod +x "$INSTALL_DIR/phgit"
-    chmod +x "$INSTALL_DIR/installer_helper"
-
-    # 5. Run the C++ dependency helper.
-    info "Running dependency check (this may download Terraform and Vault)..."
-    if ! "$INSTALL_DIR/installer_helper"; then
-        printf "${C_ERROR}The dependency installer failed. phgit may not work correctly.${C_RESET}\n"
-        exit 1
-    fi
-    info "Dependency check complete."
-
-    # 6. Create a symbolic link in the user's binary path.
-    info "Placing phgit executable in $BIN_DIR"
-    ln -sf "$INSTALL_DIR/phgit" "$BIN_DIR/phgit"
-
-    # 7. Check if the installation directory is in the user's PATH.
-    if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
-        warn "Your PATH variable does not seem to include '$BIN_DIR'."
-        printf "To use the 'phgit' command, please add the following line to your shell's startup file.\n"
-        printf "For modern macOS (Catalina and later), this is likely ~/.zshrc:\n\n"
-        printf "    ${C_SUCCESS}export PATH=\"\$HOME/.local/bin:\$PATH\"${C_RESET}\n\n"
-        printf "If you use Bash, add it to ~/.bash_profile instead.\n"
-        printf "After adding it, please restart your terminal or run 'source ~/.zshrc' (or equivalent).\n"
+    # 1. Remove the symbolic link.
+    if [ -L "$SYMLINK_PATH" ]; then
+        info "Removing symbolic link: $SYMLINK_PATH"
+        rm "$SYMLINK_PATH"
+    else
+        info "Symbolic link not found (already removed)."
     fi
 
-    success "phgit has been installed successfully on your Mac!"
-    printf "You can now use the 'phgit' command. Try running 'phgit --version'.\n"
+    # 2. Remove the main installation directory.
+    if [ -d "$INSTALL_DIR" ]; then
+        info "Removing installation directory: $INSTALL_DIR"
+        rm -rf "$INSTALL_DIR"
+    else
+        info "Installation directory not found (already removed)."
+    fi
+
+    # 3. Inform the user about the PATH variable.
+    printf "\n"
+    info "If you added '$BIN_DIR' to your shell's startup file (~/.zshrc, etc.), you may remove that line manually."
+
+    success "phgit has been successfully uninstalled."
 }
 
-# Execute the main function.
 main
