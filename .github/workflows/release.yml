@@ -60,11 +60,13 @@ jobs:
       - name: Fetch EnvVarUpdate.nsh (if missing)
         shell: pwsh
         run: |
-          $out = "installer/windows/EnvVarUpdate.nsh"
-          if (-not (Test-Path $out)) {
-            Invoke-WebRequest -Uri "https://raw.githubusercontent.com/OpenMS/windows-installer/master/EnvVarUpdate.nsh" -OutFile $out -UseBasicParsing
+          $outPath = "installer/windows/EnvVarUpdate.nsh"
+          if (-not (Test-Path $outPath)) {
+            $uri = "https://raw.githubusercontent.com/OpenMS/windows-installer/master/EnvVarUpdate.nsh"
+            $response = Invoke-WebRequest -Uri $uri -UseBasicParsing
+            # Save the content with ASCII encoding to ensure compatibility with the NSIS compiler
+            Set-Content -Path $outPath -Value $response.Content -Encoding Ascii
           }
-
 
       - name: Create NSIS Installer
         shell: pwsh
