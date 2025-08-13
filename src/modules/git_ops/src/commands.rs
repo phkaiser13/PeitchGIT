@@ -63,6 +63,7 @@ pub fn handle_send() -> CommandResult {
     }
     println!("Changes committed successfully.");
 
+    // This part will only be reached if a commit was successful.
     let remote = "origin";
     let branch = "main";
     println!("Pushing to {} {}...", remote, branch);
@@ -83,6 +84,7 @@ mod tests {
     use std::process::Command;
     use tempfile::TempDir;
 
+    /// Helper to create a temporary, fully configured Git repository for testing.
     fn setup_test_repo() -> TempDir {
         let tmp_dir = TempDir::new().expect("Failed to create temp dir");
         let repo_path = tmp_dir.path().to_str().unwrap();
@@ -93,6 +95,7 @@ mod tests {
             .expect("Failed to init test repo")
             .success());
 
+        // Configure user name and email to allow commits within the test repo
         assert!(Command::new("git")
             .args(["-C", repo_path, "config", "user.name", "Test User"])
             .status().unwrap().success());
@@ -103,20 +106,23 @@ mod tests {
         tmp_dir
     }
 
-    // Helper function for the send command tests
+    /// A version of the `handle_send` command specifically for testing.
+    /// It runs the add and commit logic but skips the `push` to avoid network dependency.
     fn handle_send_in_dir(repo_path: &str) -> CommandResult {
+        // Step 1: Add
         git_wrapper::git_add(Some(repo_path), ".")?;
 
+        // Step 2: Commit
         let commit_result = git_wrapper::git_commit(Some(repo_path), "Automated commit from gitph");
         if let Err(e) = commit_result {
             if e.contains("nothing to commit") {
                 return Ok("No changes to send.".to_string());
             }
-            return Err(e);
+            return Err(e); // Propagate other commit errors
         }
 
-        // We won't test the push part as it requires a remote.
-        Ok("SND command completed successfully.".to_string())
+        // We skip the push part for this unit test.
+        Ok("SND (add/commit) command completed successfully.".to_string())
     }
 
     #[test]
@@ -124,33 +130,41 @@ mod tests {
         let tmp_dir = setup_test_repo();
         let repo_path = tmp_dir.path().to_str().unwrap();
 
-        // Pass the repo path to the status wrapper
+        // Act: Run the status wrapper pointing to our clean test repo.
         let output = git_wrapper::git_status(Some(repo_path)).unwrap();
 
+        // Assert: A clean repo should have an empty porcelain status.
         assert!(output.is_empty());
     }
 
     #[test]
     fn test_handle_send_with_changes() {
+        // Arrange: Set up a repo and create a new file with content.
         let tmp_dir = setup_test_repo();
         let repo_path = tmp_dir.path().to_str().unwrap();
         fs::write(tmp_dir.path().join("new_file.txt"), "hello").expect("Failed to write test file");
 
+        // Act: Run our test-specific send function.
         let result = handle_send_in_dir(repo_path);
 
+        // Assert: The command should succeed.
         assert!(result.is_ok());
 
+        // Further assert that a commit was actually created by checking the log.
         let log_output = git_wrapper::execute_git_command(Some(repo_path), &["log", "-1", "--oneline"], None).unwrap();
         assert!(log_output.contains("Automated commit from gitph"));
     }
 
     #[test]
     fn test_handle_send_with_no_changes() {
+        // Arrange: Set up a clean repo.
         let tmp_dir = setup_test_repo();
         let repo_path = tmp_dir.path().to_str().unwrap();
 
+        // Act: Run the send function in the clean directory.
         let result = handle_send_in_dir(repo_path);
 
+        // Assert: The result should be Ok and contain the specific message.
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "No changes to send.");
     }

@@ -31,7 +31,7 @@ pub type GitResult = Result<String, String>;
 /// This is the core function that all other wrapper functions will use.
 ///
 /// # Arguments
-/// * `repo_path` - An optional path to the repository directory.
+/// * `repo_path` - An optional path to the repository directory. If None, runs in the current directory.
 /// * `args` - A slice of strings representing the arguments to pass to `git`.
 /// * `stdin_data` - Optional data to be piped to the command's standard input.
 ///
