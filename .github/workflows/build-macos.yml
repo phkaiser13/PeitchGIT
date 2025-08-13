@@ -41,11 +41,7 @@ jobs:
       - name: Install dependencies (Homebrew)
         run: brew install cmake pkg-config lua curl nlohmann-json
 
-      # Step 3: Set up the Go environment
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
+
 
       # Step 4: Set up the Rust toolchain and cache dependencies
       - name: Setup Rust
@@ -62,26 +58,6 @@ jobs:
       # Step 6: Compile the project
       - name: Compile Project
         run: cmake --build build --parallel
-
-      # Step 7: Create a distributable package, but ONLY for tags.
-      # The package name includes the architecture from the matrix to make it unique.
-      - name: Create Release Package (only for tags)
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          tar -czvf gitph-macos-${{ matrix.arch }}.tar.gz -C build/bin . src/plugins/ LICENSE
-
-      # Step 8: Upload the final release package as an artifact, ONLY for tags.
-      # The artifact name is also unique per architecture, which is critical.
-      # The release workflow will download both artifacts (x86_64 and arm64).
-      - name: Upload Release Package Artifact (only for tags)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
-        with:
-          # e.g., 'gitph-release-package-macos-x86_64'
-          name: gitph-release-package-macos-${{ matrix.arch }}
-          # e.g., 'gitph-macos-x86_64.tar.gz'
-          path: gitph-macos-${{ matrix.arch }}.tar.gz
-          retention-days: 7
 
       # Step 9: Upload intermediate build artifacts for non-tag builds (CI).
       # This step runs for pushes and pull requests, but NOT for tags.
