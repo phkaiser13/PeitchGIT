@@ -15,7 +15,7 @@
 ; --- Basic Installer Information ---
 Name "phgit"
 OutFile "phgit_installer_v1.0.0.exe" ; It's good practice to have a version here
-InstallDir "$LOCALAPPDATA\phgit"
+InstallDir "$LOCALAPPDATA/phgit"
 RequestExecutionLevel user ; No admin rights needed for user-local installation
 
 ; --- Modern UI Pages Configuration ---
