@@ -277,4 +277,44 @@ install(
 
 # Placeholder for the installer helper tool
 if(WIN32)
+    message(STATUS "Adding installer_helper subproject for Windows.")
+    add_subdirectory(installer/helper_src)
+endif()
+
+if(WIN32)
+    # --- Alvo para o Instalador NSIS (Windows) ---
+    find_package(NSIS)
+    if(NSIS_FOUND)
+        message(STATUS "NSIS found, adding 'package-windows' target.")
+        add_custom_target(package-windows ALL
+            # Comando para executar o NSIS.
+            # O /DVERSION passa a versão do projeto para o script .nsi
+            COMMAND ${NSIS_MAKENSIS_EXECUTABLE} /DVERSION=${PROJECT_VERSION} ${CMAKE_SOURCE_DIR}/installer/windows/installer.nsi
+            
+            # Garante que o gitph e o helper sejam compilados ANTES de tentar empacotar.
+            DEPENDS gitph installer_helper
+            
+            COMMENT "Building Windows NSIS installer..."
+        )
+    else()
+        message(WARNING "NSIS not found. The 'package-windows' target will be unavailable.")
+    endif()
+
+elseif(UNIX AND NOT APPLE)
+    # --- Alvos para Pacotes Linux ---
+    if(EXISTS "${CMAKE_SOURCE_DIR}/installer/linux/build_deb.sh")
+        add_custom_target(package-deb
+            COMMAND ${CMAKE_COMMAND} -E env VERSION=${PROJECT_VERSION} ${CMAKE_SOURCE_DIR}/installer/linux/build_deb.sh
+            DEPENDS gitph
+            COMMENT "Building Debian (.deb) package..."
+        )
+    endif()
+    
+    if(EXISTS "${CMAKE_SOURCE_DIR}/installer/linux/build_rpm.sh")
+        add_custom_target(package-rpm
+            COMMAND ${CMAKE_COMMAND} -E env VERSION=${PROJECT_VERSION} ${CMAKE_SOURCE_DIR}/installer/linux/build_rpm.sh
+            DEPENDS gitph
+            COMMENT "Building RPM (.rpm) package..."
+        )
+    endif()
 endif()
