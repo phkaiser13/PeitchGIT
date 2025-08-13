@@ -2,8 +2,6 @@
 
 name: 'Test Workflow'
 
-# Triggers for the workflow
-# Runs on pushes and pull requests to the main branch, and can be triggered manually.
 on:
   push:
     branches: [ "main" ]
@@ -12,22 +10,17 @@ on:
   workflow_dispatch:
 
 jobs:
-  # The main test job
   test:
     name: Build and Run All Tests
-    # A runner is required. Using ubuntu-latest as a standard default.
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Check out the repository's code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Step 2: Install system dependencies, similar to other workflows
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y build-essential cmake pkg-config liblua5.4-dev libcurl4-openssl-dev nlohmann-json3-dev
 
-      # Step 3: Set up the Rust toolchain
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -35,25 +28,28 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
-      # Step 4: Configure the project using CMake
       - name: Configure CMake
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
-      # Step 5: Compile the project
       - name: Compile Project
         run: cmake --build build --parallel
 
-      # Step 6: Run all unit tests (C/C++ and Rust)
-      - name: Run Unit Tests
+      - name: Run C/C++ Unit Tests
         run: |
-          # Run CTest for C/C++ unit tests
           cd build
           ctest --output-on-failure
-          cd ..
-          # Run cargo test for all Rust modules in the workspace
-          cargo test --workspace
+
+      # FIX: Run individual tests bcz cargo files.
+      - name: Run Rust Unit Tests
+        run: |
+          # Loop through each module directory containing a Cargo.toml and run tests
+          for d in src/modules/*/ ; do
+            if [ -f "${d}Cargo.toml" ]; then
+              echo "--- Running tests in ${d} ---"
+              (cd "$d" && cargo test)
+            fi
+          done
       
-      # Step 7: Run the end-to-end integration test script
       - name: Run Integration Tests
         run: |
           chmod +x tests/integration_test.sh
