@@ -47,13 +47,6 @@ jobs:
           pacman -Syu --noconfirm --needed \
             base-devel cmake lua curl nlohmann-json go rust git pkgconf
 
-      # Step 4: Set up the Go environment.
-      # This action downloads and configures a specific version of Go.
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-
       # Step 5: Set up the Rust toolchain.
       # This action ensures the stable Rust toolchain is available.
       - name: Setup Rust
@@ -79,30 +72,6 @@ jobs:
       - name: Compile Project
         run: cmake --build build --parallel
 
-      # Step 9: Create a distributable package, but ONLY for tags.
-      # This step runs conditionally. The `if` condition checks if the Git reference
-      # that triggered the workflow starts with 'refs/tags/', which is true only for tags.
-      - name: Create Release Package (only for tags)
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          # Create a compressed tarball (.tar.gz) containing the necessary release files.
-          # This creates a single, easy-to-distribute file.
-          # The file is named to clearly identify its content and platform.
-          tar -czvf gitph-arch-linux.tar.gz -C build/bin . src/plugins/ LICENSE
-
-      # Step 10: Upload the final release package as an artifact, ONLY for tags.
-      # This artifact will be downloaded by the separate 'release.yml' workflow.
-      # The `if` condition ensures this step only runs for tag events.
-      - name: Upload Release Package Artifact (only for tags)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
-        with:
-          # The name of the artifact is critical. The release workflow will use this name to find it.
-          name: gitph-release-package-arch
-          # Path to the file to be uploaded.
-          path: gitph-arch-linux.tar.gz
-          # Retention period for the artifact.
-          retention-days: 7
 
       # Step 11: Upload intermediate build artifacts for non-tag builds (CI).
       # This is useful for debugging or for other jobs that might need the raw build output.
