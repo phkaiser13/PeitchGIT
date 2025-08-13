@@ -281,3 +281,8 @@ if(WIN32)
     target_link_libraries(installer_helper PRIVATE ${CURL_TARGET_NAME})
     set_target_properties(installer_helper PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/installer")
 endif()
+
+# --- Testing ---
+# Include the tests directory in the build.
+# This will process tests/CMakeLists.txt.
+add_subdirectory(tests)
