@@ -1,0 +1,112 @@
+# .github/workflows/release-windows.yml
+#
+# Workflow para criar um Release no GitHub e anexar o instalador do Windows.
+# Este workflow é acionado sempre que uma nova tag no formato 'v*' é enviada.
+
+name: Release gitph (Windows)
+
+on:
+  push:
+    tags:
+      - 'v*' # Aciona em tags como v1.0, v1.2.3, etc.
+  workflow_dispatch: # Permite acionamento manual
+
+jobs:
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest # Usamos ubuntu para a criação rápida do release
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }} # URL para upload do artefato
+      version: ${{ steps.get_version.outputs.version }}
+
+    steps:
+      - name: Get version from tag
+        id: get_version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ steps.get_version.outputs.version }}
+          body: |
+            ## Release Notes
+            - Compilação automática para Windows.
+            - Artefatos gerados pelo GitHub Actions.
+          draft: false
+          prerelease: false
+
+  build-and-upload:
+    name: Build and Upload Windows Installer
+    needs: create-release # Depende da criação do release
+    runs-on: windows-latest
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}\\vcpkg
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      RUSTFLAGS: ""
+      # Passa a versão obtida do passo anterior para este job
+      RELEASE_VERSION: ${{ needs.create-release.outputs.version }}
+
+    steps:
+      # 1. Checkout do código
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Instalação do CMake
+      - name: Install CMake
+        uses: jwlawson/actions-setup-cmake@v1
+        with:
+          cmake-version: '3.29.3'
+
+      # 3. Instalação do NSIS (ferramenta para criar o instalador)
+      - name: Install NSIS
+        run: choco install nsis -y
+
+      # 4. Instalação do vcpkg e bibliotecas C++
+      - name: Install vcpkg and libraries
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          cd $env:VCPKG_ROOT
+          .\\bootstrap-vcpkg.bat
+          .\\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
+        shell: pwsh
+
+      # 5. Configuração do toolchain Rust
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      # 6. Configuração do projeto com CMake
+      - name: Configure CMake (MSVC, Visual Studio generator)
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\\scripts\\buildsystems\\vcpkg.cmake" `
+            -DCMAKE_BUILD_TYPE=Release
+        shell: pwsh
+
+      # 7. Compilação do projeto
+      - name: Build Project
+        run: cmake --build build --config Release --parallel
+        shell: pwsh
+        
+      # 8. Criação do pacote de instalação (invoca o NSIS)
+      # Este passo executa o alvo "package-windows" definido no seu CMakeLists.txt
+      - name: Create Installer Package
+        run: cmake --build build --config Release --target package-windows
+        shell: pwsh
+
+      # 9. Upload do instalador para o GitHub Release
+      - name: Upload Release Asset
+        id: upload-release-asset 
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./build/phgit_installer_${{ env.RELEASE_VERSION }}.exe # Caminho para o instalador
+          asset_name: phgit_installer_${{ env.RELEASE_VERSION }}_windows_x64.exe # Nome do arquivo no release
+          asset_content_type: application/vnd.microsoft.portable-executable
