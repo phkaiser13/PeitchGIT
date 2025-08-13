@@ -30,3 +30,7 @@ crate-type = ["cdylib"]
 # for C types like `c_char`, `c_int`, etc.
 libc = "0.2"
 lazy_static = "1.4.0"
+
+[dev-dependencies]
+# Used for creating temporary directories in tests.
+tempfile = "3.8"
