@@ -1,4 +1,4 @@
-# .github/workflows/release-windows.yml
+# .github/workflows/release.yml
 #
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
 # SPDX-License-Identifier: Apache-2.0
@@ -33,7 +33,7 @@ jobs:
     runs-on: windows-latest
     env:
       # Variáveis de ambiente para o vcpkg e o processo de compilação.
-      VCPKG_ROOT: ${{ github.workspace }}\\vcpkg
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
       VCPKG_DEFAULT_TRIPLET: x64-windows
 
     steps:
@@ -48,7 +48,6 @@ jobs:
           cmake-version: '3.29.3'
 
       # Passo 3: Instalar as bibliotecas C++ via vcpkg.
-      # Este passo é fundamental para as dependências do core em C.
       - name: Instalar dependências com vcpkg
         run: |
           git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
@@ -63,16 +62,20 @@ jobs:
         with:
           toolchain: stable
           
-      - name: Install NSIS
+      # ---- CORREÇÃO 1: Instalar NSIS e Ninja juntos ----
+      # Adicionamos 'ninja' aqui para que ele esteja disponível para o CMake.
+      - name: Install Build Tools (NSIS & Ninja)
         shell: pwsh
         run: |
-          choco install nsis --yes --no-progress
+          choco install nsis ninja --yes --no-progress
           refreshenv || true
-      # Passo 5: Configurar o projeto com CMake.
-      # Aponta para a toolchain do vcpkg para encontrar as dependências corretamente.
-      - name: Configure CMake (MSVC, Visual Studio generator)
+
+      # ---- CORREÇÃO 2: Configurar CMake para usar o gerador Ninja ----
+      # Trocamos o gerador "Visual Studio 17 2022" por "Ninja".
+      # Isso cria um sistema de compilação que lida melhor com alvos customizados.
+      - name: Configure CMake (Ninja generator)
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+          cmake -S . -B build -G "Ninja" `
             -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" `
             -DCMAKE_PREFIX_PATH="${{ env.VCPKG_ROOT }}\installed\x64-windows\share" `
             -DLua_FOUND=TRUE `
@@ -83,35 +86,31 @@ jobs:
         shell: pwsh
 
       # Passo 6: Compilar o projeto inteiro (executável e todos os módulos).
+      # A flag --config Release não é necessária com Ninja quando CMAKE_BUILD_TYPE é definido, mas não causa problemas.
       - name: Compilar o projeto (Build)
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build --parallel
         shell: pwsh
 
       # Passo 7: Empacotar o instalador.
-      # Este passo executa o alvo "package-windows" definido no seu CMakeLists.txt,
-      # que por sua vez invoca o NSIS para criar o instalador .exe.
+      # Este comando agora funcionará corretamente porque o Ninja entende o alvo customizado.
       - name: Gerar o Instalador Windows (Package)
-        run: cmake --build build --config Release --target package-windows
+        run: cmake --build build --target package-windows
         shell: pwsh
 
       # Passo 8: Anexar o instalador como artefato de CI (para pushes e PRs normais).
-      # Isso permite baixar o instalador de qualquer execução do workflow para testes.
       - name: Anexar Artefato do Instalador (CI)
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
           name: phgit-installer-windows-ci
-          path: build/phgit_installer_*.exe # O padrão de nome definido no seu script NSIS
+          path: build/phgit_installer_*.exe
           retention-days: 5
 
       # Passo 9: Criar o Release e anexar o instalador (APENAS PARA TAGS).
-      # Este é o passo final que publica o instalador para os usuários.
       - name: Criar Release no GitHub
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          # Anexa todos os arquivos .exe gerados na pasta de compilação ao release.
-          # Isso incluirá o seu "phgit_installer_vX.X.X.exe".
           files: build/phgit_installer_*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
