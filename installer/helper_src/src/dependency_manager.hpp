@@ -60,6 +60,14 @@ public:
      */
     bool ensureInstalled(Dependency dep);
 
+    /**
+     * @brief Gets a user-friendly display name for a dependency.
+     * @param dep The dependency.
+     * @return A string with the display name (e.g., "Git SCM").
+     */
+    std::string getDisplayName(Dependency dep) const;
+
+
 private:
     /**
      * @brief Gets the command-line name of the executable for a dependency.
@@ -68,12 +76,6 @@ private:
      */
     std::string getExecutableName(Dependency dep) const;
 
-    /**
-     * @brief Gets a user-friendly display name for a dependency.
-     * @param dep The dependency.
-     * @return A string with the display name (e.g., "Git SCM").
-     */
-    std::string getDisplayName(Dependency dep) const;
 
     /**
      * @brief Fetches the correct download URL for a given dependency and platform.
