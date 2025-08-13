@@ -10,9 +10,9 @@ permissions:
   contents: write
 
 jobs:
-  # ============================================
-  # 1. Build e pacote para Windows
-  # ============================================
+# ============================================
+# 1. Build e pacote para Windows
+# ============================================
 build-windows:
   runs-on: windows-latest
   env:
