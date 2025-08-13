@@ -1,72 +1,55 @@
 # .github/workflows/release-windows.yml
 #
-# Workflow para criar um Release no GitHub e anexar o instalador do Windows.
-# Este workflow é acionado sempre que uma nova tag no formato 'v*' é enviada.
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
+# SPDX-License-Identifier: Apache-2.0
+#
+# Este fluxo de trabalho automatiza a criação de um release para Windows.
+# Ele é ativado em cada push, mas com uma lógica especial para tags:
+#
+# 1. EM QUALQUER PUSH/PULL REQUEST:
+#    - Compila o projeto e executa os testes.
+#    - Gera o instalador .exe usando NSIS.
+#    - Anexa o instalador como um artefato de compilação para depuração e testes.
+#
+# 2. QUANDO UMA TAG É ENVIADA (ex: v1.0.0, v1.2.3):
+#    - Além dos passos acima, ele cria um Release no GitHub.
+#    - Anexa o instalador .exe gerado como o principal ativo para download no Release.
+#
 
-name: Release gitph (Windows)
+name: Release do Instalador (Windows)
 
 on:
   push:
+    branches: [ "main" ]
     tags:
-      - 'v*' # Aciona em tags como v1.0, v1.2.3, etc.
-  workflow_dispatch: # Permite acionamento manual
+      - 'v*' # Ativado em tags como v1.0, v1.2.3, etc.
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
-  create-release:
-    name: Create GitHub Release
-    runs-on: ubuntu-latest # Usamos ubuntu para a criação rápida do release
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }} # URL para upload do artefato
-      version: ${{ steps.get_version.outputs.version }}
-
-    steps:
-      - name: Get version from tag
-        id: get_version
-        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Create GitHub Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ steps.get_version.outputs.version }}
-          body: |
-            ## Release Notes
-            - Compilação automática para Windows.
-            - Artefatos gerados pelo GitHub Actions.
-          draft: false
-          prerelease: false
-
-  build-and-upload:
-    name: Build and Upload Windows Installer
-    needs: create-release # Depende da criação do release
+  build-and-release:
+    name: Compilar e Empacotar para Windows
     runs-on: windows-latest
     env:
+      # Variáveis de ambiente para o vcpkg e o processo de compilação.
       VCPKG_ROOT: ${{ github.workspace }}\\vcpkg
       VCPKG_DEFAULT_TRIPLET: x64-windows
-      RUSTFLAGS: ""
-      # Passa a versão obtida do passo anterior para este job
-      RELEASE_VERSION: ${{ needs.create-release.outputs.version }}
 
     steps:
-      # 1. Checkout do código
-      - name: Checkout repository
+      # Passo 1: Obter o código-fonte do repositório
+      - name: Checkout do repositório
         uses: actions/checkout@v4
 
-      # 2. Instalação do CMake
-      - name: Install CMake
+      # Passo 2: Instalar o CMake
+      - name: Instalar o CMake
         uses: jwlawson/actions-setup-cmake@v1
         with:
           cmake-version: '3.29.3'
 
-      # 3. Instalação do NSIS (ferramenta para criar o instalador)
-      - name: Install NSIS
-        run: choco install nsis -y
-
-      # 4. Instalação do vcpkg e bibliotecas C++
-      - name: Install vcpkg and libraries
+      # Passo 3: Instalar as bibliotecas C++ via vcpkg.
+      # Este passo é fundamental para as dependências do core em C.
+      - name: Instalar dependências com vcpkg
         run: |
           git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
           cd $env:VCPKG_ROOT
@@ -74,39 +57,51 @@ jobs:
           .\\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
         shell: pwsh
 
-      # 5. Configuração do toolchain Rust
-      - name: Setup Rust toolchain
+      # Passo 4: Configurar o ambiente Rust
+      - name: Setup da toolchain Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
 
-      # 6. Configuração do projeto com CMake
-      - name: Configure CMake (MSVC, Visual Studio generator)
+      # Passo 5: Configurar o projeto com CMake.
+      # Aponta para a toolchain do vcpkg para encontrar as dependências corretamente.
+      - name: Configurar o CMake (MSVC)
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+          cmake -S . -B build `
             -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\\scripts\\buildsystems\\vcpkg.cmake" `
             -DCMAKE_BUILD_TYPE=Release
         shell: pwsh
 
-      # 7. Compilação do projeto
-      - name: Build Project
+      # Passo 6: Compilar o projeto inteiro (executável e todos os módulos).
+      - name: Compilar o projeto (Build)
         run: cmake --build build --config Release --parallel
         shell: pwsh
-        
-      # 8. Criação do pacote de instalação (invoca o NSIS)
-      # Este passo executa o alvo "package-windows" definido no seu CMakeLists.txt
-      - name: Create Installer Package
+
+      # Passo 7: Empacotar o instalador.
+      # Este passo executa o alvo "package-windows" definido no seu CMakeLists.txt,
+      # que por sua vez invoca o NSIS para criar o instalador .exe.
+      - name: Gerar o Instalador Windows (Package)
         run: cmake --build build --config Release --target package-windows
         shell: pwsh
 
-      # 9. Upload do instalador para o GitHub Release
-      - name: Upload Release Asset
-        id: upload-release-asset 
-        uses: actions/upload-release-asset@v1
+      # Passo 8: Anexar o instalador como artefato de CI (para pushes e PRs normais).
+      # Isso permite baixar o instalador de qualquer execução do workflow para testes.
+      - name: Anexar Artefato do Instalador (CI)
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: phgit-installer-windows-ci
+          path: build/phgit_installer_*.exe # O padrão de nome definido no seu script NSIS
+          retention-days: 5
+
+      # Passo 9: Criar o Release e anexar o instalador (APENAS PARA TAGS).
+      # Este é o passo final que publica o instalador para os usuários.
+      - name: Criar Release no GitHub
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          # Anexa todos os arquivos .exe gerados na pasta de compilação ao release.
+          # Isso incluirá o seu "phgit_installer_vX.X.X.exe".
+          files: build/phgit_installer_*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./build/phgit_installer_${{ env.RELEASE_VERSION }}.exe # Caminho para o instalador
-          asset_name: phgit_installer_${{ env.RELEASE_VERSION }}_windows_x64.exe # Nome do arquivo no release
-          asset_content_type: application/vnd.microsoft.portable-executable
