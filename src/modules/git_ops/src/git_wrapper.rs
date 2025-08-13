@@ -123,12 +123,6 @@ pub fn git_commit(repo_path: Option<&str>, message: &str) -> GitResult {
 pub fn git_push(repo_path: Option<&str>, remote: &str, branch: &str) -> GitResult {
     execute_git_command(repo_path, &["push", remote, branch], None)
 }
-
-/// Gets the current active branch name.
-pub fn git_get_current_branch(repo_path: Option<&str>) -> GitResult {
-    execute_git_command(repo_path, &["rev-parse", "--abbrev-ref", "HEAD"], None)
-}
-
 /// Gets the configured upstream for the current branch (e.g., "origin/main").
 /// Fails if no upstream is configured.
 pub fn git_get_upstream_branch(repo_path: Option<&str>) -> GitResult {

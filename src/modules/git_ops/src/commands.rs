@@ -172,7 +172,7 @@ mod tests {
 
         // 2. Create the local repository.
         let local_dir = TempDir::new().expect("Failed to create local temp dir");
-        let local_path_str = local_dir.path().to_str().unwrap();
+
 
         // 3. Init and configure the local repo.
         assert!(Command::new("git")
@@ -254,7 +254,6 @@ mod tests {
     fn test_handle_send_no_changes() {
         // Arrange: Set up a clean repo that is already tracking a remote.
         let repo = setup_test_repo_with_remote();
-        let local_path_str = repo.local_dir.path().to_str().unwrap();
         // Change current directory for the duration of the test.
         let original_dir = std::env::current_dir().unwrap();
         std::env::set_current_dir(repo.local_dir.path()).unwrap();
