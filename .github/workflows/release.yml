@@ -57,6 +57,15 @@ jobs:
       - name: Build Project
         run: cmake --build build --target gitph installer_helper --config Release --parallel
 
+      - name: Fetch EnvVarUpdate.nsh (if missing)
+        shell: pwsh
+        run: |
+          $out = "installer/windows/EnvVarUpdate.nsh"
+          if (-not (Test-Path $out)) {
+            Invoke-WebRequest -Uri "https://raw.githubusercontent.com/OpenMS/windows-installer/master/EnvVarUpdate.nsh" -OutFile $out -UseBasicParsing
+          }
+
+
       - name: Create NSIS Installer
         shell: pwsh
         run: |
