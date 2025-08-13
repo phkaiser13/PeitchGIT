@@ -9,34 +9,38 @@ on:
   workflow_dispatch:
 
 env:
+  # variáveis globais (herdadas por jobs/steps)
   VCPKG_DEFAULT_TRIPLET: x64-windows
   BUILD_DIR: build
   VS_GENERATOR: "Visual Studio 17 2022"
   VS_ARCH: x64
+  # caminho padrão usado pelo Chocolatey para executáveis
   CHOCO_BIN: "C:/ProgramData/chocolatey/bin"
 
 jobs:
   build-windows-installer:
     runs-on: windows-latest
     env:
-      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
-      BUILD_DIR: ${{ env.BUILD_DIR }}
-      VS_GENERATOR: ${{ env.VS_GENERATOR }}
-      VS_ARCH: ${{ env.VS_ARCH }}
-      CHOCO_BIN: ${{ env.CHOCO_BIN }}
+      # Variáveis específicas para este job ou que sobrescrevem as globais.
+      # A sintaxe de referência a si mesma (ex: BUILD_DIR: ${{ env.BUILD_DIR }}) foi removida, pois é inválida.
+      # As variáveis globais já estão disponíveis aqui por padrão.
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+      MAKENSIS_DEFAULT: "${{ env.CHOCO_BIN }}/makensis.exe"
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Quick context
+      - name: Show quick context
         shell: pwsh
         run: |
-          Write-Host "GITHUB_WORKSPACE = $env:GITHUB_WORKSPACE"
-          Write-Host "VCPKG_ROOT = $env:VCPKG_ROOT"
-          Write-Host "BUILD_DIR = $env:BUILD_DIR"
+          Write-Host "Workspace: $env:GITHUB_WORKSPACE"
+          Write-Host "VCPKG_ROOT: $env:VCPKG_ROOT"
+          Write-Host "BUILD_DIR: $env:BUILD_DIR"
+          Write-Host "VS_GENERATOR: $env:VS_GENERATOR"
+          Write-Host "VS_ARCH: $env:VS_ARCH"
 
       - name: Ensure Chocolatey packages (ninja, nsis)
         shell: pwsh
@@ -44,123 +48,176 @@ jobs:
           choco feature enable -n=allowGlobalConfirmation | Out-Null
           choco install ninja --yes --no-progress
           choco install nsis --yes --no-progress
-          Get-Command makensis -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "makensis => $($_.Source)" }
+          choco list --local-only
 
-      - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v1
+      - name: Ensure CMake (uses action for version)
+        uses: jwlawson/actions-setup-cmake@v1.14
         with:
           cmake-version: '3.29.3'
 
-      - name: Cache vcpkg (downloads/installed/buildtrees)
+      - name: Ensure Ninja on PATH (verify)
+        shell: pwsh
+        run: |
+          Get-Command ninja -ErrorAction SilentlyContinue || Write-Host "ninja not found"
+          Get-Command makensis -ErrorAction SilentlyContinue || Write-Host "makensis not found yet"
+          where.exe makensis || echo "where.exe didn't find makensis"
+
+      - name: Cache vcpkg downloads & installed (speeds up repeated runs)
         uses: actions/cache@v4
         with:
           path: |
-            ${{ github.workspace }}\vcpkg\downloads
-            ${{ github.workspace }}\vcpkg\installed
-            ${{ github.workspace }}\vcpkg\buildtrees
-          key: vcpkg-${{ runner.os }}-${{ github.sha }}
-          restore-keys: vcpkg-${{ runner.os }}-
+            ${{ env.VCPKG_ROOT }}/downloads
+            ${{ env.VCPKG_ROOT }}/installed
+            ${{ env.VCPKG_ROOT }}/buildtrees
+          # chave mais robusta para cache
+          key: vcpkg-cache-${{ runner.os }}-${{ hashFiles('**/vcpkg.json') }}
+          restore-keys: |
+            vcpkg-cache-${{ runner.os }}-
 
-      - name: Install vcpkg + libs
+      - name: Install vcpkg and required libs
         shell: pwsh
         run: |
           if (-not (Test-Path $env:VCPKG_ROOT)) {
             git clone --depth 1 https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
           } else {
-            Write-Host "vcpkg já existe"
+            Write-Host "vcpkg already exists at $env:VCPKG_ROOT"
           }
           Push-Location $env:VCPKG_ROOT
+          # desabilita telemetria para runs CI
           .\bootstrap-vcpkg.bat -disableMetrics
           .\vcpkg.exe install curl lua nlohmann-json --triplet $env:VCPKG_DEFAULT_TRIPLET
           Pop-Location
 
-      - name: Show repo & installer files (debug)
-        shell: pwsh
-        run: |
-          Write-Host "Top-level files:"
-          Get-ChildItem -File -Force | Select-Object -First 100 | ForEach-Object { Write-Host $_.Name }
-          if (Test-Path installer) { Write-Host "Installer folder exists"; Get-ChildItem installer -Recurse | Select-Object -First 100 | ForEach-Object { Write-Host $_.FullName } }
+      - name: Setup Rust toolchain (only installer, no cache actions)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
 
-      - name: Configure CMake (with NSIS / VCPKG hints)
+      - name: Verify important files (debug)
         shell: pwsh
-        env:
-          VCPKG_ROOT: ${{ env.VCPKG_ROOT }}
         run: |
+          Write-Host "Listing root files:"
+          Get-ChildItem -Force -File -Name
+          Write-Host "Listing installer folder if exists:"
+          if (Test-Path installer/windows) { Get-ChildItem installer/windows -Recurse -File -Name } else { Write-Host "installer/windows not found" }
+
+      - name: Configure CMake (MSVC, Visual Studio generator)
+        shell: pwsh
+        run: |
+          # Determina onde o makensis está
           $makensis = (Get-Command makensis -ErrorAction SilentlyContinue).Source
-          if (-not $makensis) { $makensis = "${{ env.CHOCO_BIN }}\makensis.exe"; Write-Host "makensis fallback: $makensis" }
-          else { Write-Host "makensis found: $makensis" }
-          $nsis_dir = Split-Path $makensis -Parent
+          if (-not $makensis) {
+            # fallback para o local esperado
+            $makensis = $env:MAKENSIS_DEFAULT
+            Write-Host "makensis not found in PATH, will try $makensis"
+          } else {
+            Write-Host "Found makensis at: $makensis"
+          }
 
+          # Diretório do NSIS
+          $nsis_dir = Split-Path $makensis
+
+          # Comando de configuração do CMake
           cmake -S . -B $env:BUILD_DIR -G "$env:VS_GENERATOR" -A $env:VS_ARCH `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
             -DCMAKE_PREFIX_PATH="$env:VCPKG_ROOT\installed\$env:VCPKG_DEFAULT_TRIPLET\share" `
             -DLua_FOUND=TRUE `
             -DLUA_INCLUDE_DIR="$env:VCPKG_ROOT\installed\$env:VCPKG_DEFAULT_TRIPLET\include" `
+            -DLUA_LIBRARY="$env:VCPKG_ROOT\installed\$env:VCPKG_DEFAULT_TRIPLET\lib\lua.lib" `
             -DLUA_LIBRARIES="$env:VCPKG_ROOT\installed\$env:VCPKG_DEFAULT_TRIPLET\lib\lua.lib" `
             -DMAKENSIS_EXECUTABLE="$makensis" `
+            -DNSIS_MAKENSIS_EXECUTABLE="$makensis" `
             -DNSIS_DIR="$nsis_dir" `
-            -DCPACK_GENERATOR=NSIS `
             -DCMAKE_BUILD_TYPE=Release
 
-          Write-Host "—— cmake configure finished, printing brief CMakeCache and targets"
-          if (Test-Path "$env:BUILD_DIR\CMakeCache.txt") { Get-Content "$env:BUILD_DIR\CMakeCache.txt" -TotalCount 200 | Select-String -Pattern "MAKENSIS|NSIS|CPACK" -SimpleMatch }
-          cmake --build $env:BUILD_DIR --config Release --target help | Select-Object -First 200 | ForEach-Object { Write-Host $_ }
-
-      - name: Build (compile)
-        shell: pwsh
-        run: |
-          cmake --build $env:BUILD_DIR --config Release --parallel
-
-      - name: Try CPack (NSIS) to generate installer
-        shell: pwsh
-        run: |
-          Push-Location $env:BUILD_DIR
-          Write-Host "Running cpack -G NSIS -C Release"
-          if (Test-Path (Join-Path $env:BUILD_DIR "CPackConfig.cmake")) {
-            cpack -G NSIS -C Release -V
-            $cpackExit = $LASTEXITCODE
-            Write-Host "cpack exit: $cpackExit"
-          } else {
-            Write-Host "CPackConfig.cmake not found in build dir; skipping direct cpack"
-            $cpackExit = 1
+          Write-Host "CMake configure return code: $LASTEXITCODE"
+          Write-Host "Show first 200 lines of $env:BUILD_DIR/CMakeFiles/CMakeOutput.log if present"
+          if (Test-Path "$env:BUILD_DIR\CMakeFiles\CMakeOutput.log") {
+            Get-Content "$env:BUILD_DIR\CMakeFiles\CMakeOutput.log" -TotalCount 200
           }
-          Pop-Location
-          if ($cpackExit -eq 0) { Write-Host "CPack created installer successfully."; exit 0 }
-          else { Write-Host "CPack failed or not applicable; will fallback to search .nsi and makensis" }
 
-      - name: Fallback — search .nsi and run makensis manually
+      - name: Show available MSBuild targets (debug)
         shell: pwsh
         run: |
-          Write-Host "Procurando arquivos .nsi no repositório e build"
-          $nsi = Get-ChildItem -Path . -Include *.nsi -Recurse -File -ErrorAction SilentlyContinue | Sort-Object Length -Descending | Select-Object -First 1
-          if (-not $nsi) {
-            Write-Host "Nenhum .nsi encontrado via busca genérica. Tentando caminho conhecido installer/windows/installer.nsi"
-            if (Test-Path "installer/windows/installer.nsi") {
-              $nsi = Get-Item "installer/windows/installer.nsi"
+          cmake --build $env:BUILD_DIR --config Release --target help | Select-String -Pattern "package-windows" -SimpleMatch -Quiet
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "package-windows target is present."
+          } else {
+            Write-Host "package-windows target not found. Listing all available targets:"
+            cmake --build $env:BUILD_DIR --config Release --target help
+          }
+
+      - name: Build and Package (try package-windows, fallback to manual makensis)
+        shell: pwsh
+        env:
+          MAKENSIS_FALLBACK: ${{ env.MAKENSIS_DEFAULT }}
+        run: |
+          # Tenta construir o target package-windows
+          $helpOutput = cmake --build $env:BUILD_DIR --config Release --target help 2>&1
+          if ($helpOutput -match "package-windows") {
+            Write-Host "package-windows target exists — building it."
+            cmake --build $env:BUILD_DIR --config Release --target package-windows --parallel
+            if ($LASTEXITCODE -ne 0) { throw "CMake build for target package-windows failed." }
+          } else {
+            Write-Host "package-windows not present — fallback procedure:"
+            Write-Host "1) build main project binaries"
+            cmake --build $env:BUILD_DIR --config Release --parallel
+            if ($LASTEXITCODE -ne 0) { throw "CMake build for default target failed." }
+
+            Write-Host "2) Look for .nsi files to run makensis on"
+            $nsiPaths = Get-ChildItem -Path . -Include *.nsi -Recurse -File -ErrorAction SilentlyContinue
+            if ($nsiPaths.Count -eq 0) {
+              throw "Fallback failed: no .nsi installer script found in the repository."
+            }
+
+            Write-Host "Found .nsi files:"
+            $nsiPaths | ForEach-Object { Write-Host "- $($_.FullName)" }
+            $nsiFile = $nsiPaths[0].FullName
+            
+            $makensis = (Get-Command makensis -ErrorAction SilentlyContinue).Source
+            if (-not $makensis) { $makensis = $env:MAKENSIS_FALLBACK }
+            Write-Host "Using makensis: $makensis"
+            
+            & $makensis "/V2" $nsiFile
+            if ($LASTEXITCODE -ne 0) { throw "makensis failed with code $LASTEXITCODE" }
+          }
+
+      - name: Collect installer artifacts
+        id: collect_installer
+        shell: pwsh
+        run: |
+          $searchPaths = @("$env:BUILD_DIR", "$env:GITHUB_WORKSPACE", "$env:GITHUB_WORKSPACE/installer/windows")
+          $installerCandidates = @()
+          foreach ($p in $searchPaths) {
+            if (Test-Path $p) {
+              $installerCandidates += Get-ChildItem -Path $p -Include *.exe -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "installer" -or $_.Length -gt 1MB }
             }
           }
-          if (-not $nsi) { Write-Error "Sem .nsi para processar — não foi possível criar instalador"; exit 1 }
-          Write-Host "Usando .nsi: $($nsi.FullName)"
-          $makensis = (Get-Command makensis -ErrorAction SilentlyContinue).Source
-          if (-not $makensis) { $makensis = "${{ env.CHOCO_BIN }}\makensis.exe"; Write-Host "makensis fallback: $makensis" }
-          Write-Host "Executando makensis $($nsi.FullName)"
-          & $makensis "/V2" $nsi.FullName
-          if ($LASTEXITCODE -ne 0) { Write-Error "makensis retornou $LASTEXITCODE"; exit $LASTEXITCODE } else { Write-Host "makensis finalizou OK" }
 
-      - name: Collect and upload installer artifact
+          if ($installerCandidates.Count -eq 0) {
+            Write-Host "No installer .exe found automatically. Listing build tree for debugging:"
+            Get-ChildItem -Path $env:BUILD_DIR -Recurse -File | Select-Object FullName, Length | Sort-Object Length -Descending | Select-Object -First 50
+            throw "No installer .exe found to upload."
+          }
+
+          Write-Host "Found installer candidates:"
+          $installerCandidates | ForEach-Object { Write-Host "- $($_.FullName)" }
+          # Pega o maior arquivo .exe, que provavelmente é o instalador
+          $installerPath = ($installerCandidates | Sort-Object Length -Descending | Select-Object -First 1).FullName
+          
+          Write-Host "Selected installer to upload: $installerPath"
+          # Salva o caminho para o próximo passo usar
+          echo "installer_path=$installerPath" >> $env:GITHUB_OUTPUT
+
+      - name: Upload Installer Artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          path: |
-            build/**/*.exe
-            installer/**/*.exe
-            **/*.exe
+          path: ${{ steps.collect_installer.outputs.installer_path }}
           retention-days: 7
 
-      - name: Final debug info (list build tree top files)
+      - name: Final status (debug)
         if: always()
         shell: pwsh
         run: |
-          Write-Host "Top artifacts in build/"
-          if (Test-Path build) { Get-ChildItem build -Recurse -File | Sort-Object Length -Descending | Select-Object -First 30 | ForEach-Object { Write-Host "$($_.FullName) ($($_.Length) bytes)" } }
-          else { Write-Host "build/ not present" }
+          Write-Host "Workflow finished. Check previous steps logs for errors."
