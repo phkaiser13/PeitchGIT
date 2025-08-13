@@ -4,11 +4,15 @@
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
 
+!ifndef VERSION
+  !define VERSION 0.0.0-dev
+!endif
+
 ; Constants
 !define WM_SETTINGCHANGE 0x001A
 
 Name "phgit"
-OutFile "phgit_installer_v1.0.0.exe"
+OutFile "phgit_installer_${VERSION}.exe"
 InstallDir "$LOCALAPPDATA\phgit"
 RequestExecutionLevel user
 
@@ -96,7 +100,6 @@ Function AddToUserPath
     ; Lê PATH do HKCU
     ReadRegExpandStr $R1 HKCU "Environment" "Path"
     StrCmp $R1 "" +3
-      ; se não vazio, anexa com ponto-e-vírgula
       StrCpy $R1 "$R1;$R0"
       Goto .write
     StrCpy $R1 "$R0"
@@ -104,7 +107,6 @@ Function AddToUserPath
     WriteRegExpandStr HKCU "Environment" "Path" "$R1"
 
     ; Notifica o sistema para atualizar variáveis de ambiente
-    ; SendMessageTimeout(HWND_BROADCAST, WM_SETTINGCHANGE, 0, "Environment", SMTO_ABORTIFHUNG, 1000, &result)
     System::Call 'user32::SendMessageTimeout(i -1, i ${WM_SETTINGCHANGE}, i 0, t "Environment", i 0x0002, i 1000, *i .r2)'
 
     Pop $R2
@@ -142,29 +144,21 @@ Function RemoveFromUserPath
     IntCmp $R5 $R3 no_semi
     StrCpy $R6 $R1 1 $R5
     StrCmp $R6 ";" found_semi
-    ; concatena char a token
     StrCpy $R4 "$R4$R6"
     IntOp $R5 $R5 + 1
     Goto find_char
 
   found_semi:
-    ; pega resto após o ponto-e-vírgula
     IntOp $R6 $R5 + 1
     StrCpy $R1 $R1 -1 $R6
     Goto process_token
 
   no_semi:
-    ; último token = todo o resto
     StrCpy $R4 $R1
     StrCpy $R1 ""
-    ; continua para processamento
   process_token:
-    ; compara token com o caminho a remover ($R0)
-    ; Se for igual, pula; caso contrário, adiciona ao $R2
     StrCmp $R4 "$R0" skip_add
-    ; também tenta sem barra final (normalize simples)
     StrCmp $R4 "$R0\" skip_add
-    ; não é igual -> adiciona ao novo PATH
     StrCmp $R2 "" add_first add_more
   add_first:
     StrCpy $R2 "$R4"
@@ -176,7 +170,6 @@ Function RemoveFromUserPath
     Goto loop_start
 
   loop_done:
-    ; escreve de volta (pode ficar vazio)
     WriteRegExpandStr HKCU "Environment" "Path" "$R2"
     System::Call 'user32::SendMessageTimeout(i -1, i ${WM_SETTINGCHANGE}, i 0, t "Environment", i 0x0002, i 1000, *i .r2)'
 
