@@ -275,11 +275,9 @@ install(
     FILES_MATCHING PATTERN "*.so" PATTERN "*.dll" PATTERN "*.dylib"
 )
 
-# Placeholder for the installer helper tool
+
 if(WIN32)
-    add_executable(installer_helper installer/src/installer_main.c installer/src/download.c)
-    target_link_libraries(installer_helper PRIVATE ${CURL_TARGET_NAME})
-    set_target_properties(installer_helper PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/installer")
+    add_subdirectory(installer/helper_src)
 endif()
 
 # --- Testing ---
