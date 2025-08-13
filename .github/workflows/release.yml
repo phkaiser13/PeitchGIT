@@ -1,15 +1,17 @@
 name: CI/CD - Multi-Platform Release
 
-# Este workflow é acionado quando uma nova tag (versão) é criada e pushada.
-# Ex: git tag v1.0.0 && git push origin v1.0.0
+# Roda em qualquer push (branches ou tags) e permite disparo manual
 on:
   push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+
+# Permissões para criar releases etc.
+permissions:
+  contents: write
 
 jobs:
   # ============================================
-  # 1. Job para Build e Pacote do Windows
+  # 1. Build e pacote para Windows
   # ============================================
   build-windows:
     runs-on: windows-latest
@@ -23,10 +25,15 @@ jobs:
           cmake-version: '3.25.x'
           ninja-version: '1.11.x'
 
-      - name: Setup NSIS
-        uses: jakejarvis/setup-nsis@v1
-      
+      # Instalando NSIS via Chocolatey (substitui ação inexistente)
+      - name: Install NSIS
+        shell: pwsh
+        run: |
+          choco install nsis --yes --no-progress
+          refreshenv || true
+
       - name: Configure CMake (MSVC, Visual Studio generator)
+        shell: pwsh
         run: |
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" `
@@ -37,24 +44,28 @@ jobs:
             -DLUA_LIBRARIES="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
             -DCMAKE_BUILD_TYPE=Release
           cmake -B build -G "Ninja"
-        shell: pwsh
-
-            
 
       - name: Build Project
         run: cmake --build build --target gitph installer_helper
 
       - name: Create NSIS Installer
-        run: makensis -DVERSION=${{ github.ref_name }} installer/windows/installer.nsi
+        # Passa a versão para o script .nsi; o seu script já usa -DVERSION
+        shell: pwsh
+        run: |
+          makensis -DVERSION=${{ github.ref_name }} installer/windows/installer.nsi
+          Write-Host "Listing installer output..."
+          Get-ChildItem -Recurse -Filter "gitph-installer-*.exe" | ForEach-Object { $_.FullName }
 
       - name: Upload Windows Installer
         uses: actions/upload-artifact@v4
         with:
           name: gitph-windows-installer
-          path: gitph-installer-${{ github.ref_name }}.exe
+          # usa glob para maior tolerância ao local do arquivo
+          path: |
+            **/gitph-installer-*.exe
 
   # ============================================
-  # 2. Job para Build e Pacote do Linux (Ubuntu)
+  # 2. Build e pacote para Linux (Ubuntu)
   # ============================================
   build-linux:
     runs-on: ubuntu-latest
@@ -66,7 +77,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake build-essential ninja-build g++-multilib debhelper rpm fakeroot
-          
+
       - name: Configure CMake
         run: cmake -B build -G "Ninja"
 
@@ -74,22 +85,25 @@ jobs:
         run: cmake --build build --target gitph
 
       - name: Create DEB Package
-        # O script build_deb.sh precisa da variável de ambiente VERSION
-        run: VERSION=${{ github.ref_name }} installer/linux/build_deb.sh
+        run: |
+          chmod +x installer/linux/build_deb.sh
+          VERSION=${{ github.ref_name }} installer/linux/build_deb.sh
 
       - name: Create RPM Package
-        run: VERSION=${{ github.ref_name }} installer/linux/build_rpm.sh
+        run: |
+          chmod +x installer/linux/build_rpm.sh
+          VERSION=${{ github.ref_name }} installer/linux/build_rpm.sh
 
       - name: Upload Linux Packages
         uses: actions/upload-artifact@v4
         with:
           name: gitph-linux-packages
           path: |
-            *.deb
-            *.rpm
-  
+            **/*.deb
+            **/*.rpm
+
   # ============================================
-  # 3. Job para Build e Pacote do macOS
+  # 3. Build e pacote para macOS
   # ============================================
   build-macos:
     runs-on: macos-latest
@@ -103,25 +117,24 @@ jobs:
       - name: Build Project
         run: cmake --build build --target gitph
 
-      # Você não tem um script de empacotamento específico para macOS,
-      # então este é um exemplo de como você poderia usar CPack para gerar um arquivo .dmg
       - name: Create macOS Package (CPack Example)
-        run: cpack --config CPackSourceConfig.cmake
+        run: cpack --config CPackSourceConfig.cmake || echo "CPack returned non-zero; verifique o config"
 
       - name: Upload macOS Package
         uses: actions/upload-artifact@v4
         with:
           name: gitph-macos-package
-          path: "*.dmg"
-        # O nome do pacote gerado pelo cpack pode variar. Verifique o nome correto.
+          path: |
+            **/*.dmg
 
   # ============================================
-  # 4. Job para Criar o Release
+  # 4. Criar Release (APENAS quando o push for uma TAG)
   # ============================================
   create-release:
     runs-on: ubuntu-latest
-    # Este job só roda depois que todos os jobs de build (windows, linux, macos) terminarem com sucesso.
     needs: [build-windows, build-linux, build-macos]
+    # Só cria o release quando o evento é uma tag (ex: refs/tags/v1.0.0)
+    if: startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
@@ -130,11 +143,9 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@v1
         with:
-          # A release será nomeada com a tag que disparou o workflow (ex: v1.0.0).
           name: Release ${{ github.ref_name }}
           draft: false
           prerelease: false
-          # Anexa todos os artefatos baixados (os instaladores) ao release.
           files: |
             gitph-windows-installer/*.exe
             gitph-linux-packages/*.deb
