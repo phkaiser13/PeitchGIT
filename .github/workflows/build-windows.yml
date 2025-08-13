@@ -64,11 +64,6 @@ jobs:
         with:
           toolchain: stable
 
-      # Step 6: Set up the Go environment
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
           
       # Step 7: Debugging step to list installed vcpkg files and verify paths
       - name: Debug vcpkg installed files
@@ -106,31 +101,6 @@ jobs:
         shell: pwsh
         continue-on-error: true
 
-      # Step 11: Create a distributable package, but ONLY for tags.
-      # This uses PowerShell's native compression tool to create a .zip file.
-      - name: Create Release Package (only for tags)
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          # Create a staging directory to gather all release assets cleanly
-          mkdir staging
-          # Copy the main executables and libraries from the Release build directory
-          copy-item build/Release/*.exe staging/
-          copy-item build/Release/*.dll staging/
-          # Copy plugins and the license file
-          copy-item src/plugins staging/ -Recurse
-          copy-item LICENSE staging/
-          # Create the final zip file
-          Compress-Archive -Path staging/* -DestinationPath gitph-windows-x64.zip
-        shell: pwsh
-
-      # Step 12: Upload the final release package as an artifact, ONLY for tags.
-      - name: Upload Release Package Artifact (only for tags)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
-        with:
-          name: gitph-release-package-windows-x64
-          path: gitph-windows-x64.zip
-          retention-days: 7
 
       # Step 13: Upload intermediate build artifacts for non-tag builds (CI).
       - name: Upload CI Build Artifacts (not for tags)
