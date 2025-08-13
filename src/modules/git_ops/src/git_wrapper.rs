@@ -37,7 +37,10 @@ pub type GitResult = Result<String, String>;
 ///
 /// # Returns
 /// A `GitResult` containing either the standard output or standard error.
-fn execute_git_command(args: &[&str], stdin_data: Option<&str>) -> GitResult {
+
+
+///FIX: execute_git_command must be a public function for rust tests.
+pub fn execute_git_command(args: &[&str], stdin_data: Option<&str>) -> GitResult {
     // Log the command being executed for debugging purposes.
     super::log_to_core(super::GitphLogLevel::Debug, &format!("Executing: git {}", args.join(" ")));
 
