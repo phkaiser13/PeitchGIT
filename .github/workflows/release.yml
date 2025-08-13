@@ -13,61 +13,68 @@ jobs:
   # ============================================
   # 1. Build e pacote para Windows
   # ============================================
-  build-windows:
-    runs-on: windows-latest
-    # --- CORREÇÃO 1: Adicionar o bloco de variáveis de ambiente ---
-    env:
-      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+build-windows:
+  runs-on: windows-latest
+  env:
+    # Define a variável de ambiente para o vcpkg, crucial para os passos seguintes
+    VCPKG_ROOT: ${{ github.workspace }}/vcpkg
 
-      # Adicionei este passo para instalar o vcpkg, que faltava no release.yml
-      - name: Install vcpkg and libraries
-        run: |
-          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
-          cd $env:VCPKG_ROOT
-          .\bootstrap-vcpkg.bat
-          .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
-        shell: pwsh
+  steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
 
-      - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: '3.25.x'
+    - name: Setup CMake
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: '3.25.x'
 
-      - name: Install NSIS
-        shell: pwsh
-        run: |
-          choco install nsis --yes --no-progress
-          refreshenv || true
+    # --- PASSO ADICIONADO: Instalação do vcpkg e dependências ---
+    # Este bloco, inspirado no seu build-windows.yml, é a chave da correção.
+    - name: Install vcpkg and libraries
+      run: |
+        git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+        cd $env:VCPKG_ROOT
+        .\bootstrap-vcpkg.bat
+        .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
+      shell: pwsh
 
-      - name: Configure CMake (MSVC, Visual Studio generator)
-        shell: pwsh
-        run: |
-          # --- CORREÇÃO 2: Removida a segunda chamada do cmake com gerador "Ninja" ---
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" `
-            -DCMAKE_BUILD_TYPE=Release
+    - name: Install NSIS
+      shell: pwsh
+      run: |
+        choco install nsis --yes --no-progress
+        refreshenv || true
 
-      - name: Build Project
-        # Este passo já estava correto e é compatível com o gerador do Visual Studio
-        run: cmake --build build --target gitph installer_helper --config Release --parallel
+    # --- PASSO CORRIGIDO: Configuração do CMake com o toolchain do vcpkg ---
+    - name: Configure CMake (MSVC, Visual Studio generator)
+      shell: pwsh
+      run: |
+        # A flag -DCMAKE_TOOLCHAIN_FILE informa ao CMake para usar a configuração do vcpkg,
+        # resolvendo automaticamente a localização do Lua e outras bibliotecas.
+        cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+          -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" `
+          -DCMAKE_BUILD_TYPE=Release
 
-      - name: Create NSIS Installer
-        shell: pwsh
-        run: |
-          # A versão pode ser obtida da referência do Git (ex: v1.0.0)
-          $version = "${{ github.ref_name }}" -replace "v", ""
-          makensis -DVERSION=$version installer/windows/installer.nsi
-          Get-ChildItem -Recurse -Filter "phgit_installer_*.exe" | ForEach-Object { $_.FullName }
+    - name: Build Project
+      shell: pwsh
+      # Adicionado --config Release para consistência com o passo de configuração
+      run: cmake --build build --target gitph installer_helper --config Release --parallel
 
-      - name: Upload Windows Installer
-        uses: actions/upload-artifact@v4
-        with:
-          name: gitph-windows-installer
-          path: |
-            **/phgit_installer_*.exe
+    - name: Create NSIS Installer
+      shell: pwsh
+      run: |
+        # Extrai a versão da tag do git (ex: de "v1.2.3" para "1.2.3")
+        $version = "${{ github.ref_name }}" -replace "v", ""
+        # O seu script .nsi já usa a variável VERSION que passamos aqui
+        makensis -DVERSION=$version installer/windows/installer.nsi
+        Write-Host "Listing installer output..."
+        Get-ChildItem -Recurse -Filter "phgit_installer*.exe" | ForEach-Object { $_.FullName }
+
+    - name: Upload Windows Installer
+      uses: actions/upload-artifact@v4
+      with:
+        name: gitph-windows-installer
+        path: |
+          **/phgit_installer*.exe
 
   # ============================================
   # 2. Build e pacote para Linux (Ubuntu)
