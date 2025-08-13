@@ -129,12 +129,7 @@ jobs:
             -DMAKENSIS_EXECUTABLE="${{ steps.find_makensis.outputs.makensis_path }}" `
             -DNSIS_DIR="${{ steps.find_makensis.outputs.makensis_dir }}"
 
-      - name: Show generated CMake targets (debug)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Write-Host "CMake targets (help):"
-          cmake --build build --target help
+
 
       - name: Build and Package (tries package-windows; fallback to ALL_BUILD or .nsi)
         id: do_build
