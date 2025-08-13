@@ -3,169 +3,309 @@
  *
  * This module implements the high-level logic for the commands supported by
  * the `git_ops` module. It orchestrates calls to the `git_wrapper` to perform
- * sequences of Git operations that constitute a single `gitph` command.
+ * intelligent, multi-step Git operations.
  *
- * For example, the `handle_send` function implements the "SND" command by
- * calling `git_add`, `git_commit`, and `git_push` in sequence, handling errors
- * at each step. This separation of concerns (business logic here, execution
- * logic in the wrapper) makes the code cleaner, easier to test, and more
- * maintainable.
+ * The refactored `handle_send` command is a prime example of this module's
+ * purpose. Instead of naively running `git push origin main`, it dynamically
+ * discovers the current branch's upstream remote and branch, asks for user
+ * confirmation, and only then proceeds. This makes the tool safer and more
+ * adaptable to real-world developer workflows.
+ *
+ * Error handling is made more robust through the `CommandError` enum, which
+ * allows the module to return specific error states to the core, rather than
+ * just generic failure messages.
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
 use crate::git_wrapper; // Import our git wrapper module
 use crate::log_to_core; // Import the logging helper from lib.rs
 use crate::GitphLogLevel;
+use std::io::{self, Write};
 
-type CommandResult = Result<String, String>;
+/// Defines specific, structured errors for command logic.
+#[derive(Debug, PartialEq)] // PartialEq for easier testing
+pub enum CommandError {
+    /// Wraps a generic error from the underlying git command.
+    GitError(String),
+    /// Indicates the user tried to send changes, but the working tree was clean.
+    NoChanges,
+    /// The current branch does not have a configured upstream remote/branch.
+    NoUpstreamConfigured,
+    /// The user did not provide a required commit message.
+    MissingCommitMessage,
+    /// The user aborted the operation at a confirmation prompt.
+    OperationAborted,
+}
 
+// Implement the From trait to easily convert GitResult errors into our CommandError.
+impl From<String> for CommandError {
+    fn from(err: String) -> Self {
+        CommandError::GitError(err)
+    }
+}
+
+/// A specialized Result type for our command functions.
+type CommandResult = Result<String, CommandError>;
+
+/// Handles the 'status' command.
 pub fn handle_status() -> CommandResult {
     log_to_core(GitphLogLevel::Info, "Handling 'status' command.");
 
     match git_wrapper::git_status(None) {
         Ok(output) => {
             if output.is_empty() {
-                println!("Working tree clean. Nothing to commit.");
+                Ok("Working tree clean. Nothing to commit.".to_string())
             } else {
-                println!("Changes to be committed or untracked files:");
-                println!("{}", output);
+                let message = format!(
+                    "Changes to be committed or untracked files:\n{}",
+                    output
+                );
+                Ok(message)
             }
-            Ok("Status command executed successfully.".to_string())
         }
-        Err(e) => {
-            eprintln!("Error getting Git status: {}", e);
-            Err(format!("Failed to get Git status: {}", e))
-        }
+        Err(e) => Err(CommandError::GitError(e)),
     }
 }
 
-pub fn handle_send() -> CommandResult {
+/// Handles the 'SND' command: stages, commits, and pushes changes intelligently.
+///
+/// # Arguments
+/// * `args` - A slice of strings containing command arguments. The commit message
+///   is expected to be constructed from these arguments.
+/// * `skip_confirmation` - A flag to bypass the interactive push confirmation,
+///   primarily used for testing.
+pub fn handle_send(args: &[String], skip_confirmation: bool) -> CommandResult {
     log_to_core(GitphLogLevel::Info, "Handling 'SND' command.");
 
-    println!("Staging all changes...");
-    if let Err(e) = git_wrapper::git_add(None, ".") {
-        let err_msg = format!("Failed to stage files (git add): {}", e);
-        eprintln!("{}", err_msg);
-        return Err(err_msg);
+    // 1. Get commit message from arguments.
+    if args.len() <= 1 {
+        return Err(CommandError::MissingCommitMessage);
     }
-    println!("Files staged successfully.");
+    let commit_message = args[1..].join(" ");
 
-    let commit_message = "Automated commit from gitph";
-    println!("Committing with message: '{}'...", commit_message);
-    if let Err(e) = git_wrapper::git_commit(None, commit_message) {
-        if e.contains("nothing to commit") {
-            println!("Working tree clean. No new commit was created.");
-            return Ok("No changes to send.".to_string());
+    // 2. Stage all changes.
+    log_to_core(GitphLogLevel::Debug, "Staging all changes.");
+    git_wrapper::git_add(None, ".")?;
+    log_to_core(GitphLogLevel::Info, "Files staged successfully.");
+
+    // 3. Commit the changes.
+    log_to_core(
+        GitphLogLevel::Debug,
+        &format!("Committing with message: '{}'", commit_message),
+    );
+    match git_wrapper::git_commit(None, &commit_message) {
+        Ok(_) => log_to_core(GitphLogLevel::Info, "Changes committed successfully."),
+        Err(e) if e.contains("nothing to commit") => {
+            log_to_core(
+                GitphLogLevel::Info,
+                "Working tree clean. No new commit created.",
+            );
+            return Err(CommandError::NoChanges);
         }
-        let err_msg = format!("Failed to commit changes (git commit): {}", e);
-        eprintln!("{}", err_msg);
-        return Err(err_msg);
-    }
-    println!("Changes committed successfully.");
+        Err(e) => return Err(CommandError::GitError(e)),
+    };
 
-    // This part will only be reached if a commit was successful.
-    let remote = "origin";
-    let branch = "main";
-    println!("Pushing to {} {}...", remote, branch);
-    if let Err(e) = git_wrapper::git_push(None, remote, branch) {
-        let err_msg = format!("Failed to push changes (git push): {}", e);
-        eprintln!("{}", err_msg);
-        return Err(err_msg);
-    }
-    println!("Successfully pushed to remote.");
+    // 4. Dynamically determine remote and branch for push.
+    let upstream_str = git_wrapper::git_get_upstream_branch(None).map_err(|_| {
+        log_to_core(
+            GitphLogLevel::Error,
+            "Could not determine upstream branch. Please set it with 'git push -u <remote> <branch>'.",
+        );
+        CommandError::NoUpstreamConfigured
+    })?;
 
-    Ok("SND command completed successfully.".to_string())
+    let (remote, branch) = upstream_str.split_once('/').ok_or_else(|| {
+        CommandError::GitError(format!("Could not parse upstream: '{}'", upstream_str))
+    })?;
+
+    // 5. Ask for user confirmation before pushing.
+    if !skip_confirmation {
+        print!("Push to remote '{}/{}'? (y/N): ", remote, branch);
+        io::stdout().flush().unwrap(); // Ensure the prompt is shown before input
+        let mut confirmation = String::new();
+        io::stdin().read_line(&mut confirmation).unwrap();
+        if confirmation.trim().to_lowercase() != "y" {
+            return Err(CommandError::OperationAborted);
+        }
+    }
+
+    // 6. Push to the dynamically determined remote and branch.
+    log_to_core(
+        GitphLogLevel::Debug,
+        &format!("Pushing to {} {}", remote, branch),
+    );
+    git_wrapper::git_push(None, remote, branch)?;
+    log_to_core(GitphLogLevel::Info, "Successfully pushed to remote.");
+
+    Ok(format!(
+        "Successfully sent changes to {}/{}",
+        remote, branch
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::PathBuf;
     use std::process::Command;
     use tempfile::TempDir;
 
-    /// Helper to create a temporary, fully configured Git repository for testing.
-    fn setup_test_repo() -> TempDir {
-        let tmp_dir = TempDir::new().expect("Failed to create temp dir");
-        let repo_path = tmp_dir.path().to_str().unwrap();
+    /// Represents a test environment with a local and a bare remote repository.
+    struct TestRepo {
+        local_dir: TempDir,
+        remote_path: PathBuf,
+    }
 
+    /// Helper to create a temporary, fully configured Git repository environment.
+    /// It creates a local repository and a bare "remote" repository, and connects them.
+    fn setup_test_repo_with_remote() -> TestRepo {
+        // 1. Create a directory for the bare remote repo.
+        let remote_dir = TempDir::new().expect("Failed to create remote temp dir");
+        let remote_path = remote_dir.path().to_path_buf();
         assert!(Command::new("git")
-            .args(["init", repo_path])
+            .args(["init", "--bare"])
+            .current_dir(&remote_path)
             .status()
-            .expect("Failed to init test repo")
+            .expect("Failed to init bare repo")
             .success());
 
-        // Configure user name and email to allow commits within the test repo
+        // 2. Create the local repository.
+        let local_dir = TempDir::new().expect("Failed to create local temp dir");
+        let local_path_str = local_dir.path().to_str().unwrap();
+
+        // 3. Init and configure the local repo.
         assert!(Command::new("git")
-            .args(["-C", repo_path, "config", "user.name", "Test User"])
-            .status().unwrap().success());
+            .args(["init", "-b", "main"]) // Use -b to set default branch name
+            .current_dir(local_dir.path())
+            .status()
+            .expect("Failed to init local repo")
+            .success());
         assert!(Command::new("git")
-            .args(["-C", repo_path, "config", "user.email", "test@example.com"])
-            .status().unwrap().success());
+            .args(["config", "user.name", "Test User"])
+            .current_dir(local_dir.path())
+            .status()
+            .unwrap()
+            .success());
+        assert!(Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(local_dir.path())
+            .status()
+            .unwrap()
+            .success());
 
-        tmp_dir
-    }
+        // 4. Add the bare repo as a remote named "origin".
+        assert!(Command::new("git")
+            .args(["remote", "add", "origin", remote_path.to_str().unwrap()])
+            .current_dir(local_dir.path())
+            .status()
+            .unwrap()
+            .success());
 
-    /// A version of the `handle_send` command specifically for testing.
-    /// It runs the add and commit logic but skips the `push` to avoid network dependency.
-    fn handle_send_in_dir(repo_path: &str) -> CommandResult {
-        // Step 1: Add
-        git_wrapper::git_add(Some(repo_path), ".")?;
-
-        // Step 2: Commit
-        let commit_result = git_wrapper::git_commit(Some(repo_path), "Automated commit from gitph");
-        if let Err(e) = commit_result {
-            if e.contains("nothing to commit") {
-                return Ok("No changes to send.".to_string());
-            }
-            return Err(e); // Propagate other commit errors
+        TestRepo {
+            local_dir,
+            remote_path,
         }
-
-        // We skip the push part for this unit test.
-        Ok("SND (add/commit) command completed successfully.".to_string())
     }
 
     #[test]
-    fn test_handle_status_on_clean_repo() {
-        let tmp_dir = setup_test_repo();
-        let repo_path = tmp_dir.path().to_str().unwrap();
+    fn test_handle_send_happy_path() {
+        // Arrange: Set up a repo with a remote and an initial commit that tracks it.
+        let repo = setup_test_repo_with_remote();
+        let local_path = repo.local_dir.path();
+        let local_path_str = local_path.to_str().unwrap();
 
-        // Act: Run the status wrapper pointing to our clean test repo.
-        let output = git_wrapper::git_status(Some(repo_path)).unwrap();
+        // Create and push an initial commit to set upstream tracking.
+        fs::write(local_path.join("initial.txt"), "base").unwrap();
+        git_wrapper::git_add(Some(local_path_str), ".").unwrap();
+        git_wrapper::git_commit(Some(local_path_str), "Initial commit").unwrap();
+        assert!(Command::new("git")
+            .args(["push", "-u", "origin", "main"])
+            .current_dir(local_path)
+            .status()
+            .unwrap()
+            .success());
 
-        // Assert: A clean repo should have an empty porcelain status.
-        assert!(output.is_empty());
-    }
+        // Make a new change to be sent by our function.
+        fs::write(local_path.join("new_file.txt"), "hello").unwrap();
 
-    #[test]
-    fn test_handle_send_with_changes() {
-        // Arrange: Set up a repo and create a new file with content.
-        let tmp_dir = setup_test_repo();
-        let repo_path = tmp_dir.path().to_str().unwrap();
-        fs::write(tmp_dir.path().join("new_file.txt"), "hello").expect("Failed to write test file");
-
-        // Act: Run our test-specific send function.
-        let result = handle_send_in_dir(repo_path);
+        // Act: Run handle_send with a commit message and skip confirmation.
+        let args = vec!["SND".to_string(), "feat: Add new file".to_string()];
+        let result = handle_send(&args, true); // `true` to skip interactive prompt
 
         // Assert: The command should succeed.
         assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "Successfully sent changes to origin/main"
+        );
 
-        // Further assert that a commit was actually created by checking the log.
-        let log_output = git_wrapper::execute_git_command(Some(repo_path), &["log", "-1", "--oneline"], None).unwrap();
-        assert!(log_output.contains("Automated commit from gitph"));
+        // Further assert that the commit exists on the remote.
+        let log_output = git_wrapper::execute_git_command(
+            Some(repo.remote_path.to_str().unwrap()),
+            &["log", "-1", "--oneline"],
+            None,
+        )
+            .unwrap();
+        assert!(log_output.contains("feat: Add new file"));
     }
 
     #[test]
-    fn test_handle_send_with_no_changes() {
-        // Arrange: Set up a clean repo.
-        let tmp_dir = setup_test_repo();
-        let repo_path = tmp_dir.path().to_str().unwrap();
+    fn test_handle_send_no_changes() {
+        // Arrange: Set up a clean repo that is already tracking a remote.
+        let repo = setup_test_repo_with_remote();
+        let local_path_str = repo.local_dir.path().to_str().unwrap();
+        // Change current directory for the duration of the test.
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(repo.local_dir.path()).unwrap();
 
-        // Act: Run the send function in the clean directory.
-        let result = handle_send_in_dir(repo_path);
+        // Act: Run the send function with no changes in the working directory.
+        let args = vec!["SND".to_string(), "some message".to_string()];
+        let result = handle_send(&args, true);
 
-        // Assert: The result should be Ok and contain the specific message.
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "No changes to send.");
+        // Assert: The result should be the specific NoChanges error.
+        assert_eq!(result, Err(CommandError::NoChanges));
+
+        // Cleanup
+        std::env::set_current_dir(original_dir).unwrap();
+    }
+
+    #[test]
+    fn test_handle_send_no_upstream_configured() {
+        // Arrange: Set up a repo, but DO NOT connect it to a remote.
+        let local_dir = TempDir::new().unwrap();
+        let local_path_str = local_dir.path().to_str().unwrap();
+        Command::new("git").args(["init"]).current_dir(local_dir.path()).status().unwrap();
+        Command::new("git").args(["config", "user.name", "Test"]).current_dir(local_dir.path()).status().unwrap();
+        Command::new("git").args(["config", "user.email", "a@b.c"]).current_dir(local_dir.path()).status().unwrap();
+        fs::write(local_dir.path().join("file.txt"), "content").unwrap();
+        git_wrapper::git_add(Some(local_path_str), ".").unwrap();
+        git_wrapper::git_commit(Some(local_path_str), "A commit").unwrap();
+
+        // Change current directory for the duration of the test.
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(local_dir.path()).unwrap();
+
+        // Act: Try to send changes.
+        let args = vec!["SND".to_string(), "some message".to_string()];
+        let result = handle_send(&args, true);
+
+        // Assert: It should fail because no upstream is configured.
+        assert_eq!(result, Err(CommandError::NoUpstreamConfigured));
+
+        // Cleanup
+        std::env::set_current_dir(original_dir).unwrap();
+    }
+
+    #[test]
+    fn test_handle_send_missing_commit_message() {
+        // Arrange: Only the command name is provided.
+        let args = vec!["SND".to_string()];
+
+        // Act
+        let result = handle_send(&args, true);
+
+        // Assert
+        assert_eq!(result, Err(CommandError::MissingCommitMessage));
     }
 }

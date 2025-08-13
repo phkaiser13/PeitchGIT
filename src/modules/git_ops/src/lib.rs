@@ -8,14 +8,14 @@
  *
  * Key responsibilities:
  * - Defining C-compatible data structures (`#[repr(C)]`).
- * - Implementing the five required module functions (`module_get_info`,
- *   `module_init`, `module_exec`, `module_cleanup`) with C calling conventions.
+ * - Implementing the required module functions (`module_get_info`, `module_init`,
+ *   `module_exec`, `module_cleanup`) with C calling conventions.
  * - Safely handling data transfer between the C core and Rust (e.g.,
  *   converting C strings to Rust strings).
  * - Dispatching commands received from the core to the appropriate Rust
  *   functions within the `commands` submodule.
- * - Managing a global state, such as the context received from the core,
- *   in a thread-safe manner using a Mutex.
+ * - Translating the specific Rust `CommandError` enum into the generic
+ *   C-compatible `GitphStatus` enum for the core.
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
@@ -24,7 +24,7 @@ use libc::{c_char, c_int};
 use std::ffi::{CStr, CString};
 use std::sync::Mutex;
 
-// Declare the other modules in our crate. We will create these files next.
+// Declare the other modules in our crate.
 mod commands;
 mod git_wrapper;
 
@@ -42,6 +42,7 @@ pub enum GitphStatus {
 }
 
 #[repr(C)]
+#[derive(Debug)] // Add Debug for easier logging
 pub enum GitphLogLevel {
     Debug,
     Info,
@@ -53,25 +54,19 @@ pub enum GitphLogLevel {
 // A function pointer type for the logger callback from the C core.
 type LogFn = extern "C" fn(GitphLogLevel, *const c_char, *const c_char);
 
-// FIX 1: Replace raw data pointers `*const ()` with proper optional function pointers.
-// REASON: `Option<extern "C" fn()>` is Send + Sync, unlike `*const ()`. This makes
-// the entire GitphCoreContext struct Send + Sync, resolving the lazy_static! error.
 #[repr(C)]
 pub struct GitphCoreContext {
     log: Option<LogFn>,
-    // Add other context functions here as they are defined in the C API.
-    _get_config_value: Option<extern "C" fn()>, // Placeholder for future use
-    _print_ui: Option<extern "C" fn()>,         // Placeholder for future use
+    _get_config_value: Option<extern "C" fn()>,
+    _print_ui: Option<extern "C" fn()>,
 }
 
 // Make the context globally and safely accessible within the Rust module.
-// This now works because GitphCoreContext is Send.
 lazy_static::lazy_static! {
     static ref CORE_CONTEXT: Mutex<Option<GitphCoreContext>> = Mutex::new(None);
 }
 
 // Helper function to log messages back to the C core.
-// This abstracts away the FFI complexity for the rest of the Rust code.
 fn log_to_core(level: GitphLogLevel, message: &str) {
     if let Ok(guard) = CORE_CONTEXT.lock() {
         if let Some(context) = &*guard {
@@ -94,45 +89,32 @@ pub struct GitphModuleInfo {
     commands: *const *const c_char,
 }
 
-// FIX 2: Create a wrapper struct for GitphModuleInfo.
-// REASON: GitphModuleInfo contains raw pointers, so it is not `Sync`. By wrapping it
-// and implementing `unsafe impl Sync`, we are telling the compiler that we guarantee
-// it's safe to be shared across threads. This is true because the pointers inside
-// will only ever point to other 'static read-only data.
+// A wrapper to safely mark GitphModuleInfo as Sync.
 struct SafeModuleInfo(GitphModuleInfo);
 unsafe impl Sync for SafeModuleInfo {}
 
 // Define the static data for our module's information.
-// `b"...\0"` creates null-terminated C-compatible byte strings with a 'static lifetime.
 static MODULE_NAME: &[u8] = b"git_ops\0";
-static MODULE_VERSION: &[u8] = b"1.0.0\0";
-static MODULE_DESC: &[u8] = b"Provides fundamental Git commands like add, commit, push.\0";
+static MODULE_VERSION: &[u8] = b"0.2.0\0"; // Updated version
+static MODULE_DESC: &[u8] =
+    b"Provides intelligent, workflow-aware Git commands like add, commit, push.\0";
 
-// Criamos um array estático de ponteiros para os nossos comandos.
-// Este array em si terá um tempo de vida 'static.
 const SUPPORTED_COMMANDS_PTRS: &[*const c_char] = &[
     b"SND\0".as_ptr() as *const c_char,
-    b"rls\0".as_ptr() as *const c_char,
-    b"psor\0".as_ptr() as *const c_char,
-    b"cnb\0".as_ptr() as *const c_char,
-    b"cb\0".as_ptr() as *const c_char,
     b"status\0".as_ptr() as *const c_char,
-    std::ptr::null(), // Terminador nulo para o array, conforme o padrão C.
+    // Add other future commands here
+    std::ptr::null(), // Null terminator for the C array
 ];
 
-// Agora, podemos criar com segurança o MODULE_INFO estático dentro do nosso wrapper `Sync`.
-// O campo `commands` agora aponta para o nosso array de ponteiros estático.
 static MODULE_INFO: SafeModuleInfo = SafeModuleInfo(GitphModuleInfo {
     name: MODULE_NAME.as_ptr() as *const c_char,
     version: MODULE_VERSION.as_ptr() as *const c_char,
     description: MODULE_DESC.as_ptr() as *const c_char,
-    // O ponteiro para o array de ponteiros é seguro para ser compartilhado.
     commands: SUPPORTED_COMMANDS_PTRS.as_ptr(),
 });
 
 #[no_mangle]
 pub extern "C" fn module_get_info() -> *const GitphModuleInfo {
-    // Return a pointer to the actual GitphModuleInfo struct inside our wrapper.
     &MODULE_INFO.0
 }
 
@@ -141,17 +123,15 @@ pub extern "C" fn module_init(context: *const GitphCoreContext) -> GitphStatus {
     if context.is_null() {
         return GitphStatus::ErrorInitFailed;
     }
-    // Safely store the received context in our global static variable.
     if let Ok(mut guard) = CORE_CONTEXT.lock() {
-        // We create a copy of the context data.
-        // This is safe because the lifetime of `context` is guaranteed by the C core
-        // to be valid during this call.
         *guard = Some(unsafe { std::ptr::read(context) });
     } else {
-        // This would happen if the mutex is "poisoned" (a thread panicked while holding the lock).
         return GitphStatus::ErrorInitFailed;
     }
-    log_to_core(GitphLogLevel::Info, "git_ops module initialized successfully.");
+    log_to_core(
+        GitphLogLevel::Info,
+        "git_ops module initialized successfully.",
+    );
     GitphStatus::Success
 }
 
@@ -166,30 +146,72 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphS
         .collect();
 
     if args.is_empty() {
-        log_to_core(GitphLogLevel::Error, "Execution called with no arguments.");
+        log_to_core(
+            GitphLogLevel::Error,
+            "Execution called with no arguments.",
+        );
         return GitphStatus::ErrorInvalidArgs;
     }
 
     // Dispatch to the correct command handler based on the first argument.
     let command = args[0].as_str();
-    log_to_core(GitphLogLevel::Debug, &format!("Executing command: {}", command));
+    log_to_core(
+        GitphLogLevel::Debug,
+        &format!("Executing command: {}", command),
+    );
 
+    // The result is now a specific CommandResult from our commands module.
     let result = match command {
-        "SND" => commands::handle_send(),
+        // Pass the arguments to handle_send. `false` means we want user confirmation.
+        "SND" => commands::handle_send(&args, false),
         "status" => commands::handle_status(),
-        // Add other command handlers here...
         _ => {
-            log_to_core(GitphLogLevel::Error, &format!("Unknown command '{}' for git_ops module.", command));
-            Err("Unknown command".to_string())
+            let err_msg = format!("Unknown command '{}' for git_ops module.", command);
+            log_to_core(GitphLogLevel::Error, &err_msg);
+            // Use the GitError variant for unknown commands.
+            Err(commands::CommandError::GitError(err_msg))
         }
     };
 
+    // Translate the specific CommandError into a generic GitphStatus for the C core.
     match result {
-        Ok(_) => GitphStatus::Success,
-        Err(e) => {
-            log_to_core(GitphLogLevel::Error, &format!("Command failed: {}", e));
-            GitphStatus::ErrorExecFailed
+        Ok(success_message) => {
+            // Log the success message from the command handler.
+            log_to_core(GitphLogLevel::Info, &success_message);
+            println!("{}", success_message); // Also print to user stdout
+            GitphStatus::Success
         }
+        Err(e) => match e {
+            commands::CommandError::GitError(msg) => {
+                log_to_core(GitphLogLevel::Error, &format!("Execution failed: {}", msg));
+                GitphStatus::ErrorExecFailed
+            }
+            commands::CommandError::MissingCommitMessage => {
+                let msg = "Missing commit message for 'SND' command. Usage: gitph SND <message>";
+                log_to_core(GitphLogLevel::Error, msg);
+                println!("{}", msg);
+                GitphStatus::ErrorInvalidArgs
+            }
+            commands::CommandError::NoUpstreamConfigured => {
+                let msg = "Current branch has no upstream configured. Cannot push.";
+                log_to_core(GitphLogLevel::Error, msg);
+                println!("{}", msg);
+                GitphStatus::ErrorExecFailed
+            }
+            // These are not "errors" in the sense of failure, but successful "no-op" states.
+            commands::CommandError::NoChanges => {
+                let msg = "Working tree clean. No changes to send.";
+                log_to_core(GitphLogLevel::Info, msg);
+                println!("{}", msg);
+                GitphStatus::Success
+            }
+            commands::CommandError::OperationAborted => {
+                let msg = "Operation aborted by user.";
+                log_to_core(GitphLogLevel::Info, msg);
+                println!("{}", msg);
+                GitphStatus::Success
+            }
+        },
     }
 }
 
