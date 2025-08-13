@@ -1,22 +1,24 @@
-; installer.nsi - Instalador NSIS funcional sem depender de EnvVarUpdate.nsh
+; Copyright (C) 2025 Pedro Henrique / phkaiser13
+; File: installer.nsi
+; This script builds the Windows installer for phgit using the NSIS toolkit.
+; It defines the installer's appearance, pages, and file installation logic.
+; Its primary role is to unpack the application files and execute the C++
+; installer_helper, which handles the complex task of managing dependencies
+; like Git, Terraform, and Vault.
+;
 ; SPDX-License-Identifier: Apache-2.0
 
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
+!include "EnvVarUpdate.nsh"
 
-!ifndef VERSION
-  !define VERSION 0.0.0-dev
-!endif
-
-; Constants
-!define WM_SETTINGCHANGE 0x001A
-
+; --- Basic Installer Information ---
 Name "phgit"
-OutFile "phgit_installer_${VERSION}.exe"
-InstallDir "$LOCALAPPDATA\phgit"
-RequestExecutionLevel user
+OutFile "phgit_installer_v1.0.0.exe" ; It's good practice to have a version here
+InstallDir "$LOCALAPPDATA/phgit"
+RequestExecutionLevel user ; No admin rights needed for user-local installation
 
-; Modern UI pages
+; --- Modern UI Pages Configuration ---
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
@@ -27,158 +29,64 @@ RequestExecutionLevel user
 
 !insertmacro MUI_LANGUAGE "PortugueseBR"
 
-; -----------------------
-; Section: Core Application
-; -----------------------
+; --- Section 1: Core Application Files ---
+; This section installs the main application executable and the dependency helper.
 Section "phgit Core" SecCore
+    SectionIn RO ; Read-only section, always installed.
     SetOutPath $INSTDIR
+
+    ; DetailPrint messages are shown to the user during installation.
     DetailPrint "Installing phgit application files..."
-
-    ; Ajuste esses caminhos conforme seu build output no momento da compilação do instalador
-    File /r "..\..\build\bin\phgit.exe"
-    File "..\..\build\bin\installer_helper.exe"
-
-    ; Escreve o uninstaller
+    
+    ; NOTE: The path should point to where your build system (e.g., CMake)
+    ; outputs the final binaries. We assume a 'build/bin' directory.
+    File /r "..\..\build\bin\phgit.exe" ; Main application executable
+    File "..\..\build\bin\installer_helper.exe" ; Our C++ dependency helper
+    
+    ; Create the uninstaller.
     WriteUninstaller "$INSTDIR\uninstall.exe"
 SectionEnd
 
-; -----------------------
-; Section: Add to PATH
-; -----------------------
+; --- Section 2: Add to User's PATH ---
+; This makes 'phgit' command available in cmd and PowerShell.
 Section "Add to PATH" SecPath
     SetOutPath $INSTDIR
-    DetailPrint "Adicionando phgit ao PATH do usuário..."
-
-    ; Chama a função que faz o append (não deduplica para simplicidade robusta)
-    Push $INSTDIR
-    Call AddToUserPath
+    DetailPrint "Adding phgit to user's PATH environment variable..."
+    ${EnvVarUpdate} $0 "PATH" "A" "HKCU" "$INSTDIR" ; "A"ppend to the user's (HKCU) PATH
 SectionEnd
 
-; -----------------------
-; .onInstSuccess: executa helper de dependências
-; -----------------------
+; --- Post-Installation: Run Dependency Helper ---
+; This function is automatically called by MUI after the file sections are complete.
 Function .onInstSuccess
-    DetailPrint "Verificando dependências (Git, Terraform, Vault)..."
-    DetailPrint "O helper fará download/instalação adicional se necessário."
+    DetailPrint "Verifying required dependencies (Git, Terraform, Vault)..."
+    DetailPrint "This may take a few minutes and will download missing software."
 
-    ; Executa o helper e mostra o código de saída
+    ; Execute our C++ helper and wait for it to complete.
+    ; The helper will show its own progress bar in the console window.
+    ; The exit code of the helper is pushed to the stack ($0).
     ExecWait '"$INSTDIR\installer_helper.exe"' $0
 
+    ; Check the exit code. 0 means success. Any other value indicates an error.
     ${If} $0 != 0
-        MessageBox MB_OK|MB_ICONEXCLAMATION "O instalador de dependências retornou erro (código $0). phgit pode não funcionar corretamente."
+        MessageBox MB_OK|MB_ICONEXCLAMATION "The dependency installer reported an error (exit code $0). phgit might not function correctly. Please review the installation log shown in the window above."
     ${Else}
-        MessageBox MB_OK|MB_ICONINFORMATION "phgit e dependências instaladas com sucesso!"
+        MessageBox MB_OK|MB_ICONINFORMATION "phgit and all its dependencies have been installed successfully!"
     ${EndIf}
 FunctionEnd
 
-; -----------------------
-; Uninstall section
-; -----------------------
+; --- Uninstaller Section ---
 Section "Uninstall"
-    DetailPrint "Removendo phgit do PATH do usuário..."
-    Push $INSTDIR
-    Call RemoveFromUserPath
+    DetailPrint "Removing phgit from user's PATH..."
+    ${EnvVarUpdate} $0 "PATH" "R" "HKCU" "$INSTDIR" ; "R"emove from the user's PATH
 
-    DetailPrint "Removendo arquivos do aplicativo..."
+    DetailPrint "Deleting application files..."
     Delete "$INSTDIR\phgit.exe"
     Delete "$INSTDIR\installer_helper.exe"
+    ; If phgit creates other files/folders, add them here.
+    ; RMDir /r "$INSTDIR\some_other_folder"
+    
     Delete "$INSTDIR\uninstall.exe"
     RMDir "$INSTDIR"
-
-    DetailPrint "phgit desinstalado com sucesso."
+    
+    DetailPrint "phgit has been successfully uninstalled."
 SectionEnd
-
-; -----------------------
-; Função: AddToUserPath
-;   Recebe na pilha: caminho a adicionar (ex.: $INSTDIR)
-; -----------------------
-Function AddToUserPath
-    Exch $R0        ; $R0 = caminho a adicionar
-    Push $R1
-    Push $R2
-
-    ; Lê PATH do HKCU
-    ReadRegExpandStr $R1 HKCU "Environment" "Path"
-    StrCmp $R1 "" +3
-      StrCpy $R1 "$R1;$R0"
-      Goto .write
-    StrCpy $R1 "$R0"
-  .write:
-    WriteRegExpandStr HKCU "Environment" "Path" "$R1"
-
-    ; Notifica o sistema para atualizar variáveis de ambiente
-    System::Call 'user32::SendMessageTimeout(i -1, i ${WM_SETTINGCHANGE}, i 0, t "Environment", i 0x0002, i 1000, *i .r2)'
-
-    Pop $R2
-    Pop $R1
-    Exch $R0
-FunctionEnd
-
-; -----------------------
-; Função: RemoveFromUserPath
-;   Recebe na pilha: caminho a remover (ex.: $INSTDIR)
-;   Remove todas as ocorrências exatas do entry (não faz matching avançado)
-; -----------------------
-Function RemoveFromUserPath
-    Exch $R0        ; $R0 = caminho a remover
-    Push $R1
-    Push $R2
-    Push $R3
-    Push $R4
-    Push $R5
-    Push $R6
-
-    ReadRegExpandStr $R1 HKCU "Environment" "Path"
-    StrCmp $R1 "" .done
-
-    StrCpy $R2 ""    ; $R2 será o novo PATH reconstruído (sem entradas removidas)
-
-  loop_start:
-    StrLen $R3 $R1
-    IntCmp $R3 0 loop_done 0 0
-
-    ; encontrar próximo token (até ;)
-    StrCpy $R4 ""      ; token temporário
-    StrCpy $R5 0       ; índice
-  find_char:
-    IntCmp $R5 $R3 no_semi
-    StrCpy $R6 $R1 1 $R5
-    StrCmp $R6 ";" found_semi
-    StrCpy $R4 "$R4$R6"
-    IntOp $R5 $R5 + 1
-    Goto find_char
-
-  found_semi:
-    IntOp $R6 $R5 + 1
-    StrCpy $R1 $R1 -1 $R6
-    Goto process_token
-
-  no_semi:
-    StrCpy $R4 $R1
-    StrCpy $R1 ""
-  process_token:
-    StrCmp $R4 "$R0" skip_add
-    StrCmp $R4 "$R0\" skip_add
-    StrCmp $R2 "" add_first add_more
-  add_first:
-    StrCpy $R2 "$R4"
-    Goto loop_start
-  add_more:
-    StrCpy $R2 "$R2;$R4"
-    Goto loop_start
-  skip_add:
-    Goto loop_start
-
-  loop_done:
-    WriteRegExpandStr HKCU "Environment" "Path" "$R2"
-    System::Call 'user32::SendMessageTimeout(i -1, i ${WM_SETTINGCHANGE}, i 0, t "Environment", i 0x0002, i 1000, *i .r2)'
-
-  .done:
-    Pop $R6
-    Pop $R5
-    Pop $R4
-    Pop $R3
-    Pop $R2
-    Pop $R1
-    Exch $R0
-FunctionEnd
