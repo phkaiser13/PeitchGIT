@@ -95,7 +95,7 @@ unsafe impl Sync for SafeModuleInfo {}
 
 // Define the static data for our module's information.
 static MODULE_NAME: &[u8] = b"git_ops\0";
-static MODULE_VERSION: &[u8] = b"0.2.0\0"; // Updated version
+static MODULE_VERSION: &[u8] = b"0.2.0\0";
 static MODULE_DESC: &[u8] =
     b"Provides intelligent, workflow-aware Git commands like add, commit, push.\0";
 
@@ -161,10 +161,11 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphS
     );
 
     // The result is now a specific CommandResult from our commands module.
+    // We pass `None` for the repo_path, so commands operate on the current working directory.
     let result = match command {
-        // Pass the arguments to handle_send. `false` means we want user confirmation.
-        "SND" => commands::handle_send(&args, false),
-        "status" => commands::handle_status(),
+        // `false` means we want user confirmation for the push.
+        "SND" => commands::handle_send(None, &args, false),
+        "status" => commands::handle_status(None),
         _ => {
             let err_msg = format!("Unknown command '{}' for git_ops module.", command);
             log_to_core(GitphLogLevel::Error, &err_msg);
@@ -184,6 +185,7 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphS
         Err(e) => match e {
             commands::CommandError::GitError(msg) => {
                 log_to_core(GitphLogLevel::Error, &format!("Execution failed: {}", msg));
+                println!("Error: {}", msg); // Print error to user stderr
                 GitphStatus::ErrorExecFailed
             }
             commands::CommandError::MissingCommitMessage => {
@@ -193,7 +195,7 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphS
                 GitphStatus::ErrorInvalidArgs
             }
             commands::CommandError::NoUpstreamConfigured => {
-                let msg = "Current branch has no upstream configured. Cannot push.";
+                let msg = "Current branch has no upstream configured. Cannot push.\nHint: Use 'git push -u <remote> <branch>' to set the upstream.";
                 log_to_core(GitphLogLevel::Error, msg);
                 println!("{}", msg);
                 GitphStatus::ErrorExecFailed

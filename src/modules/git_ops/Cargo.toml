@@ -36,5 +36,5 @@ lazy_static = "1.4.0"
 
 [dev-dependencies]
 # `tempfile` is used for creating temporary directories in our integration
-# tests, providing a clean environment for each test run.
+# tests, providing a clean and thread-safe environment for each test run.
 tempfile = "3.8"

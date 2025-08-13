@@ -1,24 +1,24 @@
 /* Copyright (C) 2025 Pedro Henrique / phkaiser13
- * git_wrapper.rs - A safe, reusable wrapper for executing Git commands.
- *
- * This module provides a clean and safe interface for interacting with the
- * system's `git` command-line tool. It abstracts the complexities of the
- * `std::process::Command` API, providing dedicated functions for common Git
- * operations and queries.
- *
- * Key design principles:
- * - Centralization: All direct interactions with the `git` executable happen
- *   here. This makes it easy to update command arguments or change execution
- *   logic in one place.
- * - Error Handling: Functions return a `Result<String, String>`, an idiomatic
- *   Rust way to handle operations that can fail. An `Ok(String)` contains the
- *   successful output (stdout), while an `Err(String)` contains the error
- *   message (stderr).
- * - Reusability: Provides simple, reusable functions like `git_status()` or
- *   `git_get_current_branch()` that can be composed into more complex workflows
- *   in the `commands.rs` module.
- *
- * SPDX-License-Identifier: Apache-2.0 */
+* git_wrapper.rs - A safe, reusable wrapper for executing Git commands.
+*
+* This module provides a clean and safe interface for interacting with the
+* system's `git` command-line tool. It abstracts the complexities of the
+* `std::process::Command` API, providing dedicated functions for common Git
+* operations and queries.
+*
+* Key design principles:
+* - Centralization: All direct interactions with the `git` executable happen
+*   here. This makes it easy to update command arguments or change execution
+*   logic in one place.
+* - Error Handling: Functions return a `Result<String, String>`, an idiomatic
+*   Rust way to handle operations that can fail. An `Ok(String)` contains the
+*   successful output (stdout), while an `Err(String)` contains the error
+*   message (stderr).
+* - Reusability: Provides simple, reusable functions like `git_status()` or
+*   `git_get_current_branch()` that can be composed into more complex workflows
+*   in the `commands.rs` module.
+*
+* SPDX-License-Identifier: Apache-2.0 */
 
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -42,17 +42,18 @@ pub fn execute_git_command(
     args: &[&str],
     stdin_data: Option<&str>,
 ) -> GitResult {
-    let mut command_log = "Executing: git".to_string();
     let mut command = Command::new("git");
 
+    // If a repo_path is provided, use the `-C` flag to run the command in that directory.
+    // This is crucial for making our code testable and safe from race conditions.
     if let Some(path) = repo_path {
-        command.arg("-C").arg(path);
-        command_log.push_str(&format!(" -C {}", path));
+        command.current_dir(path);
     }
-    command_log.push_str(&format!(" {}", args.join(" ")));
 
+    let command_log = format!("Executing: git {}", args.join(" "));
     // Log the command execution at the debug level.
     super::log_to_core(super::GitphLogLevel::Debug, &command_log);
+
     command.args(args);
 
     if stdin_data.is_some() {
@@ -123,6 +124,7 @@ pub fn git_commit(repo_path: Option<&str>, message: &str) -> GitResult {
 pub fn git_push(repo_path: Option<&str>, remote: &str, branch: &str) -> GitResult {
     execute_git_command(repo_path, &["push", remote, branch], None)
 }
+
 /// Gets the configured upstream for the current branch (e.g., "origin/main").
 /// Fails if no upstream is configured.
 pub fn git_get_upstream_branch(repo_path: Option<&str>) -> GitResult {
