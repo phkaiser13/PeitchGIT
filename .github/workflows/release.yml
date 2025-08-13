@@ -1,20 +1,4 @@
-# .github/workflows/release-windows.yml
-#
-# Copyright (C) 2025 Pedro Henrique / phkaiser13
-# SPDX-License-Identifier: Apache-2.0
-#
-# Este fluxo de trabalho automatiza a criação de um release para Windows.
-# Ele é ativado em cada push, mas com uma lógica especial para tags:
-#
-# 1. EM QUALQUER PUSH/PULL REQUEST:
-#    - Compila o projeto e executa os testes.
-#    - Gera o instalador .exe usando NSIS.
-#    - Anexa o instalador como um artefato de compilação para depuração e testes.
-#
-# 2. QUANDO UMA TAG É ENVIADA (ex: v1.0.0, v1.2.3):
-#    - Além dos passos acima, ele cria um Release no GitHub.
-#    - Anexa o instalador .exe gerado como o principal ativo para download no Release.
-#
+
 
 name: Release do Instalador (Windows)
 
@@ -22,7 +6,7 @@ on:
   push:
     branches: [ "main" ]
     tags:
-      - 'v*' # Ativado em tags como v1.0, v1.2.3, etc.
+      - 'v*'
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
@@ -32,39 +16,36 @@ jobs:
     name: Compilar e Empacotar para Windows
     runs-on: windows-latest
     env:
-      # Variáveis de ambiente para o vcpkg e o processo de compilação.
-      VCPKG_ROOT: ${{ github.workspace }}\\vcpkg
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
       VCPKG_DEFAULT_TRIPLET: x64-windows
 
     steps:
-      # Passo 1: Obter o código-fonte do repositório
       - name: Checkout do repositório
         uses: actions/checkout@v4
 
-      # Passo 2: Instalar o CMake
       - name: Instalar o CMake
         uses: jwlawson/actions-setup-cmake@v1
         with:
           cmake-version: '3.29.3'
 
-      # Passo 3: Instalar as bibliotecas C++ via vcpkg.
-      # Este passo é fundamental para as dependências do core em C.
       - name: Instalar dependências com vcpkg
         run: |
           git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
           cd $env:VCPKG_ROOT
-          .\\bootstrap-vcpkg.bat
-          .\\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
+          .\bootstrap-vcpkg.bat
+          .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
         shell: pwsh
 
-      # Passo 4: Configurar o ambiente Rust
       - name: Setup da toolchain Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
 
-      # Passo 5: Configurar o projeto com CMake.
-      # Aponta para a toolchain do vcpkg para encontrar as dependências corretamente.
+      # --- PASSO ADICIONADO ---
+      # Instala o NSIS para que o alvo 'package-windows' do CMake possa ser gerado.
+      - name: Setup NSIS
+        uses: crazy-max/ghaction-setup-nsis@v3
+
       - name: Configure CMake (MSVC, Visual Studio generator)
         run: |
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
@@ -77,36 +58,27 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release
         shell: pwsh
 
-      # Passo 6: Compilar o projeto inteiro (executável e todos os módulos).
       - name: Compilar o projeto (Build)
         run: cmake --build build --config Release --parallel
         shell: pwsh
 
-      # Passo 7: Empacotar o instalador.
-      # Este passo executa o alvo "package-windows" definido no seu CMakeLists.txt,
-      # que por sua vez invoca o NSIS para criar o instalador .exe.
+      # Este passo agora vai funcionar porque o NSIS foi encontrado pelo CMake.
       - name: Gerar o Instalador Windows (Package)
         run: cmake --build build --config Release --target package-windows
         shell: pwsh
 
-      # Passo 8: Anexar o instalador como artefato de CI (para pushes e PRs normais).
-      # Isso permite baixar o instalador de qualquer execução do workflow para testes.
       - name: Anexar Artefato do Instalador (CI)
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
           name: phgit-installer-windows-ci
-          path: build/phgit_installer_*.exe # O padrão de nome definido no seu script NSIS
+          path: build/phgit_installer_*.exe
           retention-days: 5
 
-      # Passo 9: Criar o Release e anexar o instalador (APENAS PARA TAGS).
-      # Este é o passo final que publica o instalador para os usuários.
       - name: Criar Release no GitHub
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          # Anexa todos os arquivos .exe gerados na pasta de compilação ao release.
-          # Isso incluirá o seu "phgit_installer_vX.X.X.exe".
           files: build/phgit_installer_*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
