@@ -9,7 +9,7 @@
 * SPDX-License-Identifier: Apache-2.0
 */
 
-#include "platform/platform_detector.h"
+#include "platform/platform_detector.hpp"
 #include "spdlog/spdlog.h"
 
 #include <stdexcept>
