@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "platform/platform_detector.h" // Needs PlatformInfo for context
+#include "platform/platform_detector.hpp" // Needs PlatformInfo for context
 #include <string>
 #include <vector>
 #include <optional>
