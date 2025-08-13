@@ -17,34 +17,41 @@
  * - Reusability: Provides simple, reusable functions like `git_status()` or
  *   `git_add()` that can be composed into more complex workflows in the
  *   `commands.rs` module.
+ * - Path Explicit: Functions require the repository path to be passed explicitly,
+ *   avoiding reliance on the process's current working directory. This makes
+ *   them safe for concurrent execution.
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
+use std::io::Write;
+use std::path::Path;
 use std::process::{Command, Stdio};
-use std::io::{Write};
 
 /// A type alias for the result of a Git command execution.
 /// On success, returns stdout. On failure, returns stderr.
 pub type GitResult = Result<String, String>;
 
-/// Executes a raw `git` command with the given arguments.
+/// Executes a raw `git` command with the given arguments in a specific directory.
 /// This is the core function that all other wrapper functions will use.
 ///
 /// # Arguments
+/// * `repo_path` - The path to the directory where the command should be executed.
 /// * `args` - A slice of strings representing the arguments to pass to `git`.
-///            For example: `&["status", "--porcelain"]`.
 /// * `stdin_data` - Optional data to be piped to the command's standard input.
 ///
 /// # Returns
 /// A `GitResult` containing either the standard output or standard error.
-
-
-///FIX: execute_git_command must be a public function for rust tests.
-pub fn execute_git_command(args: &[&str], stdin_data: Option<&str>) -> GitResult {
+pub fn execute_git_command(repo_path: &Path, args: &[&str], stdin_data: Option<&str>) -> GitResult {
     // Log the command being executed for debugging purposes.
-    super::log_to_core(super::GitphLogLevel::Debug, &format!("Executing: git {}", args.join(" ")));
+    super::log_to_core(
+        super::GitphLogLevel::Debug,
+        &format!("Executing in '{}': git {}", repo_path.display(), args.join(" ")),
+    );
 
     let mut command = Command::new("git");
+    // CHANGED: Set the working directory for the command.
+    // This is the core of the fix, ensuring the command runs in the correct, isolated directory.
+    command.current_dir(repo_path);
     command.args(args);
 
     // If there is data for stdin, configure the pipe.
@@ -60,7 +67,10 @@ pub fn execute_git_command(args: &[&str], stdin_data: Option<&str>) -> GitResult
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(e) => {
-            let error_msg = format!("Failed to spawn git command. Is Git installed and in your PATH? Error: {}", e);
+            let error_msg = format!(
+                "Failed to spawn git command. Is Git installed and in your PATH? Error: {}",
+                e
+            );
             super::log_to_core(super::GitphLogLevel::Fatal, &error_msg);
             return Err(error_msg);
         }
@@ -89,42 +99,31 @@ pub fn execute_git_command(args: &[&str], stdin_data: Option<&str>) -> GitResult
 
     // Check the exit status of the command.
     if output.status.success() {
-        // Command was successful, return stdout.
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {
-        // Command failed, return stderr.
         Err(String::from_utf8_lossy(&output.stderr).to_string())
     }
 }
 
 // --- Public Wrapper Functions ---
+// CHANGED: All public functions now accept a `repo_path` to pass down.
 
 /// Runs `git status --porcelain` for a machine-readable status.
-pub fn git_status() -> GitResult {
-    execute_git_command(&["status", "--porcelain"], None)
+pub fn git_status(repo_path: &Path) -> GitResult {
+    execute_git_command(repo_path, &["status", "--porcelain"], None)
 }
 
 /// Runs `git add <pathspec>`.
-///
-/// # Arguments
-/// * `pathspec` - The path to add (e.g., "." for all files).
-pub fn git_add(pathspec: &str) -> GitResult {
-    execute_git_command(&["add", pathspec], None)
+pub fn git_add(repo_path: &Path, pathspec: &str) -> GitResult {
+    execute_git_command(repo_path, &["add", pathspec], None)
 }
 
 /// Runs `git commit -m "<message>"`.
-///
-/// # Arguments
-/// * `message` - The commit message.
-pub fn git_commit(message: &str) -> GitResult {
-    execute_git_command(&["commit", "-m", message], None)
+pub fn git_commit(repo_path: &Path, message: &str) -> GitResult {
+    execute_git_command(repo_path, &["commit", "-m", message], None)
 }
 
 /// Runs `git push <remote> <branch>`.
-///
-/// # Arguments
-/// * `remote` - The name of the remote repository (e.g., "origin").
-/// * `branch` - The name of the branch to push.
-pub fn git_push(remote: &str, branch: &str) -> GitResult {
-    execute_git_command(&["push", remote, branch], None)
+pub fn git_push(repo_path: &Path, remote: &str, branch: &str) -> GitResult {
+    execute_git_command(repo_path, &["push", remote, branch], None)
 }

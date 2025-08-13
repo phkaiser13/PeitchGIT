@@ -32,7 +32,7 @@ pub enum GitphLogLevel {
 
 type LogFn = extern "C" fn(GitphLogLevel, *const c_char, *const c_char);
 
-// ✅ SUGESTÃO: Removido `#[derive(Clone, Copy)]` para consistência e flexibilidade.
+
 #[repr(C)]
 pub struct GitphCoreContext {
     log: Option<LogFn>,
