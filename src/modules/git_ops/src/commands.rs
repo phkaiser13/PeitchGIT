@@ -99,3 +99,83 @@ pub fn handle_send() -> CommandResult {
 
     Ok("SND command completed successfully.".to_string())
 }
+
+// ADDDING: FOR TESTING
+
+#[cfg(test)]
+mod tests {
+    use super::*; // Import functions from the outer module.
+    use std::fs;
+    use std::process::Command;
+
+    // Helper function to set up a temporary Git repository for testing.
+    fn setup_test_repo() -> tempfile::TempDir {
+        let tmp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+        let repo_path = tmp_dir.path().to_str().unwrap();
+
+        // Initialize a new git repository
+        assert!(Command::new("git")
+            .args(["init", repo_path])
+            .status()
+            .expect("Failed to init test repo")
+            .success());
+
+        // Configure user name and email to allow commits
+        assert!(Command::new("git")
+            .args(["-C", repo_path, "config", "user.name", "Test User"])
+            .status().unwrap().success());
+        assert!(Command::new("git")
+            .args(["-C", repo_path, "config", "user.email", "test@example.com"])
+            .status().unwrap().success());
+
+
+        // Change the current directory to the new repo for the duration of the test.
+        // This makes running git commands simpler.
+        assert!(std::env::set_current_dir(repo_path).is_ok());
+
+        tmp_dir
+    }
+
+    #[test]
+    fn test_handle_status_on_clean_repo() {
+        // Arrange: Create a clean git repository.
+        let _tmp_dir = setup_test_repo(); // The directory is cleaned up when _tmp_dir goes out of scope.
+
+        // Act: Run the status handler.
+        let result = handle_status();
+
+        // Assert: Check that the operation was successful.
+        // In a real test, we would capture stdout to check the "Working tree clean" message.
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_handle_send_with_changes() {
+        // Arrange: Set up a repo and create a new file.
+        let _tmp_dir = setup_test_repo();
+        fs::write("new_file.txt", "hello").expect("Failed to write test file");
+
+        // Act: Run the send handler.
+        let result = handle_send();
+
+        // Assert: The command should succeed.
+        assert!(result.is_ok());
+
+        // Further assert that a commit was actually created.
+        let log_output = git_wrapper::execute_git_command(&["log", "-1", "--oneline"], None).unwrap();
+        assert!(log_output.contains("Automated commit from gitph"));
+    }
+
+    #[test]
+    fn test_handle_send_with_no_changes() {
+        // Arrange: Set up a clean repo.
+        let _tmp_dir = setup_test_repo();
+
+        // Act
+        let result = handle_send();
+
+        // Assert
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "No changes to send.");
+    }
+}
