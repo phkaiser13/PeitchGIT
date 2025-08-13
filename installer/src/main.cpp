@@ -2,8 +2,9 @@
 * File: main.cpp
 * This is the main entry point for the phgit installer. It orchestrates the entire installation
 * process by integrating and calling core components. It initializes logging, handles command-line
-* arguments, uses the PlatformDetector to understand the environment, and then delegates the
-* actual installation work to a platform-specific installer module.
+* arguments, uses the PlatformDetector to understand the environment, checks for all required
+* dependencies using the DependencyManager, and then delegates the actual installation work to a
+* platform-specific installer module.
 * SPDX-License-Identifier: Apache-2.0
 */
 
@@ -20,6 +21,7 @@
 
 // Project-specific components
 #include "platform/platform_detector.hpp"
+#include "dependencies/dependency_manager.hpp"
 
 // --- Project-specific Constants ---
 namespace phgit_installer::constants {
@@ -36,26 +38,8 @@ public:
 
 
 // --- Forward Declarations & Stubs for Core Components ---
-// These stubs will be replaced with real implementations in their own files as we proceed.
+// The following stubs will be replaced with real implementations in their own files.
 namespace phgit_installer {
-
-    /**
-     * @class DependencyManager
-     * @brief STUB: Manages checking for required and optional dependencies.
-     */
-    class DependencyManager {
-    public:
-        void check_core_dependencies() {
-            spdlog::info("Checking for core dependencies...");
-            // STUB: A real implementation would run `git --version` and parse the output.
-            bool git_found = false;
-            if (git_found) {
-                spdlog::info("Core dependency 'git' found.");
-            } else {
-                spdlog::warn("Core dependency 'git' not found. It will need to be installed.");
-            }
-        }
-    };
 
     /**
      * @class IPlatformInstaller
@@ -73,7 +57,7 @@ namespace phgit_installer {
         explicit LinuxInstaller(const platform::PlatformInfo& info) : platform_info(info) {}
         void run_installation() override {
             spdlog::info("Running Linux installer for distro: {}", platform_info.os_id);
-            // STUB: Logic for apt, dnf, pacman, etc. would go here.
+            // STUB: Logic for apt, dnf, pacman, etc. and dependency installation would go here.
             spdlog::info("Linux installation steps would be executed here.");
             spdlog::info("Linux installation completed successfully.");
         }
@@ -85,7 +69,7 @@ namespace phgit_installer {
     public:
         void run_installation() override {
             spdlog::info("Running Windows installer...");
-            // STUB: Logic for MSI, NSIS, winget, etc. would go here.
+            // STUB: Logic for MSI, NSIS, winget, etc. and dependency installation would go here.
             spdlog::info("Windows installation steps would be executed here.");
             spdlog::info("Windows installation completed successfully.");
         }
@@ -95,7 +79,7 @@ namespace phgit_installer {
     public:
         void run_installation() override {
             spdlog::info("Running macOS installer...");
-            // STUB: Logic for .pkg, .dmg, homebrew, etc. would go here.
+            // STUB: Logic for .pkg, .dmg, homebrew, etc. and dependency installation would go here.
             spdlog::info("macOS installation steps would be executed here.");
             spdlog::info("macOS installation completed successfully.");
         }
@@ -139,7 +123,7 @@ int main(int argc, char* argv[]) {
             phgit_installer::constants::PROJECT_NAME.data(),
             phgit_installer::constants::PROJECT_VERSION.data());
 
-        // 1. Platform Detection
+        // Step 1: Platform Detection
         phgit_installer::platform::PlatformDetector detector;
         phgit_installer::platform::PlatformInfo platform_info = detector.detect();
 
@@ -147,11 +131,18 @@ int main(int argc, char* argv[]) {
             throw InstallerException("Unsupported operating system or architecture detected. Aborting.");
         }
 
-        // 2. Dependency Checking
-        phgit_installer::DependencyManager dep_manager;
-        dep_manager.check_core_dependencies();
+        // Step 2: Dependency Checking
+        phgit_installer::dependencies::DependencyManager dep_manager(platform_info);
+        dep_manager.check_all();
 
-        // 3. Installer Selection and Execution
+        if (!dep_manager.are_core_dependencies_met()) {
+            spdlog::warn("One or more required dependencies are missing or outdated.");
+            spdlog::warn("The installer will attempt to install them if possible.");
+        } else {
+            spdlog::info("All required dependencies are met.");
+        }
+
+        // Step 3: Installer Selection and Execution
         std::unique_ptr<phgit_installer::IPlatformInstaller> installer;
         if (platform_info.os_family == "linux") {
             installer = std::make_unique<phgit_installer::LinuxInstaller>(platform_info);
