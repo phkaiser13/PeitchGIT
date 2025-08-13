@@ -10,11 +10,11 @@ on:
       - 'v*'
 
 jobs:
-  #================================================#
-  #== JOB 1: Criar Instalador .exe para Windows ===#
-  #================================================#
+  # ==================================================================== #
+  # == JOB 1: Criar Instaladores Nativos para Windows (.exe e NUPKG) === #
+  # ==================================================================== #
   build-windows:
-    name: 'Build Windows Installer (.exe)'
+    name: 'Build Windows Installers (.exe & .nupkg)'
     runs-on: windows-latest
     env:
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
@@ -24,124 +24,113 @@ jobs:
       - name: 'Checkout code'
         uses: actions/checkout@v4
 
-      - name: 'Install vcpkg, NSIS, and libraries'
+      - name: 'Get version from tag'
+        id: get_version
+        run: echo "VERSION=${{ github.ref_name }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        shell: pwsh
+
+      - name: 'Install build dependencies (vcpkg, NSIS, Chocolatey)'
         run: |
           git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
           cd $env:VCPKG_ROOT
           .\bootstrap-vcpkg.bat
           .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
-          # Instala o compilador NSIS via Chocolatey
-          choco install nsis -y
+          choco install nsis chocolatey-core.extension -y
         shell: pwsh
 
       - name: 'Setup Rust'
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: 'Setup Go'
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-
-      - name: Configure CMake (MSVC, Visual Studio generator)
+      - name: 'Configure and Build Project with CMake'
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" `
-            -DCMAKE_PREFIX_PATH="${{ env.VCPKG_ROOT }}\installed\x64-windows\share" `
-            -DLua_FOUND=TRUE `
-            -DLUA_INCLUDE_DIR="${{ env.VCPKG_ROOT }}\installed\x64-windows\include" `
-            -DLUA_LIBRARY="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
-            -DLUA_LIBRARIES="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
-            -DCMAKE_BUILD_TYPE=Release
-      
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release --parallel
         shell: pwsh
-        
-      - name: 'Get version from tag'
-        id: get_version
+
+      - name: 'Build NSIS Installer (.exe)'
         run: |
-          # Escreve a versão (do nome da tag) no GITHUB_ENV de forma compatível com PowerShell
-          Write-Output "VERSION=${{ github.ref_name }}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # O /DVERSION passa a versão para o script .nsi, que nomeia o OutFile
+          makensis.exe /DVERSION=${{ env.VERSION }} installer\windows\installer.nsi
         shell: pwsh
 
-      - name: 'Build Installer with NSIS'
+      - name: 'Update Chocolatey Package Version'
         run: |
-          # O NSIS precisa saber a versão para nomear o arquivo de saída
-          makensis.exe /DVERSION=${{ env.VERSION }} installer/nsis/gitph_installer.nsi
+          $versionOnly = "${{ env.VERSION }}".Substring(1)
+          (Get-Content packaging\chocolatey\gitph.nuspec).replace('1.0.0', $versionOnly) | Set-Content packaging\chocolatey\gitph.nuspec
+          (Get-Content packaging\chocolatey\tools\chocolateyinstall.ps1).replace('v1.0.0', "${{ env.VERSION }}") | Set-Content packaging\chocolatey\tools\chocolateyinstall.ps1
+        shell: pwsh
+      
+      - name: 'Build Chocolatey Package (.nupkg)'
+        run: choco pack (Resolve-Path "packaging/chocolatey/gitph.nuspec") -o .
         shell: pwsh
 
-      - name: 'Upload Installer Artifact'
+      - name: 'Upload Windows Artifacts'
         uses: actions/upload-artifact@v4
         with:
-          name: gitph-installer-windows-x64
-          path: gitph_installer_v${{ env.VERSION }}.exe
+          name: windows-installers
+          path: |
+            gitph_installer_${{ env.VERSION }}.exe
+            *.nupkg
 
-
-  #============================================#
-  #== JOB 2: Criar Pacote .deb para Debian ====#
-  #============================================#
-  build-debian:
-    name: 'Build Debian Package (.deb)'
+  # =============================================================== #
+  # == JOB 2: Criar Pacotes Nativos para Linux (.deb e .rpm)      === #
+  # =============================================================== #
+  build-linux:
+    name: 'Build Linux Packages (${{ matrix.name }})'
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: Debian (.deb)
+            container: "ubuntu:22.04"
+            build_script: "installer/linux/build_deb.sh"
+            deps: "build-essential cmake pkg-config libcurl4-openssl-dev libssl-dev"
+          - name: Fedora (.rpm)
+            container: "fedora:latest"
+            build_script: "installer/linux/build_rpm.sh"
+            deps: "gcc-c++ cmake make rpm-build findutils"
+            
+    container:
+      image: ${{ matrix.container }}
+
     steps:
       - name: 'Checkout code'
         uses: actions/checkout@v4
 
       - name: 'Install build dependencies'
-        run: sudo apt-get update && sudo apt-get install -y build-essential cmake pkg-config liblua5.4-dev libcurl4-openssl-dev nlohmann-json3-dev
+        run: |
+          if [ -f /etc/debian_version ]; then
+            apt-get update && apt-get install -y ${{ matrix.deps }}
+          elif [ -f /etc/fedora-release ]; then
+            dnf install -y ${{ matrix.deps }}
+          fi
 
-      - name: 'Setup Rust and Go'
+      - name: 'Setup Rust'
         uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-go@v5
-        with: { go-version: '1.21' }
 
-      - name: 'Configure and Build Project'
+      - name: 'Configure and Build Project with CMake'
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
 
-      - name: 'Create .deb package structure'
+      - name: 'Build Linux Package'
         run: |
-          set -x
-          VERSION=$(echo "${{ github.ref_name }}" | sed 's/v//')
-          PKG_DIR="gitph_${VERSION}_amd64"
-          mkdir -p "${PKG_DIR}/DEBIAN"
-          mkdir -p "${PKG_DIR}/usr/local/bin"
-          mkdir -p "${PKG_DIR}/usr/share/gitph/modules"
-          mkdir -p "${PKG_DIR}/usr/share/gitph/plugins"
-          
-          # Copia os binários e módulos para a estrutura do pacote
-          cp build/bin/gitph "${PKG_DIR}/usr/local/bin/"
-          cp build/bin/modules/* "${PKG_DIR}/usr/share/gitph/modules/"
-          cp src/plugins/* "${PKG_DIR}/usr/share/gitph/plugins/"
-
-          # Cria o arquivo de controle essencial para o .deb
-          cat <<EOF > "${PKG_DIR}/DEBIAN/control"
-          Package: gitph
-          Version: ${VERSION}
-          Architecture: amd64
-          Maintainer: Pedro Henrique / phkaiser13
-          Description: The Polyglot Assistant for Git & DevOps Workflows.
-           A modern, extensible, and high-performance command-line tool.
-          Depends: git, libcurl4, liblua5.4-0
-          EOF
-          
-      - name: 'Build .deb package'
-        run: |
-          VERSION=$(echo "${{ github.ref_name }}" | sed 's/v//')
-          dpkg-deb --build "gitph_${VERSION}_amd64"
-
-      - name: 'Upload .deb Artifact'
+          chmod +x ${{ matrix.build_script }}
+          # Passa a versão como variável de ambiente para o script de build
+          VERSION=${{ github.ref_name }} ./${{ matrix.build_script }}
+      
+      - name: 'Upload Linux Artifact'
         uses: actions/upload-artifact@v4
         with:
-          name: gitph-installer-debian-amd64
-          path: "*.deb"
-          
-  #======================================================#
-  #== JOB 3: Criar Pacote .dmg para macOS (Universal) ===#
-  #======================================================#
+          name: linux-installer-${{ matrix.name }}
+          path: installer/linux/dist/*
+
+  # =================================================== #
+  # == JOB 3: Criar Pacote Nativo para macOS (.pkg)   === #
+  # =================================================== #
   build-macos:
-    name: 'Build macOS Universal Package (.dmg)'
-    runs-on: macos-13 # Usamos uma versão que suporte a criação de DMG
+    name: 'Build macOS Installer (.pkg)'
+    runs-on: macos-latest
     steps:
       - name: 'Checkout code'
         uses: actions/checkout@v4
@@ -149,54 +138,50 @@ jobs:
       - name: 'Install dependencies (Homebrew)'
         run: brew install cmake pkg-config lua curl nlohmann-json
 
-      - name: 'Setup Rust and Go'
+      - name: 'Setup Rust'
         uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-go@v5
-        with: { go-version: '1.21' }
 
-      - name: 'Configure and Build Project'
+      - name: 'Configure and Build Project with CMake'
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
 
-      - name: 'Create .dmg package'
+      - name: 'Build macOS Package (.pkg)'
         run: |
-          VERSION="${{ github.ref_name }}"
-          DMG_NAME="gitph-${VERSION}-universal.dmg"
-          STAGING_DIR="staging"
-          
-          mkdir -p "${STAGING_DIR}"
-          cp build/bin/gitph "${STAGING_DIR}/"
-          
-          # Cria um link simbólico para a pasta de Aplicações ou binários
-          ln -s /usr/local/bin "${STAGING_DIR}/Drop here to install"
-          
-          hdiutil create -volname "gitph ${VERSION}" -srcfolder "${STAGING_DIR}" -ov -format UDZO "${DMG_NAME}"
+          chmod +x installer/macos/build_pkg.sh
+          # Passa a versão para o script de build
+          VERSION=${{ github.ref_name }} ./installer/macos/build_pkg.sh
 
-      - name: 'Upload .dmg Artifact'
+      - name: 'Upload macOS Artifact'
         uses: actions/upload-artifact@v4
         with:
-          name: gitph-installer-macos-universal
-          path: "*.dmg"
+          name: macos-installer
+          path: installer/macos/dist/*.pkg
 
-  #====================================================#
-  #== JOB FINAL: Criar a Release e Anexar os Assets ===#
-  #====================================================#
+  # ===================================================== #
+  # == JOB FINAL: Criar a Release e Anexar os Pacotes  === #
+  # ===================================================== #
   create-release:
     name: 'Create GitHub Release'
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Permissão para criar releases
-    needs: [build-windows, build-debian, build-macos] # Executa após todos os builds
-    
+      contents: write 
+    needs: [build-windows, build-linux, build-macos]
+
     steps:
       - name: 'Download all installer artifacts'
         uses: actions/download-artifact@v4
         with:
           path: release-assets/
+      
+      - name: 'Prepare release files'
+        run: |
+          # Organiza todos os pacotes num único diretório para o upload
+          mkdir final-release
+          find release-assets -type f -exec mv {} final-release/ \;
 
-      - name: 'List downloaded files for verification'
-        run: ls -R release-assets/
+      - name: 'List final assets for verification'
+        run: ls -R final-release/
       
       - name: 'Create GitHub Release and Upload Assets'
         uses: softprops/action-gh-release@v2
@@ -204,7 +189,10 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: 'Release ${{ github.ref_name }}'
           body: |
-            Release oficial da versão ${{ github.ref_name }}.
-            Baixe o instalador para o seu sistema operacional abaixo.
+            ### Release Oficial da Versão ${{ github.ref_name }} 🚀
+            
+            Este é um lançamento automatizado. Baixe o instalador apropriado para o seu sistema operacional abaixo.
+            
+            Obrigado por usar o **gitph**!
           files: |
-            release-assets/*/*
+            final-release/*
