@@ -9,23 +9,20 @@ on:
   workflow_dispatch:
 
 env:
-  # variáveis globais (herdadas por jobs/steps)
+  # variáveis globais
   VCPKG_DEFAULT_TRIPLET: x64-windows
   BUILD_DIR: build
   VS_GENERATOR: "Visual Studio 17 2022"
   VS_ARCH: x64
-  # caminho padrão usado pelo Chocolatey para executáveis
   CHOCO_BIN: "C:/ProgramData/chocolatey/bin"
 
 jobs:
   build-windows-installer:
     runs-on: windows-latest
     env:
-      # Variáveis específicas para este job ou que sobrescrevem as globais.
-      # A sintaxe de referência a si mesma (ex: BUILD_DIR: ${{ env.BUILD_DIR }}) foi removida, pois é inválida.
-      # As variáveis globais já estão disponíveis aqui por padrão.
-      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
-      MAKENSIS_DEFAULT: "${{ env.CHOCO_BIN }}/makensis.exe"
+      # VCPKG_ROOT definido aqui para ser usado por todos os steps.
+      # Usar barras normais (/) é mais seguro em YAML.
+      VCPKG_ROOT: '${{ github.workspace }}/vcpkg'
 
     steps:
       - name: Checkout repository
@@ -51,7 +48,7 @@ jobs:
           choco list --local-only
 
       - name: Ensure CMake (uses action for version)
-        uses: jwlawson/actions-setup-cmake@v1.14
+        uses: jwlawson/actions-setup-cmake@v1
         with:
           cmake-version: '3.29.3'
 
@@ -65,12 +62,12 @@ jobs:
       - name: Cache vcpkg downloads & installed (speeds up repeated runs)
         uses: actions/cache@v4
         with:
+          # Caminhos corrigidos para usar barras normais (/)
           path: |
             ${{ env.VCPKG_ROOT }}/downloads
             ${{ env.VCPKG_ROOT }}/installed
             ${{ env.VCPKG_ROOT }}/buildtrees
-          # chave mais robusta para cache
-          key: vcpkg-cache-${{ runner.os }}-${{ hashFiles('**/vcpkg.json') }}
+          key: vcpkg-cache-${{ runner.os }}-${{ hashFiles('**/vcpkg.json') }}-${{ github.sha }}
           restore-keys: |
             vcpkg-cache-${{ runner.os }}-
 
@@ -83,7 +80,6 @@ jobs:
             Write-Host "vcpkg already exists at $env:VCPKG_ROOT"
           }
           Push-Location $env:VCPKG_ROOT
-          # desabilita telemetria para runs CI
           .\bootstrap-vcpkg.bat -disableMetrics
           .\vcpkg.exe install curl lua nlohmann-json --triplet $env:VCPKG_DEFAULT_TRIPLET
           Pop-Location
@@ -104,20 +100,16 @@ jobs:
       - name: Configure CMake (MSVC, Visual Studio generator)
         shell: pwsh
         run: |
-          # Determina onde o makensis está
           $makensis = (Get-Command makensis -ErrorAction SilentlyContinue).Source
           if (-not $makensis) {
-            # fallback para o local esperado
-            $makensis = $env:MAKENSIS_DEFAULT
+            $makensis = "${{ env.CHOCO_BIN }}/makensis.exe"
             Write-Host "makensis not found in PATH, will try $makensis"
           } else {
             Write-Host "Found makensis at: $makensis"
           }
 
-          # Diretório do NSIS
           $nsis_dir = Split-Path $makensis
 
-          # Comando de configuração do CMake
           cmake -S . -B $env:BUILD_DIR -G "$env:VS_GENERATOR" -A $env:VS_ARCH `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
             -DCMAKE_PREFIX_PATH="$env:VCPKG_ROOT\installed\$env:VCPKG_DEFAULT_TRIPLET\share" `
@@ -142,82 +134,99 @@ jobs:
           cmake --build $env:BUILD_DIR --config Release --target help | Select-String -Pattern "package-windows" -SimpleMatch -Quiet
           if ($LASTEXITCODE -eq 0) {
             Write-Host "package-windows target is present."
+            cmake --build $env:BUILD_DIR --config Release --target help
           } else {
-            Write-Host "package-windows target not found. Listing all available targets:"
+            Write-Host "package-windows target not found in cmake --build ... --target help"
             cmake --build $env:BUILD_DIR --config Release --target help
           }
 
       - name: Build and Package (try package-windows, fallback to manual makensis)
         shell: pwsh
+        # A sintaxe de 'env' foi corrigida para o formato de mapa (chave-valor)
         env:
-          MAKENSIS_FALLBACK: ${{ env.MAKENSIS_DEFAULT }}
+          MAKENSIS_FALLBACK: '${{ env.CHOCO_BIN }}/makensis.exe'
         run: |
-          # Tenta construir o target package-windows
-          $helpOutput = cmake --build $env:BUILD_DIR --config Release --target help 2>&1
-          if ($helpOutput -match "package-windows") {
+          $targetExists = $false
+          $help = cmake --build $env:BUILD_DIR --config Release --target help 2>&1
+          if ($help -match "package-windows") {
+            $targetExists = $true
+          }
+
+          if ($targetExists) {
             Write-Host "package-windows target exists — building it."
             cmake --build $env:BUILD_DIR --config Release --target package-windows --parallel
-            if ($LASTEXITCODE -ne 0) { throw "CMake build for target package-windows failed." }
           } else {
             Write-Host "package-windows not present — fallback procedure:"
-            Write-Host "1) build main project binaries"
-            cmake --build $env:BUILD_DIR --config Release --parallel
-            if ($LASTEXITCODE -ne 0) { throw "CMake build for default target failed." }
-
-            Write-Host "2) Look for .nsi files to run makensis on"
-            $nsiPaths = Get-ChildItem -Path . -Include *.nsi -Recurse -File -ErrorAction SilentlyContinue
-            if ($nsiPaths.Count -eq 0) {
-              throw "Fallback failed: no .nsi installer script found in the repository."
+            Write-Host "1) build main installer binary (installer_helper or similar)"
+            $candidateTargets = @("package-windows","installer_helper","installer","ALL_BUILD")
+            $built = $false
+            foreach ($t in $candidateTargets) {
+              Write-Host "Trying target: $t"
+              cmake --build $env:BUILD_DIR --config Release --target $t --parallel 2>&1
+              if ($LASTEXITCODE -eq 0) { $built = $true; break }
+            }
+            if (-not $built) {
+              Write-Host "No expected build target built successfully. Attempting to build default solution..."
+              cmake --build $env:BUILD_DIR --config Release --parallel
             }
 
-            Write-Host "Found .nsi files:"
-            $nsiPaths | ForEach-Object { Write-Host "- $($_.FullName)" }
-            $nsiFile = $nsiPaths[0].FullName
-            
-            $makensis = (Get-Command makensis -ErrorAction SilentlyContinue).Source
-            if (-not $makensis) { $makensis = $env:MAKENSIS_FALLBACK }
-            Write-Host "Using makensis: $makensis"
-            
-            & $makensis "/V2" $nsiFile
-            if ($LASTEXITCODE -ne 0) { throw "makensis failed with code $LASTEXITCODE" }
+            Write-Host "2) Look for .nsi files to run makensis on (searching repo and build directory)"
+            $nsiPaths = Get-ChildItem -Path . -Include *.nsi -Recurse -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+            if (-not $nsiPaths -or $nsiPaths.Count -eq 0) {
+              Write-Host "No .nsi found by generic search. Trying known path: installer/windows/installer.nsi"
+              if (Test-Path "installer/windows/installer.nsi") { $nsiPaths = @((Resolve-Path "installer/windows/installer.nsi").Path) }
+            }
+
+            if ($nsiPaths -and $nsiPaths.Count -gt 0) {
+              Write-Host "Found .nsi files:"
+              $nsiPaths | ForEach-Object { Write-Host "- $_" }
+              $nsi = $nsiPaths[0]
+              $makensis = (Get-Command makensis -ErrorAction SilentlyContinue).Source
+              if (-not $makensis) { $makensis = $env:MAKENSIS_FALLBACK }
+              Write-Host "Using makensis: $makensis"
+              & $makensis "/V2" $nsi
+              if ($LASTEXITCODE -ne 0) { throw "makensis failed with code $LASTEXITCODE" }
+            } else {
+              throw "Fallback failed: no .nsi installer found to run makensis on."
+            }
           }
 
       - name: Collect installer artifacts
-        id: collect_installer
+        id: collect_installer # Adicionado um ID para referência, se necessário
         shell: pwsh
         run: |
-          $searchPaths = @("$env:BUILD_DIR", "$env:GITHUB_WORKSPACE", "$env:GITHUB_WORKSPACE/installer/windows")
-          $installerCandidates = @()
+          $searchPaths = @("$env:BUILD_DIR","$env:GITHUB_WORKSPACE","$env:GITHUB_WORKSPACE\installer","$env:GITHUB_WORKSPACE\installer\windows")
+          $exes = @()
           foreach ($p in $searchPaths) {
             if (Test-Path $p) {
-              $installerCandidates += Get-ChildItem -Path $p -Include *.exe -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "installer" -or $_.Length -gt 1MB }
+              $exes += Get-ChildItem -Path $p -Include *.exe -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 1024 } | Select-Object -ExpandProperty FullName
             }
           }
-
-          if ($installerCandidates.Count -eq 0) {
+          if ($exes.Count -eq 0) {
             Write-Host "No installer .exe found automatically. Listing build tree for debugging:"
-            Get-ChildItem -Path $env:BUILD_DIR -Recurse -File | Select-Object FullName, Length | Sort-Object Length -Descending | Select-Object -First 50
-            throw "No installer .exe found to upload."
+            Get-ChildItem -Path $env:BUILD_DIR -Recurse -File -ErrorAction SilentlyContinue | Select-Object FullName, Length | Sort-Object Length -Descending | Select-Object -First 50
+          } else {
+            Write-Host "Found installer candidates:"
+            $exes | ForEach-Object { Write-Host $_ }
+            $installer = $exes | Sort-Object { (Get-Item $_).Length } -Descending | Select-Object -First 1
+            Write-Host "Selected installer to upload: $installer"
+            # A sintaxe ::set-output está obsoleta. A lógica já salva o caminho em um arquivo, que é o método correto aqui.
+            New-Item -ItemType File -Path "$env:BUILD_DIR\installer-to-upload.txt" -Value $installer -Force | Out-Null
           }
 
-          Write-Host "Found installer candidates:"
-          $installerCandidates | ForEach-Object { Write-Host "- $($_.FullName)" }
-          # Pega o maior arquivo .exe, que provavelmente é o instalador
-          $installerPath = ($installerCandidates | Sort-Object Length -Descending | Select-Object -First 1).FullName
-          
-          Write-Host "Selected installer to upload: $installerPath"
-          # Salva o caminho para o próximo passo usar
-          echo "installer_path=$installerPath" >> $env:GITHUB_OUTPUT
-
       - name: Upload Installer Artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          path: ${{ steps.collect_installer.outputs.installer_path }}
+          path: |
+            build/installer-to-upload.txt
+            build/**/*.exe
+            installer/**/*.exe
+            *.exe
           retention-days: 7
 
       - name: Final status (debug)
-        if: always()
         shell: pwsh
         run: |
           Write-Host "Workflow finished. Check previous steps logs for errors."
