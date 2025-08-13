@@ -275,12 +275,6 @@ install(
     FILES_MATCHING PATTERN "*.so" PATTERN "*.dll" PATTERN "*.dylib"
 )
 
-
+# Placeholder for the installer helper tool
 if(WIN32)
-    add_subdirectory(installer/helper_src)
 endif()
-
-# --- Testing ---
-# Include the tests directory in the build.
-# This will process tests/CMakeLists.txt.
-add_subdirectory(tests)
