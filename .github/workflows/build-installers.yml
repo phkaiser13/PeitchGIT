@@ -1,3 +1,4 @@
+# .github/workflows/build-package-release.yml
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
 # SPDX-License-Identifier: Apache-2.0
 
@@ -8,7 +9,6 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main"]
-  # O gatilho principal para a criação de releases
   release:
     types: [published]
   workflow_dispatch:
@@ -17,10 +17,8 @@ jobs:
   build-and-package:
     name: Build Installer on ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-    
-    # A matriz de build para cobrir todas as nossas plataformas alvo
     strategy:
-      fail-fast: false # Garante que outras compilações continuem mesmo se uma falhar
+      fail-fast: false
       matrix:
         include:
           - name: Windows
@@ -40,74 +38,104 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # --- Instalação de Dependências Específica da Plataforma ---
-
+      # ---------------------------
+      # Install platform deps
+      # ---------------------------
       - name: Install Dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build libcurl4-openssl-dev
+          sudo apt-get update -y
+          sudo apt-get install -y build-essential cmake ninja-build pkg-config libcurl4-openssl-dev
+        shell: bash
 
       - name: Install Dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
+          brew update
           brew install cmake ninja curl
+        shell: bash
 
       - name: Install Dependencies (Windows)
         if: runner.os == 'Windows'
+        run: |
+          choco install -y cmake --installargs '"ADD_CMAKE_TO_PATH=System"' ninja nsis
+        shell: pwsh
+
+      # Optional: install vcpkg on Windows for native deps (makes Windows builds reproducible)
+      - name: Setup vcpkg (Windows)
+        if: runner.os == 'Windows'
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: '1b47e02435323c1c7c37196994f234503d376d1b' # Use a specific commit for reproducibility
-          vcpkgArguments: 'curl nlohmann-json spdlog'
-          vcpkgTriplet: 'x64-windows-static' # Static linking for a more portable .exe
+          vcpkgGitCommitId: '1b47e02435323c1c7c37196994f234503d376d1b'
+          vcpkgArguments: 'install curl nlohmann-json spdlog'
+          vcpkgTriplet: 'x64-windows-static'
 
-      - name: Install NSIS (Windows only)
-        if: runner.os == 'Windows'
-        run: choco install nsis -y --no-progress
+      # ---------------------------
+      # Configure / Build / Package
+      # ---------------------------
 
-      # --- Configuração e Build com CMake ---
-
-      - name: Configure CMake
-        id: configure_cmake
+      - name: Configure CMake (Linux/macOS)
+        if: runner.os != 'Windows'
         run: |
-          # Define a variável de toolchain do vcpkg apenas para Windows
-          VCPKG_TOOLCHAIN_ARGS=""
-          if [ "${{ runner.os }}" == "Windows" ]; then
-            VCPKG_TOOLCHAIN_ARGS="-DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake"
-          fi
-          
           cmake -S ./installer -B build -G "Ninja" \
-            -DCMAKE_BUILD_TYPE=Release \
-            $VCPKG_TOOLCHAIN_ARGS
+            -DCMAKE_BUILD_TYPE=Release
         shell: bash
+
+      - name: Configure CMake (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          # Use vcpkg toolchain when available (set by lukka/run-vcpkg)
+          $toolchain = ""
+          if ($env:VCPKG_ROOT) { $toolchain = "-DCMAKE_TOOLCHAIN_FILE=`"$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake`"" }
+          cmake -S ./installer -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release $toolchain
+        shell: pwsh
 
       - name: Build with CMake
         run: cmake --build build --config Release --parallel
+        shell: bash
+        # On Windows runner, bash is available; if you prefer PowerShell for Windows, the next step would use pwsh.
+        # If you prefer to force pwsh on Windows, add `if: runner.os == 'Windows'` and duplicate step with pwsh.
 
       - name: Package with CPack
         run: |
           cd build
           cpack -C Release --verbose
-      
-      # --- Upload de Artefatos e Criação de Release ---
+        shell: bash
 
-      - name: Find and prepare artifact for upload
+      # ---------------------------
+      # Find artifact & upload
+      # ---------------------------
+      - name: Find and prepare artifact for upload (Linux/macOS)
+        if: runner.os != 'Windows'
         id: find_artifact
         run: |
-          # Encontra o artefato gerado pelo CPack
-          ARTIFACT_PATH=$(find build -name "${{ matrix.artifact_glob }}" | head -n 1)
+          ARTIFACT_PATH=$(find build -type f -name "${{ matrix.artifact_glob }}" | head -n 1)
+          if [ -z "$ARTIFACT_PATH" ]; then
+            echo "No artifact found matching: ${{ matrix.artifact_glob }}"
+            exit 1
+          fi
           echo "Found artifact: $ARTIFACT_PATH"
-          
-          # Define o nome final do ativo para a release
           FINAL_ASSET_NAME="phgit-installer-${{ matrix.asset_name_suffix }}"
-          echo "Final asset name: $FINAL_ASSET_NAME"
-          
-          # Renomeia para um nome consistente e define os outputs
           mv "$ARTIFACT_PATH" "$FINAL_ASSET_NAME"
           echo "artifact_path=$FINAL_ASSET_NAME" >> $GITHUB_OUTPUT
         shell: bash
 
-      - name: Upload build artifact
+      - name: Find and prepare artifact for upload (Windows)
+        if: runner.os == 'Windows'
+        id: find_artifact
+        run: |
+          $artifact = Get-ChildItem -Path build -Recurse -File -Filter "${{ matrix.artifact_glob }}" | Select-Object -First 1
+          if (-not $artifact) {
+            Write-Error "No artifact found matching: ${{ matrix.artifact_glob }}"
+            exit 1
+          }
+          Write-Host "Found artifact: $($artifact.FullName)"
+          $final = "phgit-installer-${{ matrix.asset_name_suffix }}"
+          Rename-Item -Path $artifact.FullName -NewName $final -Force
+          Write-Output "artifact_path=$final" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        shell: pwsh
+
+      - name: Upload build artifact (Actions)
         uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.name }}
@@ -119,6 +147,6 @@ jobs:
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./${{ steps.find_artifact.outputs.artifact_path }}
+          asset_path: ${{ steps.find_artifact.outputs.artifact_path }}
           asset_name: ${{ steps.find_artifact.outputs.artifact_path }}
           asset_content_type: application/octet-stream
