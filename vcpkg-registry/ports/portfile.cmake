@@ -1,47 +1,41 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
 # SPDX-License-Identifier: Apache-2.0
-#
-# This file is the vcpkg portfile for gitph. It tells vcpkg how to
-# download, configure, build, and install the tool.
 
 include(vcpkg_common_functions)
 
-# 1. Download the source code archive from the GitHub release.
-#    TODO: Update the URL and SHA512 hash for each new release.
+# 1. Baixa o código-fonte do release do GitHub.
+#    As variáveis REF e SHA512 serão atualizadas dinamicamente pelo workflow.
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO phkaiser13/peitchgit
-    REF "v1.0.0" # This should match the version in vcpkg.json
-    SHA512 "YOUR_SHA512_HASH_HERE" # Get this hash from the GitHub Actions build output or by running `vcpkg x-add-version gitph`
+    # O workflow irá substituir esta tag de versão
+    REF "v${GITPH_VERSION}" 
+    # O workflow irá substituir este hash
+    SHA512 "${GITPH_SHA512}" 
     HEAD_REF main
 )
 
-# 2. Configure the project using CMake.
-#    vcpkg automatically passes the correct toolchain and dependency information.
+# 2. Configura o projeto com CMake.
 vcpkg_cmake_configure(
     SOURCE_PATH "${SOURCE_PATH}"
     OPTIONS
-        # If you had CMake options to disable tests, you would add them here.
-        # -DBUILD_TESTING=OFF
+        # Desabilita a compilação de testes, que não são necessários para o pacote.
+        -DBUILD_TESTING=OFF
 )
 
-# 3. Build the project.
+# 3. Compila o projeto.
 vcpkg_cmake_build()
 
-# 4. Install the project.
-#    This runs the `install` target from your CMakeLists.txt and places the
-#    files into the correct vcpkg package directory.
+# 4. Instala os artefatos.
 vcpkg_cmake_install()
 
-# 5. Handle tools installation.
-#    vcpkg is primarily for libraries. This step is crucial to copy the
-#    executable from the `bin` directory to the `tools` directory so it can
-#    be found by users.
+# 5. Copia o executável para a pasta de ferramentas do vcpkg.
 file(INSTALL
-    "${CURRENT_PACKAGES_DIR}/bin/gitph.exe"
+    "${CURRENT_PACKAGES_DIR}/bin/gitph${VCPKG_HOST_EXECUTABLE_SUFFIX}"
     DESTINATION "${CURRENT_PACKAGES_DIR}/tools/gitph"
 )
-file(REMOVE "${CURRENT_PACKAGES_DIR}/bin/gitph.exe" "${CURRENT_PACKAGES_DIR}/debug/bin/gitph.exe")
+file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/bin" "${CURRENT_PACKAGES_DIR}/debug")
 
-# 6. Copy license file
+
+# 6. Instala o arquivo de licença.
 file(INSTALL "${SOURCE_PATH}/LICENSE" DESTINATION "${CURRENT_PACKAGES_DIR}/share/${PORT}" RENAME copyright)
