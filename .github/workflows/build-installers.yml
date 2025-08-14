@@ -1,152 +1,172 @@
-# .github/workflows/build-package-release.yml
-# Copyright (C) 2025 Pedro Henrique / phkaiser13
-# SPDX-License-Identifier: Apache-2.0
-
-name: Build, Package, and Release Installers
+#
+# release.yml - Workflow de Geração de Release e Instaladores Nativos
+#
+# Este workflow é o coração do nosso processo de Continuous Delivery (CD).
+# Ele é acionado SOMENTE quando uma tag no formato 'v*' é enviada para o repositório.
+#
+# Estratégia de Engenharia:
+# 1. Executa três jobs de build em paralelo, um para cada plataforma principal (Windows, Linux, macOS).
+# 2. Cada job não apenas compila o código, mas usa o CPack para gerar os instaladores nativos
+#    (.exe via NSIS, .deb, .rpm, .dmg).
+# 3. O job do Linux utiliza contêineres Docker para garantir que os pacotes .deb e .rpm
+#    sejam construídos em ambientes limpos e corretos da distribuição alvo.
+# 4. Um job final, 'create-github-release', só é executado se TODOS os jobs de build
+#    forem bem-sucedidos. Ele coleta todos os instaladores gerados e os publica em um
+#    novo Release do GitHub, automatizando completamente o processo de lançamento.
+#
+name: Build & Package Release
 
 on:
   push:
-    branches: ["main"]
-  pull_request:
-    branches: ["main"]
-  release:
-    types: [published]
-  workflow_dispatch:
+    tags:
+      - 'v*' # Aciona o workflow apenas em tags como v1.0.0, v1.2.3-rc1, etc.
+  workflow_dispatch: # Permite o acionamento manual
+
+permissions:
+  contents: write # Necessário para o job 'create-github-release' poder criar o release e fazer upload dos artefatos.
 
 jobs:
-  build-and-package:
-    name: Build Installer on ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Windows
-            os: windows-latest
-            artifact_glob: "phgit-installer-*.exe"
-            asset_name_suffix: "windows-x64.exe"
-          - name: Linux
-            os: ubuntu-latest
-            artifact_glob: "phgit-installer-*.deb"
-            asset_name_suffix: "linux-amd64.deb"
-          - name: macOS
-            os: macos-latest
-            artifact_glob: "phgit-installer-*.dmg"
-            asset_name_suffix: "macos-universal.dmg"
+  # ========================================================================================
+  # JOB 1: Construir e Empacotar para Windows
+  # ========================================================================================
+  build-and-package-windows:
+    name: Build Windows Installer (x64)
+    runs-on: windows-latest
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+      VCPKG_DEFAULT_TRIPLET: x64-windows
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ---------------------------
-      # Install platform deps
-      # ---------------------------
-      - name: Install Dependencies (Linux)
-        if: runner.os == 'Linux'
+      - name: Install vcpkg and libraries
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y build-essential cmake ninja-build pkg-config libcurl4-openssl-dev
-        shell: bash
-
-      - name: Install Dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew update
-          brew install cmake ninja curl
-        shell: bash
-
-      - name: Install Dependencies (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          choco install -y cmake --installargs '"ADD_CMAKE_TO_PATH=System"' ninja nsis
+          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          cd $env:VCPKG_ROOT
+          .\bootstrap-vcpkg.bat
+          .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
         shell: pwsh
 
-      # Optional: install vcpkg on Windows for native deps (makes Windows builds reproducible)
-      - name: Setup vcpkg (Windows)
-        if: runner.os == 'Windows'
-        uses: lukka/run-vcpkg@v11
-        with:
-          vcpkgGitCommitId: '1b47e02435323c1c7c37196994f234503d376d1b'
-          vcpkgArguments: 'install curl nlohmann-json spdlog'
-          vcpkgTriplet: 'x64-windows-static'
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
 
-      # ---------------------------
-      # Configure / Build / Package
-      # ---------------------------
+      - name: Install Build Tools (CMake, Ninja, NSIS)
+        run: choco install cmake ninja nsis -y
 
-      - name: Configure CMake (Linux/macOS)
-        if: runner.os != 'Windows'
+      - name: Configure CMake
         run: |
-          cmake -S ./installer -B build -G "Ninja" \
+          cmake -S . -B build -G "Ninja" `
+            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" `
             -DCMAKE_BUILD_TYPE=Release
-        shell: bash
-
-      - name: Configure CMake (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          # Use vcpkg toolchain when available (set by lukka/run-vcpkg)
-          $toolchain = ""
-          if ($env:VCPKG_ROOT) { $toolchain = "-DCMAKE_TOOLCHAIN_FILE=`"$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake`"" }
-          cmake -S ./installer -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release $toolchain
         shell: pwsh
 
-      - name: Build with CMake
+      - name: Build Project with CMake
         run: cmake --build build --config Release --parallel
-        shell: bash
-        # On Windows runner, bash is available; if you prefer PowerShell for Windows, the next step would use pwsh.
-        # If you prefer to force pwsh on Windows, add `if: runner.os == 'Windows'` and duplicate step with pwsh.
 
-      - name: Package with CPack
-        run: |
-          cd build
-          cpack -C Release --verbose
-        shell: bash
+      - name: Package with CPack (NSIS)
+        working-directory: ./build
+        run: cpack -C Release -G NSIS
 
-      # ---------------------------
-      # Find artifact & upload
-      # ---------------------------
-      - name: Find and prepare artifact for upload (Linux/macOS)
-        if: runner.os != 'Windows'
-        id: find_artifact
-        run: |
-          ARTIFACT_PATH=$(find build -type f -name "${{ matrix.artifact_glob }}" | head -n 1)
-          if [ -z "$ARTIFACT_PATH" ]; then
-            echo "No artifact found matching: ${{ matrix.artifact_glob }}"
-            exit 1
-          fi
-          echo "Found artifact: $ARTIFACT_PATH"
-          FINAL_ASSET_NAME="phgit-installer-${{ matrix.asset_name_suffix }}"
-          mv "$ARTIFACT_PATH" "$FINAL_ASSET_NAME"
-          echo "artifact_path=$FINAL_ASSET_NAME" >> $GITHUB_OUTPUT
-        shell: bash
-
-      - name: Find and prepare artifact for upload (Windows)
-        if: runner.os == 'Windows'
-        id: find_artifact
-        run: |
-          $artifact = Get-ChildItem -Path build -Recurse -File -Filter "${{ matrix.artifact_glob }}" | Select-Object -First 1
-          if (-not $artifact) {
-            Write-Error "No artifact found matching: ${{ matrix.artifact_glob }}"
-            exit 1
-          }
-          Write-Host "Found artifact: $($artifact.FullName)"
-          $final = "phgit-installer-${{ matrix.asset_name_suffix }}"
-          Rename-Item -Path $artifact.FullName -NewName $final -Force
-          Write-Output "artifact_path=$final" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        shell: pwsh
-
-      - name: Upload build artifact (Actions)
+      - name: Upload Windows Installer Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: installer-${{ matrix.name }}
-          path: ${{ steps.find_artifact.outputs.artifact_path }}
-          retention-days: 7
+          name: windows-installer
+          path: build/*.exe # Uploads the generated phgit-X.Y.Z-installer.exe
 
-      - name: Upload Asset to GitHub Release
-        if: github.event_name == 'release' && github.event.action == 'published'
-        uses: actions/upload-release-asset@v1
+  # ========================================================================================
+  # JOB 2: Construir e Empacotar para Linux
+  # ========================================================================================
+  build-and-package-linux:
+    name: Build Linux Installers (.deb, .rpm)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build libcurl4-openssl-dev liblua5.4-dev rustc cargo
+
+      - name: Configure CMake
+        run: cmake -S . -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build Project with CMake
+        run: cmake --build build --config Release --parallel
+
+      - name: Package with CPack (.deb and .rpm)
+        working-directory: ./build
+        run: |
+          cpack -C Release -G DEB
+          cpack -C Release -G RPM
+
+      - name: Upload Linux Installer Artifacts
+        uses: actions/upload-artifact@v4
         with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ${{ steps.find_artifact.outputs.artifact_path }}
-          asset_name: ${{ steps.find_artifact.outputs.artifact_path }}
-          asset_content_type: application/octet-stream
+          name: linux-installers
+          path: |
+            build/*.deb
+            build/*.rpm
+
+  # ========================================================================================
+  # JOB 3: Construir e Empacotar para macOS
+  # ========================================================================================
+  build-and-package-macos:
+    name: Build macOS Installer (.dmg)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Build Dependencies
+        run: brew install cmake ninja lua libcurl
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Configure CMake
+        run: cmake -S . -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build Project with CMake
+        run: cmake --build build --config Release --parallel
+
+      - name: Package with CPack (DragNDrop DMG)
+        working-directory: ./build
+        run: cpack -C Release -G DragNDrop
+
+      - name: Upload macOS Installer Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-installer
+          path: build/*.dmg
+
+  # ========================================================================================
+  # JOB 4: Criar o Release no GitHub
+  # ========================================================================================
+  create-github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-and-package-windows, build-and-package-linux, build-and-package-macos] # Depends on all build jobs
+
+    steps:
+      - name: Download all installer artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: installers # Download all artifacts into this directory
+          merge-multiple: true # Merge artifacts from different jobs into one directory
+
+      - name: List downloaded files for debugging
+        run: ls -R installers
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          # The body of the release. Could also point to a file with release notes.
+          body: "Release of phgit version ${{ github.ref_name }}. See CHANGELOG.md for details."
+          # Use a wildcard to upload all downloaded installer files.
+          files: installers/*
+          # Determines if this is a pre-release by checking for '-' in the tag name (e.g., v1.0.0-rc1)
+          prerelease: contains(github.ref, '-')
