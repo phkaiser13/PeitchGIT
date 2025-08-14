@@ -1,0 +1,18 @@
+Source: phgit
+Section: utils
+Priority: optional
+Maintainer: @PACKAGE_MAINTAINER@
+Build-Depends: debhelper (>= 11)
+Standards-Version: 4.1.4
+Homepage: @PACKAGE_HOMEPAGE@
+
+Package: phgit
+Architecture: any
+Depends: git (>= 1:2.20.0), ${shlibs:Depends}, ${misc:Depends}
+Description: @PACKAGE_DESCRIPTION@
+ A powerful Git helper tool designed to streamline development workflows by
+ integrating seamlessly with Terraform for infrastructure as code management and
+ HashiCorp Vault for secure secret handling.
+ .
+ This package provides the 'phgit' command-line tool and all necessary
+ components for its operation.
