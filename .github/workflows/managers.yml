@@ -2,8 +2,9 @@
 name: 'Publish to Package Managers'
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   publish:
