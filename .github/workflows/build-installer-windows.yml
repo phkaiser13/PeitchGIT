@@ -1,185 +1,123 @@
-name: Build and Package Windows Installer
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
+# SPDX-License-Identifier: Apache-2.0
+
+name: Build, Package, and Release
 
 on:
   push:
     branches: ["main"]
-    tags: ['v*']
   pull_request:
     branches: ["main"]
+  # O gatilho principal para a criação de releases
+  release:
+    types: [published]
   workflow_dispatch:
 
-env:
-  VCPKG_DEFAULT_TRIPLET: x64-windows
-  VCPKG_INSTALL_LIST: "curl lua nlohmann-json"    # pacotes separados por espaço
-  CMAKE_VERSION: "3.29.3"
-  RUST_TOOLCHAIN: "stable"
-  ARTIFACT_NAME: "PeitchGIT-Setup.exe"            # nome do instalador final
-
 jobs:
-  build:
-    runs-on: windows-latest
+  build-and-package:
+    name: Build on ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    
+    # A matriz de build para cobrir todas as nossas plataformas alvo
+    strategy:
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            artifact_glob: "phgit-installer-*.exe"
+            asset_name_suffix: "windows-x64.exe"
+          - name: Linux
+            os: ubuntu-latest
+            artifact_glob: "phgit-installer-*.deb" # CPack pode gerar DEB e RPM, vamos focar no DEB para o artefato principal
+            asset_name_suffix: "linux-amd64.deb"
+          - name: macOS
+            os: macos-latest
+            artifact_glob: "phgit-installer-*.dmg"
+            asset_name_suffix: "macos-universal.dmg"
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      # --- Instalação de Dependências Específica da Plataforma ---
+
+      - name: Install Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build libcurl4-openssl-dev
+
+      - name: Install Dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake ninja curl
+
+      - name: Install Dependencies (Windows)
+        if: runner.os == 'Windows'
+        uses: lukka/run-vcpkg@v11
         with:
-          fetch-depth: 0
+          vcpkgGitCommitId: '1b47e02435323c1c7c37196994f234503d376d1b' # Use a specific commit for reproducibility
+          vcpkgArguments: 'curl nlohmann-json spdlog' # spdlog is small, better to get it here
+          vcpkgTriplet: 'x64-windows-static' # Static linking for a more portable .exe
 
-      - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v1
-        with:
-          cmake-version: ${{ env.CMAKE_VERSION }}
+      - name: Install NSIS (Windows only)
+        if: runner.os == 'Windows'
+        run: choco install nsis -y --no-progress
 
-      - name: Install Ninja
-        shell: pwsh
+      # --- Configuração e Build com CMake ---
+
+      - name: Configure CMake
+        id: configure_cmake
         run: |
-          choco install ninja -y
+          # Define a variável de toolchain do vcpkg apenas para Windows
+          VCPKG_TOOLCHAIN_ARGS=""
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            VCPKG_TOOLCHAIN_ARGS="-DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake"
+          fi
+          
+          cmake -S ./installer -B build -G "Ninja" \
+            -DCMAKE_BUILD_TYPE=Release \
+            $VCPKG_TOOLCHAIN_ARGS
+        shell: bash
 
-      - name: Export VCPKG_ROOT
-        shell: pwsh
+      - name: Build with CMake
+        run: cmake --build build --config Release --parallel
+
+      - name: Package with CPack
         run: |
-          $vroot = "${{ github.workspace }}\vcpkg"
-          Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_ROOT=$vroot"
-          Write-Host "VCPKG_ROOT set to: $vroot"
+          cd build
+          cpack -C Release --verbose
+      
+      # --- Upload de Artefatos e Criação de Release ---
 
-      - name: Install vcpkg and libraries (correct argument splitting)
-        shell: pwsh
-        env:
-          VCPKG_DEFAULT_TRIPLET: ${{ env.VCPKG_DEFAULT_TRIPLET }}
-          VCPKG_INSTALL_LIST: ${{ env.VCPKG_INSTALL_LIST }}
-          VCPKG_DISABLE_METRICS: "1"
+      - name: Find and prepare artifact for upload
+        id: find_artifact
         run: |
-          $ErrorActionPreference = 'Stop'
-          Write-Host "Using VCPKG_ROOT = $env:VCPKG_ROOT"
-          if (!(Test-Path -Path $env:VCPKG_ROOT)) {
-            git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
-          } else {
-            Write-Host "vcpkg already cloned"
-          }
-          Push-Location $env:VCPKG_ROOT
-          # bootstrap sem telemetria
-          .\bootstrap-vcpkg.bat -disableMetrics
+          # Encontra o artefato gerado pelo CPack
+          ARTIFACT_PATH=$(find build -name "${{ matrix.artifact_glob }}" | head -n 1)
+          echo "Found artifact: $ARTIFACT_PATH"
+          
+          # Define o nome final do ativo para a release
+          FINAL_ASSET_NAME="phgit-installer-${{ matrix.asset_name_suffix }}"
+          echo "Final asset name: $FINAL_ASSET_NAME"
+          
+          # Renomeia para um nome consistente e define os outputs
+          mv "$ARTIFACT_PATH" "$FINAL_ASSET_NAME"
+          echo "artifact_path=$FINAL_ASSET_NAME" >> $GITHUB_OUTPUT
+        shell: bash
 
-          # --- CORREÇÃO CRÍTICA:
-          # divide a string em array para que vcpkg receba múltiplos argumentos
-          $packages = $env:VCPKG_INSTALL_LIST -split '\s+' | Where-Object { $_ -ne "" }
-          Write-Host "Installing packages: $($packages -join ', ')"
-          & .\vcpkg.exe install $packages --triplet $env:VCPKG_DEFAULT_TRIPLET
-          Pop-Location
-
-      - name: Check for Cargo.toml (set output)
-        id: check_cargo
-        shell: pwsh
-        run: |
-          if (Test-Path -Path "Cargo.toml") {
-            Add-Content -Path $env:GITHUB_OUTPUT -Value "has_cargo=true"
-            Write-Host "Cargo.toml found"
-          } else {
-            Add-Content -Path $env:GITHUB_OUTPUT -Value "has_cargo=false"
-            Write-Host "Cargo.toml not found"
-          }
-
-      - name: Setup Rust toolchain (conditional)
-        if: ${{ steps.check_cargo.outputs.has_cargo == 'true' }}
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
-
-      - name: Install NSIS (makensis) and export path
-        id: find_makensis
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          choco install nsis --yes --no-progress
-          $makensisPath = $null
-          try {
-            $cmd = Get-Command makensis -ErrorAction Stop
-            $makensisPath = $cmd.Path
-            Write-Host "makensis found at: $makensisPath"
-          } catch {
-            $fallback = "C:\ProgramData\chocolatey\bin\makensis.exe"
-            if (Test-Path -Path $fallback) {
-              $makensisPath = $fallback
-              Write-Host "makensis fallback found at $fallback"
-            } else {
-              Write-Host "makensis not found; PATH content below for debug:"
-              $env:Path.Split(";") | ForEach-Object { Write-Host $_ }
-              throw "makensis not found after choco install"
-            }
-          }
-          $makensisDir = Split-Path -Path $makensisPath -Parent
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "makensis_path=$makensisPath"
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "makensis_dir=$makensisDir"
-
-      - name: Configure CMake (Visual Studio generator) - robust
-        shell: pwsh
-        env:
-          VCPKG_ROOT: ${{ github.workspace }}\vcpkg
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Write-Host "CMake version:"; cmake --version
-          Write-Host "VCPKG_ROOT = $env:VCPKG_ROOT"
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
-            -DCMAKE_PREFIX_PATH="$env:VCPKG_ROOT\installed\x64-windows\share" `
-            -DLua_FOUND=TRUE `
-            -DLUA_INCLUDE_DIR="$env:VCPKG_ROOT\installed\x64-windows\include" `
-            -DLUA_LIBRARIES="$env:VCPKG_ROOT\installed\x64-windows\lib\lua.lib" `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DMAKENSIS_EXECUTABLE="${{ steps.find_makensis.outputs.makensis_path }}" `
-            -DNSIS_DIR="${{ steps.find_makensis.outputs.makensis_dir }}"
-
-
-
-      - name: Build and Package (tries package-windows; fallback to ALL_BUILD or .nsi)
-        id: do_build
-        shell: pwsh
-        env:
-          MAKENSIS_PATH: ${{ steps.find_makensis.outputs.makensis_path }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $buildDir = Join-Path $PWD "build"
-
-          # 1) tenta package-windows
-          $proj = Get-ChildItem -Path $buildDir -Recurse -Filter "package-windows.vcxproj" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($proj) {
-            Write-Host "Found package-windows project: $($proj.FullName)"
-            cmake --build $buildDir --config Release --target package-windows --parallel
-          } else {
-            Write-Host "package-windows not found — tentando ALL_BUILD"
-            # tenta ALL_BUILD (vai gerar targets e normalmente compilará projetos)
-            try {
-              cmake --build $buildDir --config Release --target ALL_BUILD --parallel
-            } catch {
-              Write-Host "ALL_BUILD falhou ou não existe. Procurando .nsi..."
-              $nsi = Get-ChildItem -Path $buildDir -Recurse -Filter "*.nsi" -ErrorAction SilentlyContinue | Select-Object -First 1
-              if ($nsi) {
-                Write-Host "Found .nsi: $($nsi.FullName) — compiling with makensis"
-                & "${env:MAKENSIS_PATH}" $nsi.FullName
-              } else {
-                throw "Nenhum target package-windows, ALL_BUILD ou .nsi encontrado. Abortando para depuração."
-              }
-            }
-          }
-
-          # Após build, localiza primeiro .exe relevante e renomeia para nome fixo
-          $exe = Get-ChildItem -Path $buildDir -Recurse -Include "*.exe" -ErrorAction SilentlyContinue | Sort-Object Length -Descending | Select-Object -First 1
-          if ($exe) {
-            $dest = Join-Path $PWD "${{ env.ARTIFACT_NAME }}"
-            Write-Host "Renaming $($exe.FullName) -> $dest"
-            Copy-Item -Path $exe.FullName -Destination $dest -Force
-            Add-Content -Path $env:GITHUB_OUTPUT -Value "artifact_path=$dest"
-          } else {
-            Write-Host "Nenhum .exe encontrado para renomear."
-            Add-Content -Path $env:GITHUB_OUTPUT -Value "artifact_path="
-          }
-
-      - name: Upload Installer Artifact (fixed name fallback)
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-installer
-          path: |
-            ${{ env.ARTIFACT_NAME }}
-            build/**/*.exe
-            **/*.exe
+          name: installer-${{ matrix.name }}
+          path: ${{ steps.find_artifact.outputs.artifact_path }}
           retention-days: 7
+
+      - name: Upload Asset to GitHub Release
+        if: github.event_name == 'release' && github.event.action == 'published'
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./${{ steps.find_artifact.outputs.artifact_path }}
+          asset_name: ${{ steps.find_artifact.outputs.artifact_path }}
+          asset_content_type: application/octet-stream
