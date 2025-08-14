@@ -10,19 +10,29 @@ jobs:
     name: Update Homebrew, AUR, and vcpkg
     runs-on: ubuntu-latest
     steps:
-      - name: 'Get release version from tag'
-        run: echo "RELEASE_VERSION=${{ github.ref_name }}" | sed -e 's/v//' >> $GITHUB_ENV
+      - name: 'Get release tag and version'
+        run: |
+          set -euo pipefail
+          # TAG_NAME keeps the original tag (ex: v1.2.3)
+          TAG_NAME="${GITHUB_REF#refs/tags/}"
+          # RELEASE_VERSION remove leading `v` when present (ex: 1.2.3)
+          RELEASE_VERSION="${TAG_NAME#v}"
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> $GITHUB_ENV
 
       - name: 'Download source tarball and calculate checksums'
         run: |
-          TARBALL_URL="https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.ref_name }}.tar.gz"
-          curl -L -o source.tar.gz "$TARBALL_URL"
-          
+          set -euo pipefail
+          TAG_NAME="${TAG_NAME:-${GITHUB_REF#refs/tags/}}"
+          TARBALL_URL="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG_NAME}.tar.gz"
+          echo "Downloading $TARBALL_URL"
+          curl -fsSL -o source.tar.gz "$TARBALL_URL"
+
           # Calcula e armazena ambos os checksums
           echo "TARBALL_SHA256=$(sha256sum source.tar.gz | awk '{print $1}')" >> $GITHUB_ENV
           echo "TARBALL_SHA512=$(sha512sum source.tar.gz | awk '{print $1}')" >> $GITHUB_ENV
 
-      # --- Seção para atualizar o Homebrew Tap ---
+      # --- Homebrew Tap ---
       - name: 'Checkout Homebrew Tap repository'
         uses: actions/checkout@v4
         with:
@@ -32,24 +42,34 @@ jobs:
 
       - name: 'Update Homebrew formula'
         run: |
-          sed -i "s|url \".*\"|url \"https://github.com/${{ github.repository }}/archive/refs/tags/v${{ env.RELEASE_VERSION }}.tar.gz\"|" homebrew-tap/Formula/gitph.rb
-          sed -i "s|sha256 \".*\"|sha256 \"${{ env.TARBALL_SHA256 }}\"|" homebrew-tap/Formula/gitph.rb
-        
+          set -euo pipefail
+          FORMULA=homebrew-tap/Formula/gitph.rb
+          if [ ! -f "$FORMULA" ]; then
+            echo "Formula file not found: $FORMULA" >&2
+            exit 2
+          fi
+
+          # Usa TAG_NAME (mantém o `v` se a tag tiver) para o tarball URL
+          sed -E -i "0,/url \".*\"/s|url \".*\"|url \"https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG_NAME}.tar.gz\"|" "$FORMULA"
+
+          # Substitui sha256 na linha correspondente
+          sed -E -i "0,/sha256 \".*\"/s|sha256 \".*\"|sha256 \"${TARBALL_SHA256}\"|" "$FORMULA"
+
       - name: 'Commit and push changes to Homebrew Tap'
         run: |
+          set -euo pipefail
           cd homebrew-tap
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/gitph.rb
           if ! git diff --staged --quiet; then
-            git commit -m "chore: Update gitph formula to v${{ env.RELEASE_VERSION }}"
+            git commit -m "chore: Update gitph formula to ${TAG_NAME}"
             git push
           else
             echo "No changes to commit for Homebrew."
           fi
-          cd ..
 
-      # --- Seção para atualizar o repositório do AUR ---
+      # --- AUR ---
       - name: 'Checkout AUR repository'
         uses: actions/checkout@v4
         with:
@@ -59,51 +79,68 @@ jobs:
 
       - name: 'Update PKGBUILD'
         run: |
+          set -euo pipefail
+          PKGBUILD=aur-gitph/PKGBUILD
+          if [ ! -f "$PKGBUILD" ]; then
+            echo "PKGBUILD not found: $PKGBUILD" >&2
+            exit 2
+          fi
+
           cd aur-gitph
-          sed -i "s/pkgver='.*'/pkgver='${{ env.RELEASE_VERSION }}'/" PKGBUILD
-          sed -i "s/sha256sums=('.*')/sha256sums=('${{ env.TARBALL_SHA256 }}')/" PKGBUILD
+          # Atualiza pkgver e o sha256sums (substitui a primeira ocorrência)
+          sed -E -i "0,/pkgver=.*/s|pkgver=.*|pkgver='${RELEASE_VERSION}'|" PKGBUILD
+          sed -E -i "0,/sha256sums=\(.*/s|sha256sums=\(.*\)|sha256sums=('${TARBALL_SHA256}')|" PKGBUILD
           makepkg --printsrcinfo > .SRCINFO
-          
+
       - name: 'Commit and push changes to AUR repository'
         run: |
+          set -euo pipefail
           cd aur-gitph
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add PKGBUILD .SRCINFO
           if ! git diff --staged --quiet; then
-            git commit -m "chore: Update gitph PKGBUILD to ${{ env.RELEASE_VERSION }}"
+            git commit -m "chore: Update gitph PKGBUILD to ${RELEASE_VERSION}"
             git push
           else
             echo "No changes to commit for AUR."
           fi
-          cd ..
-          
-      # --- (NOVO) Seção para atualizar o vcpkg Registry ---
+
+      # --- vcpkg Registry ---
       - name: 'Checkout vcpkg registry repository'
         uses: actions/checkout@v4
         with:
-          # Assumindo que o nome do repositório é 'vcpkg-registry'
           repository: 'phkaiser/vcpkg-registry'
           token: ${{ secrets.PAT_TOKEN }}
           path: 'vcpkg-registry'
 
       - name: 'Update vcpkg port files'
         run: |
-          # Atualiza a versão no vcpkg.json
-          sed -i 's|\"version\": \".*\"|\"version\": \"${{ env.RELEASE_VERSION }}\"|' vcpkg-registry/ports/gitph/vcpkg.json
-          
-          # Atualiza a tag (REF) e o hash (SHA512) no portfile.cmake
-          sed -i 's|REF \".*\"|REF \"v${{ env.RELEASE_VERSION }}\"|' vcpkg-registry/ports/gitph/portfile.cmake
-          sed -i 's|SHA512 \".*\"|SHA512 \"${{ env.TARBALL_SHA512 }}\"|' vcpkg-registry/ports/gitph/portfile.cmake
-          
+          set -euo pipefail
+          VCPKG_JSON=vcpkg-registry/ports/gitph/vcpkg.json
+          PORTFILE=vcpkg-registry/ports/gitph/portfile.cmake
+
+          if [ ! -f "$VCPKG_JSON" ] || [ ! -f "$PORTFILE" ]; then
+            echo "vcpkg port files not found: $VCPKG_JSON or $PORTFILE" >&2
+            exit 2
+          fi
+
+          # Atualiza a versão explícita no vcpkg.json
+          sed -E -i "0,/\"version\".*/s|\"version\": \".*\"|\"version\": \"${RELEASE_VERSION}\"|" "$VCPKG_JSON"
+
+          # Atualiza a REF (usa TAG_NAME — preserva o `v` se houver) e o SHA512
+          sed -E -i "0,/REF \".*\"/s|REF \".*\"|REF \"${TAG_NAME}\"|" "$PORTFILE"
+          sed -E -i "0,/SHA512 \".*\"/s|SHA512 \".*\"|SHA512 \"${TARBALL_SHA512}\"|" "$PORTFILE"
+
       - name: 'Commit and push changes to vcpkg registry'
         run: |
+          set -euo pipefail
           cd vcpkg-registry
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add ports/gitph/vcpkg.json ports/gitph/portfile.cmake
           if ! git diff --staged --quiet; then
-            git commit -m "chore(gitph): Update port to v${{ env.RELEASE_VERSION }}"
+            git commit -m "chore(gitph): Update port to ${TAG_NAME}"
             git push
           else
             echo "No changes to commit for vcpkg."
