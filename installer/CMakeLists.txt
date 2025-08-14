@@ -29,17 +29,10 @@ FetchContent_Declare(spdlog
 )
 FetchContent_MakeAvailable(spdlog)
 
-# nlohmann/json for parsing configuration and API responses
-FetchContent_Declare(json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG v3.12.0
-)
-FetchContent_MakeAvailable(json)
-
 # miniz for zip archive extraction on Windows
 FetchContent_Declare(miniz
     GIT_REPOSITORY https://github.com/richgel999/miniz.git
-    GIT_TAG v2.5e
+    GIT_TAG v3.0.0
 )
 FetchContent_MakeAvailable(miniz)
 
