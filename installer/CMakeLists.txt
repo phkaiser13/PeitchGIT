@@ -32,7 +32,7 @@ FetchContent_MakeAvailable(spdlog)
 # miniz for zip archive extraction on Windows
 FetchContent_Declare(miniz
     GIT_REPOSITORY https://github.com/richgel999/miniz.git
-    GIT_TAG v3.0.0
+    GIT_TAG 3.0.0
 )
 FetchContent_MakeAvailable(miniz)
 
