@@ -1,10 +1,11 @@
 /* Copyright (C) 2025 Pedro Henrique / phkaiser13
 * File: main.cpp
-* This is the main entry point for the phgit installer. It orchestrates the entire installation
-* process by integrating and calling core components. It initializes logging, handles command-line
-* arguments, uses the PlatformDetector to understand the environment, checks for all required
-* dependencies using the DependencyManager, and then delegates the actual installation work to a
-* platform-specific installer module.
+* This is the main entry point and orchestrator for the phgit installer. It integrates all
+* core components to provide a seamless installation experience. Its responsibilities are
+* strictly high-level: initialize logging, detect the host platform, check for dependencies,
+* select the appropriate platform-specific installer engine, and execute it. All complex
+* logic is delegated to the specialized components, making this file clean, readable,
+* and a true representation of the project's modular architecture.
 * SPDX-License-Identifier: Apache-2.0
 */
 
@@ -22,6 +23,10 @@
 // Project-specific components
 #include "platform/platform_detector.hpp"
 #include "dependencies/dependency_manager.hpp"
+#include "platform/iplatform_installer.hpp"
+#include "platform/linux-systems/linux_installer.hpp"
+#include "platform/darwin-mac/darwin-mac_installer.hpp"
+#include "platform/windows/windows_installer.hpp"
 
 // --- Project-specific Constants ---
 namespace phgit_installer::constants {
@@ -36,60 +41,8 @@ public:
         : std::runtime_error(message) {}
 };
 
-
-// --- Forward Declarations & Stubs for Core Components ---
-// The following stubs will be replaced with real implementations in their own files.
-namespace phgit_installer {
-
-    /**
-     * @class IPlatformInstaller
-     * @brief Interface for platform-specific installation logic.
-     */
-    class IPlatformInstaller {
-    public:
-        virtual ~IPlatformInstaller() = default;
-        virtual void run_installation() = 0;
-    };
-
-    // STUB implementations for platform-specific installers
-    class LinuxInstaller : public IPlatformInstaller {
-    public:
-        explicit LinuxInstaller(const platform::PlatformInfo& info) : platform_info(info) {}
-        void run_installation() override {
-            spdlog::info("Running Linux installer for distro: {}", platform_info.os_id);
-            // STUB: Logic for apt, dnf, pacman, etc. and dependency installation would go here.
-            spdlog::info("Linux installation steps would be executed here.");
-            spdlog::info("Linux installation completed successfully.");
-        }
-    private:
-        platform::PlatformInfo platform_info;
-    };
-
-    class WindowsInstaller : public IPlatformInstaller {
-    public:
-        void run_installation() override {
-            spdlog::info("Running Windows installer...");
-            // STUB: Logic for MSI, NSIS, winget, etc. and dependency installation would go here.
-            spdlog::info("Windows installation steps would be executed here.");
-            spdlog::info("Windows installation completed successfully.");
-        }
-    };
-
-    class MacosInstaller : public IPlatformInstaller {
-    public:
-        void run_installation() override {
-            spdlog::info("Running macOS installer...");
-            // STUB: Logic for .pkg, .dmg, homebrew, etc. and dependency installation would go here.
-            spdlog::info("macOS installation steps would be executed here.");
-            spdlog::info("macOS installation completed successfully.");
-        }
-    };
-
-} // namespace phgit_installer
-
-
 /**
- * @brief Initializes the logging system.
+ * @brief Initializes the logging system with console and file sinks.
  */
 void setup_logging() {
     try {
@@ -114,6 +67,8 @@ void setup_logging() {
 
 /**
  * @brief Main entry point for the phgit installer application.
+ * Orchestrates the entire installation flow.
+ * @return 0 on success, non-zero on failure.
  */
 int main(int argc, char* argv[]) {
     setup_logging();
@@ -123,7 +78,7 @@ int main(int argc, char* argv[]) {
             phgit_installer::constants::PROJECT_NAME.data(),
             phgit_installer::constants::PROJECT_VERSION.data());
 
-        // Step 1: Platform Detection
+        // Step 1: Detect the current platform (OS, architecture, etc.)
         phgit_installer::platform::PlatformDetector detector;
         phgit_installer::platform::PlatformInfo platform_info = detector.detect();
 
@@ -131,32 +86,27 @@ int main(int argc, char* argv[]) {
             throw InstallerException("Unsupported operating system or architecture detected. Aborting.");
         }
 
-        // Step 2: Dependency Checking
+        // Step 2: Check for all required and optional dependencies
         phgit_installer::dependencies::DependencyManager dep_manager(platform_info);
         dep_manager.check_all();
 
-        if (!dep_manager.are_core_dependencies_met()) {
-            spdlog::warn("One or more required dependencies are missing or outdated.");
-            spdlog::warn("The installer will attempt to install them if possible.");
-        } else {
-            spdlog::info("All required dependencies are met.");
-        }
-
-        // Step 3: Installer Selection and Execution
-        std::unique_ptr<phgit_installer::IPlatformInstaller> installer;
+        // Step 3: Select the appropriate installer engine based on the detected platform
+        std::unique_ptr<phgit_installer::platform::IPlatformInstaller> installer;
         if (platform_info.os_family == "linux") {
-            installer = std::make_unique<phgit_installer::LinuxInstaller>(platform_info);
+            installer = std::make_unique<phgit_installer::platform::LinuxInstaller>(platform_info, dep_manager);
         } else if (platform_info.os_family == "windows") {
-            installer = std::make_unique<phgit_installer::WindowsInstaller>();
+            installer = std::make_unique<phgit_installer::platform::WindowsInstaller>(platform_info, dep_manager);
         } else if (platform_info.os_family == "macos") {
-            installer = std::make_unique<phgit_installer::MacosInstaller>();
+            installer = std::make_unique<phgit_installer::platform::MacosInstaller>(platform_info, dep_manager);
         } else {
-            throw InstallerException("Could not find a suitable installer for the detected OS.");
+            // This case should be caught by the earlier check, but serves as a safeguard.
+            throw InstallerException("Could not find a suitable installer for the detected OS family.");
         }
 
+        // Step 4: Run the installation process
         installer->run_installation();
 
-        spdlog::info("phgit installation process finished successfully.");
+        spdlog::info("phgit installation process finished.");
 
     } catch (const InstallerException& e) {
         spdlog::critical("A critical installer error occurred: {}", e.what());
