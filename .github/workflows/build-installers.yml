@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
 # SPDX-License-Identifier: Apache-2.0
 
-name: Build, Package, and Release
+name: Build, Package, and Release Installers
 
 on:
   push:
@@ -15,11 +15,12 @@ on:
 
 jobs:
   build-and-package:
-    name: Build on ${{ matrix.name }}
+    name: Build Installer on ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     
     # A matriz de build para cobrir todas as nossas plataformas alvo
     strategy:
+      fail-fast: false # Garante que outras compilações continuem mesmo se uma falhar
       matrix:
         include:
           - name: Windows
@@ -28,7 +29,7 @@ jobs:
             asset_name_suffix: "windows-x64.exe"
           - name: Linux
             os: ubuntu-latest
-            artifact_glob: "phgit-installer-*.deb" # CPack pode gerar DEB e RPM, vamos focar no DEB para o artefato principal
+            artifact_glob: "phgit-installer-*.deb"
             asset_name_suffix: "linux-amd64.deb"
           - name: macOS
             os: macos-latest
@@ -57,7 +58,7 @@ jobs:
         uses: lukka/run-vcpkg@v11
         with:
           vcpkgGitCommitId: '1b47e02435323c1c7c37196994f234503d376d1b' # Use a specific commit for reproducibility
-          vcpkgArguments: 'curl nlohmann-json spdlog' # spdlog is small, better to get it here
+          vcpkgArguments: 'curl nlohmann-json spdlog'
           vcpkgTriplet: 'x64-windows-static' # Static linking for a more portable .exe
 
       - name: Install NSIS (Windows only)
