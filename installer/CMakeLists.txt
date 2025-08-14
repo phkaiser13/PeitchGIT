@@ -1,122 +1,123 @@
-# Copyright (C) 2025 Pedro Henrique / phkaiser13
-# File: CMakeLists.txt
-# This is the main CMake build script for the phgit installer. It defines the project,
-# sets build properties, fetches external dependencies using FetchContent, and configures
-# the installer executable. It also includes CPack configuration for generating
-# platform-native packages, which will be expanded upon as platform-specific
-# logic is implemented.
-# SPDX-License-Identifier: Apache-2.0
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
+* File: main.cpp
+* This is the main entry point and orchestrator for the phgit installer. It integrates all
+* core components to provide a seamless installation experience. Its responsibilities are
+* strictly high-level: initialize logging, detect the host platform, check for dependencies,
+* select the appropriate platform-specific installer engine, and execute it. All complex
+* logic is delegated to the specialized components, making this file clean, readable,
+* and a true representation of the project's modular architecture.
+* SPDX-License-Identifier: Apache-2.0
+*/
 
-# Require a modern version of CMake that supports FetchContent and other features.
-cmake_minimum_required(VERSION 3.16)
+#include <iostream>
+#include <string>
+#include <vector>
+#include <memory>
+#include <stdexcept>
 
-# Define the project, its version, and the primary language.
-# This information will be used by CPack for package metadata.
-project(phgit_installer
-    VERSION 1.0.0
-    DESCRIPTION "A Git helper tool with integrated workflows for Terraform and Vault"
-    LANGUAGES CXX
-)
+// Third-party libraries
+#include "spdlog/spdlog.h"
+#include "spdlog/sinks/stdout_color_sinks.h"
+#include "spdlog/sinks/basic_file_sink.h"
 
-# --- Build Configuration ---
-# Enforce C++17 standard, as specified in the technical requirements.
-# This ensures access to features like std::filesystem and std::string_view.
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF) # Disable compiler-specific extensions for better portability.
+// Project-specific components
+#include "platform/platform_detector.hpp"
+#include "dependencies/dependency_manager.hpp"
+#include "platform/iplatform_installer.hpp"
+#include "platform/linux-systems/linux_installer.hpp"
+#include "platform/darwin-mac/darwin-mac_installer.hpp"
+#include "platform/windows/windows_installer.hpp"
 
-# --- Dependency Management (FetchContent) ---
-# Use FetchContent to manage dependencies in a clean, self-contained way.
-# This avoids requiring the user to pre-install libraries.
-include(FetchContent)
+// --- Project-specific Constants ---
+namespace phgit_installer::constants {
+    const std::string_view PROJECT_NAME = "phgit";
+    const std::string_view PROJECT_VERSION = "1.0.0";
+}
 
-# spdlog - For high-performance, feature-rich logging.
-# We fetch it directly from its Git repository.
-FetchContent_Declare(
-    spdlog
-    GIT_REPOSITORY https://github.com/gabime/spdlog.git
-    GIT_TAG        v1.14.1 # Use a specific, stable tag for reproducibility.
-)
-# Make the dependency available to the project. For a header-only library like spdlog,
-# this sets up the necessary include directories.
-FetchContent_MakeAvailable(spdlog)
+// --- Custom Exception for Controlled Error Handling ---
+class InstallerException : public std::runtime_error {
+public:
+    explicit InstallerException(const std::string& message)
+        : std::runtime_error(message) {}
+};
 
-# TODO: Add FetchContent declarations for nlohmann/json and libcurl when they are needed.
+/**
+ * @brief Initializes the logging system with console and file sinks.
+ */
+void setup_logging() {
+    try {
+        auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+        console_sink->set_level(spdlog::level::info);
 
-# --- Executable Target Definition ---
-# Define the main installer executable.
-# Source files will be added to this list as they are created.
-add_executable(installer
-    src/main.cpp
-)
+        auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("phgit_installer.log", true);
+        file_sink->set_level(spdlog::level::debug);
 
-# Set a clear output name for the final binary.
-set_target_properties(installer PROPERTIES OUTPUT_NAME "phgit-installer")
+        std::vector<spdlog::sink_ptr> sinks{ console_sink, file_sink };
+        auto logger = std::make_shared<spdlog::logger>("phgit_installer", sinks.begin(), sinks.end());
+        logger->set_level(spdlog::level::debug);
+        logger->flush_on(spdlog::level::debug);
 
-# Add the 'src' directory to the include path.
-# This allows for cleaner includes, e.g., #include "core/component.h"
-# instead of #include "src/core/component.h".
-target_include_directories(installer PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}/src"
-)
+        spdlog::set_default_logger(logger);
+    }
+    catch (const spdlog::spdlog_ex& ex) {
+        std::cerr << "Log initialization failed: " << ex.what() << std::endl;
+        exit(1);
+    }
+}
 
-# --- Linking Dependencies ---
-# Link the installer executable against its required libraries.
-target_link_libraries(installer PRIVATE
-    spdlog::spdlog # Link to the spdlog target created by FetchContent.
-)
+/**
+ * @brief Main entry point for the phgit installer application.
+ * Orchestrates the entire installation flow.
+ * @return 0 on success, non-zero on failure.
+ */
+int main(int argc, char* argv[]) {
+    setup_logging();
 
-# --- Platform-Specific Settings ---
-# This section will be expanded to handle compiler flags, static linking,
-# and other platform-specific requirements.
-if(MSVC)
-    # For Windows (MSVC compiler), ensure we use the static runtime library in Release builds
-    # to minimize external dependencies (msvcrt.dll).
-    target_compile_options(installer PRIVATE
-        $<$<CONFIG:RELEASE>:/MT>
-        $<$<CONFIG:DEBUG>:/MTd>
-    )
-elseif(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_CLANG)
-    # For GCC/Clang, add common warning flags for high-quality code.
-    target_compile_options(installer PRIVATE
-        -Wall -Wextra -Wpedantic
-    )
-endif()
+    try {
+        spdlog::info("Starting {} installer v{}",
+            phgit_installer::constants::PROJECT_NAME.data(),
+            phgit_installer::constants::PROJECT_VERSION.data());
 
-if(UNIX AND NOT APPLE)
-    # On Linux, we often need to link against pthread and dl for various system functions.
-    target_link_libraries(installer PRIVATE pthread dl)
-endif()
+        // Step 1: Detect the current platform (OS, architecture, etc.)
+        phgit_installer::platform::PlatformDetector detector;
+        phgit_installer::platform::PlatformInfo platform_info = detector.detect();
 
-if(APPLE)
-    # On macOS, set the minimum deployment target as specified.
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS deployment version")
-endif()
+        if (platform_info.os_family == "unknown" || platform_info.architecture == "unknown") {
+            throw InstallerException("Unsupported operating system or architecture detected. Aborting.");
+        }
 
+        // Step 2: Check for all required and optional dependencies
+        phgit_installer::dependencies::DependencyManager dep_manager(platform_info);
+        dep_manager.check_all();
 
-# --- CPack Package Generation (Initial Setup) ---
-# This section configures CPack, CMake's packaging tool. It will be used to generate
-# .deb, .rpm, .msi, .dmg, etc.
-set(CPACK_PACKAGE_NAME ${PROJECT_NAME})
-set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
-set(CPACK_PACKAGE_VENDOR "Pedro Henrique / phkaiser13")
-set(CPACK_PACKAGE_CONTACT "phkaiser13@users.noreply.github.com")
-set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/phkaiser13/phgit") # Placeholder URL
-# Assume a LICENSE file exists in the root directory. CPack will include it.
-set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.txt")
-set(CPACK_PACKAGE_INSTALL_DIRECTORY "phgit")
+        // Step 3: Select the appropriate installer engine based on the detected platform
+        std::unique_ptr<phgit_installer::platform::IPlatformInstaller> installer;
+        if (platform_info.os_family == "linux") {
+            installer = std::make_unique<phgit_installer::platform::LinuxInstaller>(platform_info, dep_manager);
+        } else if (platform_info.os_family == "windows") {
+            installer = std::make_unique<phgit_installer::platform::WindowsInstaller>(platform_info, dep_manager);
+        } else if (platform_info.os_family == "macos") {
+            installer = std::make_unique<phgit_installer::platform::MacosInstaller>(platform_info, dep_manager);
+        } else {
+            // This case should be caught by the earlier check, but serves as a safeguard.
+            throw InstallerException("Could not find a suitable installer for the detected OS family.");
+        }
 
-# Define which installer generators to use. This will be refined later.
-if(WIN32)
-    set(CPACK_GENERATOR "NSIS")
-elseif(UNIX AND NOT APPLE)
-    # On Linux, we can generate multiple types. The build script will later choose one.
-    set(CPACK_GENERATOR "DEB;RPM")
-elseif(APPLE)
-    # On macOS, DragNDrop creates a DMG image.
-    set(CPACK_GENERATOR "DragNDrop")
-endif()
+        // Step 4: Run the installation process
+        installer->run_installation();
 
-# This command must be at the end of the file to include all CPack settings.
-include(CPack)
+        spdlog::info("phgit installation process finished.");
+
+    } catch (const InstallerException& e) {
+        spdlog::critical("A critical installer error occurred: {}", e.what());
+        return 1;
+    } catch (const std::exception& e) {
+        spdlog::critical("An unexpected standard error occurred: {}", e.what());
+        return 1;
+    } catch (...) {
+        spdlog::critical("An unknown error occurred. Aborting.");
+        return 1;
+    }
+
+    return 0;
+}
