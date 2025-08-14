@@ -1,0 +1,90 @@
+# .github/workflows/publish-packages.yml
+name: 'Publish to Package Managers'
+
+# Este workflow é acionado somente quando um novo Release é publicado
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    name: Update Homebrew Tap and AUR
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Get release version from tag'
+        run: echo "RELEASE_VERSION=${{ github.ref_name }}" | sed -e 's/v//' >> $GITHUB_ENV
+
+      - name: 'Download source tarball and calculate checksum'
+        run: |
+          # URL do código fonte em .tar.gz que o GitHub cria automaticamente para cada release
+          TARBALL_URL="https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.ref_name }}.tar.gz"
+          
+          # Baixa o arquivo
+          curl -L -o source.tar.gz "$TARBALL_URL"
+          
+          # Calcula o checksum SHA256 e o armazena em uma variável de ambiente
+          echo "TARBALL_SHA256=$(sha256sum source.tar.gz | awk '{print $1}')" >> $GITHUB_ENV
+
+      # --- Seção para atualizar o Homebrew Tap ---
+      - name: 'Checkout Homebrew Tap repository'
+        uses: actions/checkout@v4
+        with:
+          # Repositório do Homebrew Tap que será atualizado
+          repository: 'phkaiser/homebrew-tap'
+          # Usa o PAT que você criou para ter permissão de push
+          token: ${{ secrets.PAT_TOKEN }}
+          path: 'homebrew-tap' # Clona para um diretório específico
+
+      - name: 'Update Homebrew formula'
+        run: |
+          # Usa `sed` para encontrar e substituir as linhas de url e sha256
+          # O delimitador `|` é usado para evitar conflitos com as barras da URL
+          sed -i "s|url \".*\"|url \"https://github.com/${{ github.repository }}/archive/refs/tags/v${{ env.RELEASE_VERSION }}.tar.gz\"|" homebrew-tap/Formula/gitph.rb
+          sed -i "s|sha256 \".*\"|sha256 \"${{ env.TARBALL_SHA256 }}\"|" homebrew-tap/Formula/gitph.rb
+        
+      - name: 'Commit and push changes to Homebrew Tap'
+        run: |
+          cd homebrew-tap
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/gitph.rb
+          # Verifica se há mudanças antes de tentar commitar
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: Update gitph formula to v${{ env.RELEASE_VERSION }}"
+            git push
+          else
+            echo "No changes to commit."
+          fi
+          cd ..
+
+      # --- Seção (Opcional) para atualizar o repositório do AUR ---
+      # Adicionei esta parte como bônus. O processo é muito similar.
+      - name: 'Checkout AUR repository'
+        uses: actions/checkout@v4
+        with:
+          repository: 'phkaiser/aur-gitph' # Assumindo que você tem um repo para o AUR
+          token: ${{ secrets.PAT_TOKEN }}
+          path: 'aur-gitph'
+
+      - name: 'Update PKGBUILD'
+        run: |
+          cd aur-gitph
+          # Atualiza a versão e o checksum no PKGBUILD
+          sed -i "s/pkgver='.*'/pkgver='${{ env.RELEASE_VERSION }}'/" PKGBUILD
+          sed -i "s/sha256sums=('.*')/sha256sums=('${{ env.TARBALL_SHA256 }}')/" PKGBUILD
+
+          # IMPORTANTE: O AUR exige que o .SRCINFO seja atualizado
+          makepkg --printsrcinfo > .SRCINFO
+          
+      - name: 'Commit and push changes to AUR repository'
+        run: |
+          cd aur-gitph
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: Update gitph PKGBUILD to ${{ env.RELEASE_VERSION }}"
+            git push
+          else
+            echo "No changes to commit."
+          fi
