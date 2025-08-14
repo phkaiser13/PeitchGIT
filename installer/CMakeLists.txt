@@ -23,15 +23,24 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(FetchContent)
 
 # spdlog for logging
-FetchContent_Declare(spdlog GIT_REPOSITORY https://github.com/gabime/spdlog.git GIT_TAG 1.14.1)
+FetchContent_Declare(spdlog
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG v1.13.0
+)
 FetchContent_MakeAvailable(spdlog)
 
 # nlohmann/json for parsing configuration and API responses
-FetchContent_Declare(json GIT_REPOSITORY https://github.com/nlohmann/json.git GIT_TAG 3.11.3)
+FetchContent_Declare(json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.12.0
+)
 FetchContent_MakeAvailable(json)
 
 # miniz for zip archive extraction on Windows
-FetchContent_Declare(miniz GIT_REPOSITORY https://github.com/richgel999/miniz.git GIT_TAG 2.2.0)
+FetchContent_Declare(miniz
+    GIT_REPOSITORY https://github.com/richgel999/miniz.git
+    GIT_TAG v2.5e
+)
 FetchContent_MakeAvailable(miniz)
 
 # Find libcurl for downloading
