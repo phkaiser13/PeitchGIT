@@ -265,7 +265,25 @@ target_link_libraries(ci_cd_visualizer PRIVATE
 set_target_properties(ci_cd_visualizer PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${MODULE_OUTPUT_PATH}"
 )
+# ==========================================================================================
+# Installer Engine Subproject
+# ==========================================================================================
+#
+# This section integrates the C++ installer engine located in the 'installer' subdirectory.
+# It uses an option to allow developers to enable or disable its build as needed.
+# When enabled, it builds the 'phgit-installer' executable and its dependencies.
 
+option(PHGIT_BUILD_INSTALLER "Build the phgit installer engine" ON)
+
+if(PHGIT_BUILD_INSTALLER)
+    message(STATUS "Installer engine build is enabled. Adding subdirectory.")
+    # This command tells CMake to enter the 'installer' directory and process its
+    # CMakeLists.txt file. All targets defined there (like the 'installer' executable)
+    # will become part of this main build.
+    add_subdirectory(installer)
+else()
+    message(STATUS "Installer engine build is disabled.")
+endif()
 
 # --- Installation Rules ---
 install(TARGETS gitph DESTINATION bin)
@@ -274,5 +292,20 @@ install(
     DESTINATION bin/modules
     FILES_MATCHING PATTERN "*.so" PATTERN "*.dll" PATTERN "*.dylib"
 )
+
+# --- ADDING THIS PART ---
+# Installation rules for the installer engine
+if(PHGIT_BUILD_INSTALLER)
+    # Install the installer executable itself into the main bin directory
+    install(TARGETS installer DESTINATION bin)
+
+    # IMPORTANT: Install the configuration file alongside the installer executable
+    install(
+        FILES ${CMAKE_SOURCE_DIR}/installer/config.json
+        DESTINATION bin
+    )
+endif()
+
+
 
 
