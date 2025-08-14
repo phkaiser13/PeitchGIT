@@ -38,7 +38,22 @@ public:
     explicit InstallerException(const std::string& message) : std::runtime_error(message) {}
 };
 
-void setup_logging() { /* Omitted for brevity, same as before */ }
+void setup_logging() {
+    try {
+        auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+        console_sink->set_level(spdlog::level::info);
+        auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("phgit_installer.log", true);
+        file_sink->set_level(spdlog::level::debug);
+        std::vector<spdlog::sink_ptr> sinks{ console_sink, file_sink };
+        auto logger = std::make_shared<spdlog::logger>("phgit_installer", sinks.begin(), sinks.end());
+        logger->set_level(spdlog::level::debug);
+        logger->flush_on(spdlog::level::debug);
+        spdlog::set_default_logger(logger);
+    } catch (const spdlog::spdlog_ex& ex) {
+        std::cerr << "Log initialization failed: " << ex.what() << std::endl;
+        exit(1);
+    }
+}
 
 /**
  * @brief Main entry point for the phgit installer engine.
@@ -48,36 +63,48 @@ int main(int argc, char* argv[]) {
 
     try {
         // Step 1: Load Configuration
-        // The config file is expected to be next to the executable.
         fs::path exe_path = fs::canonical(fs::path(argv[0]));
         fs::path config_path = exe_path.parent_path() / "config.json";
-
         auto config_manager = std::make_shared<phgit_installer::utils::ConfigManager>();
         if (!config_manager->load_from_file(config_path.string())) {
             throw InstallerException("Could not load or parse config.json. Cannot proceed.");
         }
-
         auto metadata = config_manager->get_package_metadata().value_or(phgit_installer::utils::PackageMetadata{});
         spdlog::info("Starting {} installer engine v{}", metadata.name, metadata.version);
 
         // Step 2: Initialize Core Components
         auto api_manager = std::make_shared<phgit_installer::utils::ApiManager>(config_manager);
-        
         phgit_installer::platform::PlatformDetector detector;
         phgit_installer::platform::PlatformInfo platform_info = detector.detect();
-
-        // The DependencyManager should also be driven by the config
         phgit_installer::dependencies::DependencyManager dep_manager(platform_info, config_manager);
         dep_manager.check_all();
 
         // Step 3: Select and Execute the Platform-Specific Engine
         std::unique_ptr<phgit_installer::platform::IPlatformInstaller> installer;
         if (platform_info.os_family == "linux") {
-            // The installers now need the ApiManager to download optional dependencies
-            installer = std::make_unique<phgit_installer::platform::LinuxInstaller>(platform_info, dep_manager, api_manager);
+            installer = std::make_unique<phgit_installer::platform::LinuxInstaller>(platform_info, dep_manager, api_manager, config_manager);
         } else if (platform_info.os_family == "windows") {
-            installer = std::make_unique<phgit_installer::platform::WindowsInstaller>(platform_info, dep_manager, api_manager);
+            installer = std::make_unique<phgit_installer::platform::WindowsInstaller>(platform_info, dep_manager, api_manager, config_manager);
         } else if (platform_info.os_family == "macos") {
-            installer = std::make_unique<phgit_installer::platform::MacosInstaller>(platform_info, dep_manager, api_manager);
+            installer = std::make_unique<phgit_installer::platform::MacosInstaller>(platform_info, dep_manager, api_manager, config_manager);
         } else {
-            throw InstallerException("Unsupported OS family. Could not select an instal
+            throw InstallerException("Unsupported OS family. Could not select an installer engine.");
+        }
+
+        // Step 4: Run the installation tasks
+        installer->run_installation();
+        spdlog::info("Installer engine finished its tasks successfully.");
+
+    } catch (const InstallerException& e) {
+        spdlog::critical("A critical installer error occurred: {}", e.what());
+        return 1;
+    } catch (const std::exception& e) {
+        spdlog::critical("An unexpected standard error occurred: {}", e.what());
+        return 1;
+    } catch (...) {
+        spdlog::critical("An unknown error occurred. Aborting.");
+        return 1;
+    }
+
+    return 0;
+}
