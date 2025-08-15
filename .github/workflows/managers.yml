@@ -4,7 +4,7 @@ name: Publish to Package Managers
 on:
   push:
     branches:
-      - main        # roda a cada push em main; ajuste conforme desejar
+      - main
   release:
     types: [published]
   workflow_dispatch:
@@ -34,7 +34,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y jq curl git python3 python3-distutils ca-certificates
-          # coreutils (sha256sum/sha512sum) já estão disponíveis por padrão
 
       - name: Determine release tag / version
         id: determine_tag
@@ -42,18 +41,20 @@ jobs:
           set -euo pipefail
           echo "Event: $GITHUB_EVENT_NAME"
           TAG=""
+
           if [ "${GITHUB_EVENT_NAME}" = "release" ]; then
-            # evento release (publicado)
-            TAG="${GITHUB_REF_NAME}"
-            echo "Triggered by release event -> $TAG"
+            # leitura segura do payload do evento release
+            if [ -f "$GITHUB_EVENT_PATH" ]; then
+              TAG=$(jq -r '.release.tag_name // empty' "$GITHUB_EVENT_PATH")
+            fi
+            echo "Triggered by release event -> ${TAG}"
           elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             # push foi uma tag
-            TAG="${GITHUB_REF_NAME}"
-            echo "Triggered by tag push -> $TAG"
+            TAG="${GITHUB_REF#refs/tags/}"
+            echo "Triggered by tag push -> ${TAG}"
           else
-            # tenta pegar latest release via API
             echo "Not a release/tag push. Querying latest release via GitHub API..."
-            LATEST_TAG=$(curl -sSf -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${REPO}/releases/latest" | jq -r .tag_name // empty)
+            LATEST_TAG=$(curl -sSf -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${REPO}/releases/latest" | jq -r '.tag_name // empty' || true)
             if [ -n "$LATEST_TAG" ]; then
               TAG="$LATEST_TAG"
               echo "Found latest published release: $TAG"
@@ -68,15 +69,16 @@ jobs:
             fi
           fi
 
-          # exporta variáveis
           echo "RELEASE_TAG=${TAG}" >> $GITHUB_ENV
           VERSION="${TAG#v}"
           echo "RELEASE_VERSION=${VERSION}" >> $GITHUB_ENV
-          echo "::set-output name=tag::$TAG"
+          # Saída do step (forma moderna)
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
 
       - name: Download source tarball and calculate checksums
         run: |
           set -euo pipefail
+          echo "Using tag: ${RELEASE_TAG}"
           TARBALL_URL="https://github.com/${REPO}/archive/refs/tags/${RELEASE_TAG}.tar.gz"
           echo "Downloading $TARBALL_URL"
           curl -L -f -o source.tar.gz "$TARBALL_URL"
@@ -92,9 +94,7 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      # ----------------
       # Homebrew Tap
-      # ----------------
       - name: Checkout Homebrew Tap repository
         uses: actions/checkout@v4
         with:
@@ -105,7 +105,7 @@ jobs:
       - name: Update Homebrew formula (safe replace)
         run: |
           python3 - <<'PY'
-import os, re, io
+import os,re
 p = 'homebrew-tap/Formula/gitph.rb'
 if not os.path.exists(p):
     print("Homebrew formula not found:", p)
@@ -129,9 +129,7 @@ PY
           fi
           cd ..
 
-      # ----------------
       # AUR
-      # ----------------
       - name: Checkout AUR repository
         uses: actions/checkout@v4
         with:
@@ -145,21 +143,22 @@ PY
           cd aur-gitph
           if [ -f PKGBUILD ]; then
             python3 - <<'PY'
-import os, re
+import os,re
 p='PKGBUILD'
-s=open(p).read()
+s=open(p,'r',encoding='utf-8').read()
 s=re.sub(r'pkgver=.*', f'pkgver={os.environ["RELEASE_VERSION"]}', s)
-s=re.sub(r"sha256sums=\([^)]+\)", f"sha256sums=('${{}}')".format(os.environ["TARBALL_SHA256"]), s)
-open(p,'w').write(s)
+s=re.sub(r"sha256sums=\([^)]+\)", "sha256sums('"+os.environ["TARBALL_SHA256"]+"')", s) if "sha256sums=(" in s else None
+# safer replacement if original is like sha256sums=('...') or sha256sums=('') 
+s=re.sub(r"sha256sums=\([^\)]*\)", f"sha256sums('{os.environ['TARBALL_SHA256']}')", s)
+open(p,'w',encoding='utf-8').write(s)
 print("PKGBUILD updated")
 PY
-            # Try to generate .SRCINFO; arch-install-scripts may provide makepkg on ubuntu
             sudo apt-get update -y
             sudo apt-get install -y arch-install-scripts || true
             if command -v makepkg >/dev/null 2>&1; then
               makepkg --printsrcinfo > .SRCINFO || true
             else
-              echo "makepkg not available; skipping .SRCINFO generation. You can generate it locally if needed."
+              echo "makepkg not available; skipping .SRCINFO generation."
             fi
           else
             echo "PKGBUILD not found; skipping AUR update."
@@ -178,9 +177,7 @@ PY
           fi
           cd ..
 
-      # ----------------
-      # vcpkg Registry
-      # ----------------
+      # vcpkg
       - name: Checkout vcpkg registry repository
         uses: actions/checkout@v4
         with:
@@ -198,13 +195,8 @@ PY
 import json, os
 p=os.environ["VCPKG_JSON"]
 j=json.load(open(p))
-# update version (best-effort — adapt if your JSON schema is different)
-if "version" in j:
-    j["version"]=os.environ["RELEASE_VERSION"]
-else:
-    # try version-string or similar keys if needed
-    j["version"]=os.environ["RELEASE_VERSION"]
-open(p,"w").write(json.dumps(j, indent=2))
+j["version"]=os.environ["RELEASE_VERSION"]
+open(p,"w",encoding='utf-8').write(json.dumps(j, indent=2))
 print("Updated vcpkg.json")
 PY
           else
@@ -212,14 +204,13 @@ PY
           fi
 
           if [ -f "$PORTFILE" ]; then
-            # safer textual replacements for REF and SHA512
             python3 - <<'PY'
-import os, re
+import os,re
 p=os.environ["PORTFILE"]
-s=open(p).read()
+s=open(p,'r',encoding='utf-8').read()
 s=re.sub(r'REF\s+"[^"]+"', f'REF "{os.environ["RELEASE_TAG"]}"', s)
 s=re.sub(r'SHA512\s+"[^"]+"', f'SHA512 "{os.environ["TARBALL_SHA512"]}"', s)
-open(p,'w').write(s)
+open(p,'w',encoding='utf-8').write(s)
 print("Updated portfile.cmake")
 PY
           else
