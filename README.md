@@ -33,6 +33,7 @@
 
 ## Table of Contents
 
+  - [Documentation](docs/introduction.md)
   - [What is `gitph`?](https://www.google.com/search?q=%23what-is-gitph)
   - [Key Features](https://www.google.com/search?q=%23-key-features)
   - [Architectural Principles](https://www.google.com/search?q=%23-architectural-principles)
