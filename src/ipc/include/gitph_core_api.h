@@ -13,7 +13,9 @@
  * 2. It retrieves the address of the `module_get_info` function to learn about
  *    the module's capabilities (name, version, supported commands).
  * 3. It calls `module_init`, passing a context object with pointers to core
- *    functions (like logging), allowing the module to perform setup tasks.
+ *    functions. This context includes a simple logger and a new, buffer-safe
+ *    formatted logger (`log_fmt`), allowing modules to perform setup and logging
+ *    securely and efficiently.
  * 4. When a user command matches one supported by the module, the core calls
  *    `module_exec` with the relevant arguments.
  * 5. Before the application exits, it calls `module_cleanup` for graceful
@@ -29,7 +31,6 @@
 
 /* Use C linkage for all symbols in this header. This is crucial for ensuring
  * that function names are not mangled by C++ compilers and are directly
-
  * linkable from Rust, Go, and other languages. */
 #ifdef __cplusplus
 extern "C" {
@@ -87,12 +88,27 @@ typedef struct {
  */
 typedef struct {
     /**
-     * @brief A function pointer to the core's logging system.
+     * @brief A function pointer to the core's simple logging system.
      * @param level The severity level of the message.
      * @param module_name The name of the module logging the message.
-     * @param message The formatted log message.
+     * @param message The pre-formatted log message.
      */
     void (*log)(GitphLogLevel level, const char* module_name, const char* message);
+
+    /**
+     * @brief A function pointer to the core's safe formatted logging system.
+     *
+     * This function behaves like printf. It dynamically allocates memory for the
+     * final message, making it immune to buffer overflow vulnerabilities.
+     * Modules should prefer this over the simple `log` function when message
+     * content has a variable or unpredictable size.
+     *
+     * @param level The severity level of the message.
+     * @param module_name The name of the module logging the message.
+     * @param format The printf-style format string.
+     * @param ... Variable arguments for the format string.
+     */
+    void (*log_fmt)(GitphLogLevel level, const char* module_name, const char* format, ...);
 
     /**
      * @brief A function pointer to the core's configuration manager.
@@ -143,8 +159,8 @@ typedef GitphStatus (*PFN_module_init)(const GitphCoreContext* context);
  * This function is called by the core when a user enters a command that this
  * module has registered.
  *
- * @param argc The number of arguments in the argv array.
- * @param argv An array of argument strings. argv[0] is the command itself.
+ * @param argc The number of arguments in the argv array. argv[0] is the command itself.
+ * @param argv An array of argument strings.
  * @return GITPH_SUCCESS on success, or an error code on failure.
  */
 typedef GitphStatus (*PFN_module_exec)(int argc, const char** argv);
