@@ -4,6 +4,9 @@
  * This file implements the bridge between the C core and the Lua scripting
  * engine. It manages the lifecycle of the Lua VM, exposes a curated set of
  * safe C functions to the Lua environment, and loads user-provided scripts.
+ * This version has been corrected to eliminate all fixed-size log buffers,
+ * using the safe `logger_log_fmt` function to prevent buffer overflows when
+ * reporting errors from the Lua subsystem.
  *
  * The core of the bridge is a global table named `gitph` that is injected
  * into the Lua state. This table contains functions that scripts can call,
@@ -122,7 +125,7 @@ GitphStatus lua_bridge_init(void) {
 
     // 3. Scan and load all scripts from the "plugins" directory
     const char* plugin_dir = "plugins";
-char log_buffer[2048]; // was 512
+    // NOTE: The fixed-size `log_buffer` has been removed to prevent buffer overflows.
 
 #ifdef PLATFORM_WINDOWS
     char search_path[MAX_PATH];
@@ -134,8 +137,8 @@ char log_buffer[2048]; // was 512
             char full_path[MAX_PATH];
             snprintf(full_path, sizeof(full_path), "%s\\%s", plugin_dir, fd.cFileName);
             if (luaL_dofile(g_lua_state, full_path) != LUA_OK) {
-                snprintf(log_buffer, sizeof(log_buffer), "Failed to load plugin '%s': %s", full_path, lua_tostring(g_lua_state, -1));
-                logger_log(LOG_LEVEL_ERROR, "LUA_BRIDGE", log_buffer);
+                // SAFETIFY: Replaced snprintf + logger_log with a single safe call.
+                logger_log_fmt(LOG_LEVEL_ERROR, "LUA_BRIDGE", "Failed to load plugin '%s': %s", full_path, lua_tostring(g_lua_state, -1));
                 lua_pop(g_lua_state, 1); // Pop error message from stack
             }
         } while (FindNextFile(hFind, &fd) != 0);
@@ -150,8 +153,8 @@ char log_buffer[2048]; // was 512
                 char full_path[1024];
                 snprintf(full_path, sizeof(full_path), "%s/%s", plugin_dir, dir->d_name);
                 if (luaL_dofile(g_lua_state, full_path) != LUA_OK) {
-                    snprintf(log_buffer, sizeof(log_buffer), "Failed to load plugin '%s': %s", full_path, lua_tostring(g_lua_state, -1));
-                    logger_log(LOG_LEVEL_ERROR, "LUA_BRIDGE", log_buffer);
+                    // SAFETIFY: Replaced snprintf + logger_log with a single safe call.
+                    logger_log_fmt(LOG_LEVEL_ERROR, "LUA_BRIDGE", "Failed to load plugin '%s': %s", full_path, lua_tostring(g_lua_state, -1));
                     lua_pop(g_lua_state, 1); // Pop error message
                 }
             }
@@ -185,9 +188,8 @@ GitphStatus lua_bridge_run_hook(const char* function_name, int argc, const char*
 
     // Call the function with `argc` arguments and expect 0 return values
     if (lua_pcall(g_lua_state, argc, 0, 0) != LUA_OK) {
-        char log_buffer[512];
-        snprintf(log_buffer, sizeof(log_buffer), "Error running hook '%s': %s", function_name, lua_tostring(g_lua_state, -1));
-        logger_log(LOG_LEVEL_ERROR, "LUA_BRIDGE", log_buffer);
+        // SAFETIFY: Replaced snprintf + logger_log with a single safe call.
+        logger_log_fmt(LOG_LEVEL_ERROR, "LUA_BRIDGE", "Error running hook '%s': %s", function_name, lua_tostring(g_lua_state, -1));
         lua_pop(g_lua_state, 1); // Pop error message
         return GITPH_ERROR_EXEC_FAILED;
     }
