@@ -7,6 +7,7 @@
 #
 # Isto melhora a experiência do desenvolvedor, especialmente em sistemas POSIX.
 #
+#
 # SPDX-License-Identifier: Apache-2.0
 
 # --- Variáveis ---
