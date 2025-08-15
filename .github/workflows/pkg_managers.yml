@@ -1,1 +1,113 @@
 
+# .github/workflows/mirror-repositories.yml
+
+name: 'Mirror Package Manager Repositories'
+
+# Este workflow é acionado sempre que há um push na branch 'main'.
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  mirror-homebrew:
+    name: 'Mirror Homebrew Tap'
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Faz o checkout do código do seu repositório principal (peitchgit)
+      - name: 'Checkout main repository'
+        uses: actions/checkout@v4
+
+      # 2. Clona o repositório de destino (homebrew-tap)
+      - name: 'Clone target repository'
+        uses: actions/checkout@v4
+        with:
+          repository: 'phkaiser13/homebrew-tap' # Substitua pelo seu repositório de destino
+          path: 'homebrew-tap-mirror'
+          token: ${{ secrets.GH_PAT }} # Use um Personal Access Token (PAT) para permissão de push
+
+      # 3. Sincroniza os arquivos
+      - name: 'Sync files to mirror repository'
+        run: |
+          # Copia o conteúdo da pasta local 'homebrew-tap' para o repositório clonado
+          rsync -av --delete ./homebrew-tap/ ./homebrew-tap-mirror/
+
+      # 4. Faz o commit e push das alterações, se houver
+      - name: 'Commit and push changes'
+        run: |
+          cd homebrew-tap-mirror
+          # Configura o usuário do Git para o commit
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Verifica se há alterações para commitar
+          if ! git diff-index --quiet HEAD; then
+            git add .
+            git commit -m "chore: Sync updates from main repository"
+            git push
+          else
+            echo "No changes to sync."
+          fi
+
+  mirror-vcpkg:
+    name: 'Mirror vcpkg Registry'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout main repository'
+        uses: actions/checkout@v4
+
+      - name: 'Clone target repository'
+        uses: actions/checkout@v4
+        with:
+          repository: 'phkaiser13/vcpkg-registry' # Substitua pelo seu repositório de destino
+          path: 'vcpkg-registry-mirror'
+          token: ${{ secrets.GH_PAT }}
+
+      - name: 'Sync files to mirror repository'
+        run: |
+          rsync -av --delete ./vcpkg-registry/ ./vcpkg-registry-mirror/
+
+      - name: 'Commit and push changes'
+        run: |
+          cd vcpkg-registry-mirror
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          if ! git diff-index --quiet HEAD; then
+            git add .
+            git commit -m "chore: Sync updates from main repository"
+            git push
+          else
+            echo "No changes to sync."
+          fi
+          
+  mirror-aur:
+    name: 'Mirror AUR Package'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout main repository'
+        uses: actions/checkout@v4
+
+      - name: 'Clone target repository'
+        uses: actions/checkout@v4
+        with:
+          repository: 'phkaiser13/aur-gitph' # Substitua pelo seu repositório de destino
+          path: 'aur-gitph-mirror'
+          token: ${{ secrets.GH_PAT }}
+
+      - name: 'Sync files to mirror repository'
+        run: |
+          rsync -av --delete ./aur-gitph/ ./aur-gitph-mirror/
+
+      - name: 'Commit and push changes'
+        run: |
+          cd aur-gitph-mirror
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          if ! git diff-index --quiet HEAD; then
+            git add .
+            git commit -m "chore: Sync updates from main repository"
+            git push
+          else
+            echo "No changes to sync."
+          fi
