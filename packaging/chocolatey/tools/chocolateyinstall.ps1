@@ -5,8 +5,8 @@ $ErrorActionPreference = 'Stop'
 
 # --- Parâmetros do Pacote ---
 # Estas variáveis serão substituídas pelo seu workflow de CI/CD
-$version = '${GITPH_VERSION}' # Ex: 1.0.0
-$installerUrl = "https://github.com/phkaiser13/peitchgit/releases/download/v$($version)/gitph-${version}-installer.exe"
+$version = '${phgit_VERSION}' # Ex: 1.0.0
+$installerUrl = "https://github.com/phkaiser13/peitchgit/releases/download/v$($version)/phgit-${version}-installer.exe"
 $checksum = '${CHECKSUM_SHA256}' # O workflow irá injetar o hash SHA256 do instalador aqui
 $checksumType = 'sha256'
 $toolsDir = "$(Get-ToolsLocation)"

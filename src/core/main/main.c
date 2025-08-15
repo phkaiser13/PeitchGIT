@@ -1,5 +1,5 @@
 /* Copyright (C) 2025 Pedro Henrique / phkaiser13
- * main.c - Main entry point for the gitph application.
+ * main.c - Main entry point for the phgit application.
  *
  * This file contains the main function, which serves as the orchestrator for
  * the entire application lifecycle. Its primary responsibilities include:
@@ -9,7 +9,7 @@
  * 2. Parsing the initial command-line arguments to determine the execution mode.
  *    - If no commands are provided, it launches the interactive Text-based
  *      User Interface (TUI).
- *    - If a command is provided (e.g., "gitph SND"), it dispatches the command
+ *    - If a command is provided (e.g., "phgit SND"), it dispatches the command
  *      to the CLI handler.
  * 3. Ensuring a graceful shutdown by cleaning up all initialized subsystems
  *    before the program terminates.
@@ -36,15 +36,15 @@
 #include "libs/liblogger/Logger.h"  // For the C++ based logging system (via C wrapper)
 
 // Version is typically set by the build system (e.g., CMake/Makefile)
-#ifndef GITPH_VERSION
-#define GITPH_VERSION "0.1.0-dev"
+#ifndef phgit_VERSION
+#define phgit_VERSION "0.1.0-dev"
 #endif
 
 /**
  * @brief Prints the application's version information and exits.
  */
 static void print_version(void) {
-    printf("gitph version %s\n", GITPH_VERSION);
+    printf("phgit version %s\n", phgit_VERSION);
     printf("Copyright (C) 2025 Pedro Henrique / phkaiser13\n");
     printf("License: Apache-2.0\n");
 }
@@ -64,7 +64,7 @@ static void print_help(const char* app_name) {
 }
 
 /**
- * @brief The main entry point of the gitph application.
+ * @brief The main entry point of the phgit application.
  *
  * @param argc The number of command-line arguments.
  * @param argv An array of command-line argument strings.
@@ -77,23 +77,23 @@ int main(int argc, char* argv[]) {
 
     // Initialize the logging system (the logger itself is C++, but we'll have a C API)
     // Note: We will create a C wrapper for the C++ logger.
-    logger_init("gitph_log.txt");
-    logger_log(LOG_LEVEL_INFO, "MAIN", "Gitph application starting.");
+    logger_init("phgit_log.txt");
+    logger_log(LOG_LEVEL_INFO, "MAIN", "phgit application starting.");
 
-    // Load configuration from file (e.g., .gitph.conf)
-    if (config_load("gitph.conf") != GITPH_SUCCESS) {
+    // Load configuration from file (e.g., .phgit.conf)
+    if (config_load("phgit.conf") != phgit_SUCCESS) {
         logger_log(LOG_LEVEL_ERROR, "MAIN", "Failed to load configuration. Using defaults.");
         // This is not a fatal error; the app can run with default settings.
     }
 
     // Initialize the Lua scripting engine
-    if (lua_bridge_init() != GITPH_SUCCESS) {
+    if (lua_bridge_init() != phgit_SUCCESS) {
         logger_log(LOG_LEVEL_FATAL, "MAIN", "Failed to initialize Lua scripting engine. Exiting.");
         goto cleanup;
     }
 
     // Discover and load all external modules from the 'modules' directory
-    if (modules_load("./modules") != GITPH_SUCCESS) {
+    if (modules_load("./modules") != phgit_SUCCESS) {
         logger_log(LOG_LEVEL_FATAL, "MAIN", "Failed to load core modules. Exiting.");
         goto cleanup;
     }
@@ -118,7 +118,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    logger_log(LOG_LEVEL_INFO, "MAIN", "Gitph application shutting down.");
+    logger_log(LOG_LEVEL_INFO, "MAIN", "phgit application shutting down.");
 
     // 3. Graceful Shutdown
 cleanup:

@@ -1,9 +1,9 @@
 # /* Copyright (C) 2025 Pedro Henrique / phkaiser13
-# * CMakeLists.txt - Main build script for the gitph project.
+# * CMakeLists.txt - Main build script for the phgit project.
 # *
 # * This file orchestrates the entire build process, including:
 # * 1. Finding and configuring all C/C++ dependencies (Lua, libcurl).
-# * 2. Compiling the main C/C++ core application (`gitph`).
+# * 2. Compiling the main C/C++ core application (`phgit`).
 # * 3. Compiling all polyglot modules (Rust and C++) into shared libraries.
 # * 4. Placing all build artifacts into a clean `bin` directory structure.
 # * 5. Defining installation rules.
@@ -16,7 +16,7 @@
 
 cmake_minimum_required(VERSION 3.15)
 
-project(gitph LANGUAGES C CXX VERSION 1.0.0)
+project(phgit LANGUAGES C CXX VERSION 1.0.0)
 
 # --- Global Settings and Options ---
 set(CMAKE_CXX_STANDARD 17)
@@ -193,14 +193,14 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/core/ui/*.c"
     "src/libs/libcommon/*.c"
 )
-add_executable(gitph ${CORE_SOURCES})
+add_executable(phgit ${CORE_SOURCES})
 
 # --- FIX: Correctly add all necessary include directories to the target ---
 # This is the second part of the fix. Modern imported targets (like Lua::Lua)
 # automatically add their include directories when you link them. However, for
 # maximum compatibility with older find modules, it's safest to add them
 # explicitly if the variables are defined. This also includes internal project headers.
-target_include_directories(gitph PUBLIC
+target_include_directories(phgit PUBLIC
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/core
     ${CMAKE_SOURCE_DIR}/src/ipc/include
@@ -214,14 +214,14 @@ target_include_directories(gitph PUBLIC
 
 # Link core executable against its dependencies
 # This part was already correct, using the modern target names.
-target_link_libraries(gitph
+target_link_libraries(phgit
     PRIVATE
     logger
     ${CURL_TARGET_NAME}
     ${LUA_TARGET_NAME}
 )
 if(UNIX AND NOT APPLE)
-    target_link_libraries(gitph PRIVATE dl m)
+    target_link_libraries(phgit PRIVATE dl m)
 endif()
 
 
@@ -286,7 +286,7 @@ set_target_properties(ci_cd_visualizer PROPERTIES
 # endif()
 
 # --- Installation Rules ---
-install(TARGETS gitph DESTINATION bin)
+install(TARGETS phgit DESTINATION bin)
 install(
     DIRECTORY ${MODULE_OUTPUT_PATH}/
     DESTINATION bin/modules

@@ -73,9 +73,9 @@ bool Logger::init(const std::string& filename) {
 }
 
 /**
- * @brief Converts GitphLogLevel enum to a human-readable string.
+ * @brief Converts phgitLogLevel enum to a human-readable string.
  */
-static const char* level_to_string(GitphLogLevel level) {
+static const char* level_to_string(phgitLogLevel level) {
     switch (level) {
         case LOG_LEVEL_DEBUG: return "DEBUG";
         case LOG_LEVEL_INFO:  return "INFO ";
@@ -89,7 +89,7 @@ static const char* level_to_string(GitphLogLevel level) {
 /**
  * @brief Logs a pre-formatted message with a timestamp, level, and module name.
  */
-void Logger::log(GitphLogLevel level, const std::string& module_name, const std::string& message) {
+void Logger::log(phgitLogLevel level, const std::string& module_name, const std::string& message) {
     // Acquire the lock. It will be automatically released when `lock` goes
     // out of scope at the end of the function.
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -122,7 +122,7 @@ void Logger::log(GitphLogLevel level, const std::string& module_name, const std:
 /**
  * @brief Logs a formatted message using a va_list, preventing buffer overflows.
  */
-void Logger::log(GitphLogLevel level, const std::string& module_name, const char* format, va_list args) {
+void Logger::log(phgitLogLevel level, const std::string& module_name, const char* format, va_list args) {
     // 1. Determine the required buffer size.
     // We must copy the va_list as vsnprintf can invalidate it.
     va_list args_copy;
@@ -165,7 +165,7 @@ int logger_init(const char* filename) {
 /**
  * @see Logger.h
  */
-void logger_log(GitphLogLevel level, const char* module_name, const char* message) {
+void logger_log(phgitLogLevel level, const char* module_name, const char* message) {
     // Check for null pointers to prevent crashes.
     if (module_name == nullptr || message == nullptr) {
         return;
@@ -177,7 +177,7 @@ void logger_log(GitphLogLevel level, const char* module_name, const char* messag
 /**
  * @see Logger.h
  */
-void logger_log_fmt(GitphLogLevel level, const char* module_name, const char* format, ...) {
+void logger_log_fmt(phgitLogLevel level, const char* module_name, const char* format, ...) {
     if (module_name == nullptr || format == nullptr) {
         return;
     }

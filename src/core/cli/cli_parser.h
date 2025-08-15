@@ -8,7 +8,7 @@
  * loaded module.
  *
  * This component is critical for code reuse, as it is called both directly
- * from `main` for commands like `gitph SND`, and from the `tui` module, which
+ * from `main` for commands like `phgit SND`, and from the `tui` module, which
  * simulates a command-line call to execute an action selected from the menu.
  *
  * SPDX-License-Identifier: Apache-2.0 */

@@ -1,39 +1,39 @@
-# Extending gitph with Lua
+# Extending phgit with Lua
 
-One of `gitph`'s most powerful features is its extensibility through a built-in Lua scripting engine. This allows you to tailor `gitph` to your specific workflow without modifying the core application. You can create custom command aliases, hook into Git events to enforce policies, and much more.
+One of `phgit`'s most powerful features is its extensibility through a built-in Lua scripting engine. This allows you to tailor `phgit` to your specific workflow without modifying the core application. You can create custom command aliases, hook into Git events to enforce policies, and much more.
 
 ## The Plugin System
 
-`gitph` automatically loads any Lua script (`.lua` file) it finds in the `src/plugins/` directory at startup. To create a new plugin, simply add a new `.lua` file to this directory.
+`phgit` automatically loads any Lua script (`.lua` file) it finds in the `src/plugins/` directory at startup. To create a new plugin, simply add a new `.lua` file to this directory.
 
-## The `gitph` Global Table
+## The `phgit` Global Table
 
-When your script is executed, `gitph` exposes a global Lua table named `gitph`. This table contains all the API functions you can use to interact with the core application.
+When your script is executed, `phgit` exposes a global Lua table named `phgit`. This table contains all the API functions you can use to interact with the core application.
 
 ### Logging from Lua
 
-You can write to the main `gitph` log file from your script using the `gitph.log()` function. This is useful for debugging your plugins.
+You can write to the main `phgit` log file from your script using the `phgit.log()` function. This is useful for debugging your plugins.
 
 **Syntax:**
-`gitph.log(log_level, message)`
+`phgit.log(log_level, message)`
 
 - `log_level`: A string representing the level ("INFO", "WARN", "ERROR", "DEBUG").
 - `message`: The string message to log.
 
 **Example:**
 ```lua
-gitph.log("INFO", "My custom plugin has loaded successfully!")
+phgit.log("INFO", "My custom plugin has loaded successfully!")
 ```
 
 ## Creating Command Aliases
 
-Do you have a long `gitph` command you type frequently? You can create a shorter alias for it with the `gitph.register_alias()` function.
+Do you have a long `phgit` command you type frequently? You can create a shorter alias for it with the `phgit.register_alias()` function.
 
 **Syntax:**
-`gitph.register_alias(alias, original_command)`
+`phgit.register_alias(alias, original_command)`
 
 - `alias`: The new, shorter command name.
-- `original_command`: The existing `gitph` command you want to alias.
+- `original_command`: The existing `phgit` command you want to alias.
 
 **Example: `my_aliases.lua`**
 Let's create a plugin to add some convenient shortcuts. Create a file named `src/plugins/my_aliases.lua`:
@@ -42,22 +42,22 @@ Let's create a plugin to add some convenient shortcuts. Create a file named `src
 -- File: src/plugins/my_aliases.lua
 
 -- Log to confirm the plugin is loading
-gitph.log("INFO", "Loading custom aliases.")
+phgit.log("INFO", "Loading custom aliases.")
 
 -- Create a short alias 'st' for the 'status' command
-gitph.register_alias("st", "status")
+phgit.register_alias("st", "status")
 
 -- Create a 'commit-push' alias for the 'SND' command
-gitph.register_alias("cp", "SND")
+phgit.register_alias("cp", "SND")
 
-gitph.log("INFO", "Custom aliases 'st' and 'cp' registered.")
+phgit.log("INFO", "Custom aliases 'st' and 'cp' registered.")
 ```
 
-After restarting `gitph` (or running it for the first time after adding the file), you can now run `gitph st` instead of `gitph status`, and `gitph cp` instead of `gitph SND`.
+After restarting `phgit` (or running it for the first time after adding the file), you can now run `phgit st` instead of `phgit status`, and `phgit cp` instead of `phgit SND`.
 
 ## Hooking into the Git Lifecycle
 
-`gitph` allows you to define special global functions in your Lua scripts that act as "hooks." These hooks are automatically called by the `gitph` core at specific points in the Git lifecycle, allowing you to run custom logic.
+`phgit` allows you to define special global functions in your Lua scripts that act as "hooks." These hooks are automatically called by the `phgit` core at specific points in the Git lifecycle, allowing you to run custom logic.
 
 ### The `on_pre_push` Hook
 
@@ -78,7 +78,7 @@ Let's create a plugin to prevent direct pushes to the `main` or `master` branche
 ```lua
 -- File: src/plugins/policy.lua
 
--- This global function is automatically called by the gitph core before a push.
+-- This global function is automatically called by the phgit core before a push.
 function on_pre_push(remote, branch)
     if branch == "main" or branch == "master" then
         -- Print a message to the user
@@ -94,4 +94,4 @@ function on_pre_push(remote, branch)
 end
 ```
 
-With this plugin active, any attempt to push to `main` or `master` using a `gitph` command will be blocked, helping you enforce team development policies.
+With this plugin active, any attempt to push to `main` or `master` using a `phgit` command will be blocked, helping you enforce team development policies.

@@ -21,9 +21,9 @@
 #ifndef LOGGER_H
 #define LOGGER_H
 
-// We need the core API header to use the consistent GitphLogLevel enum.
+// We need the core API header to use the consistent phgitLogLevel enum.
 // This demonstrates how even C++ modules adhere to the core contracts.
-#include "../../ipc/include/gitph_core_api.h"
+#include "../../ipc/include/phgit_core_api.h"
 
 #ifdef __cplusplus
 
@@ -55,7 +55,7 @@ public:
      * @param module_name The name of the module originating the log entry.
      * @param message The log message content.
      */
-    void log(GitphLogLevel level, const std::string& module_name, const std::string& message);
+    void log(phgitLogLevel level, const std::string& module_name, const std::string& message);
 
     /**
      * @brief Writes a message to the log file using a va_list.
@@ -65,7 +65,7 @@ public:
      * @param format The printf-style format string.
      * @param args The va_list of arguments.
      */
-    void log(GitphLogLevel level, const std::string& module_name, const char* format, va_list args);
+    void log(phgitLogLevel level, const std::string& module_name, const char* format, va_list args);
 
     // Delete copy constructor and assignment operator to enforce singleton property.
     Logger(const Logger&) = delete;
@@ -114,7 +114,7 @@ int logger_init(const char* filename);
  * @param module_name The name of the calling module (e.g., "MAIN", "GIT_OPS").
  * @param message The message to be logged.
  */
-void logger_log(GitphLogLevel level, const char* module_name, const char* message);
+void logger_log(phgitLogLevel level, const char* module_name, const char* message);
 
 /**
  * @brief Logs a formatted message safely, preventing buffer overflows.
@@ -131,7 +131,7 @@ void logger_log(GitphLogLevel level, const char* module_name, const char* messag
  * @param format The printf-style format string.
  * @param ... The variable arguments corresponding to the format string.
  */
-void logger_log_fmt(GitphLogLevel level, const char* module_name, const char* format, ...);
+void logger_log_fmt(phgitLogLevel level, const char* module_name, const char* format, ...);
 
 /**
  * @brief Cleans up the logging system.

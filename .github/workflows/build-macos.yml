@@ -1,4 +1,4 @@
-name: Build gitph (macOS & Darwin systems)
+name: Build phgit (macOS & Darwin systems)
 
 on:
   # Run on pushes to the main branch
@@ -66,7 +66,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           # The artifact name is unique per architecture for CI as well.
-          name: gitph-build-artifacts-macos-${{ matrix.arch }}
+          name: phgit-build-artifacts-macos-${{ matrix.arch }}
           path: |
             build/bin/
             src/plugins/

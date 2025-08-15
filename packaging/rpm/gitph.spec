@@ -1,9 +1,9 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
 # SPDX-License-Identifier: Apache-2.0
 
-Name:       gitph
+Name:       phgit
 # O workflow irá substituir a versão
-Version:    ${GITPH_VERSION}
+Version:    ${phgit_VERSION}
 Release:    1%{?dist}
 Summary:    The Polyglot Assistant for Git & DevOps Workflows
 
@@ -40,12 +40,12 @@ unify and streamline your development lifecycle.
 
 %files
 %license LICENSE
-%{_bindir}/gitph
-%dir %{_datadir}/gitph
-%{_datadir}/gitph/modules/
-%{_datadir}/gitph/plugins/
+%{_bindir}/phgit
+%dir %{_datadir}/phgit
+%{_datadir}/phgit/modules/
+%{_datadir}/phgit/plugins/
 
 %changelog
 # O workflow pode adicionar entradas aqui
-* Mon Aug 12 2025 Pedro Henrique <seu-email@example.com> - ${GITPH_VERSION}-1
+* Mon Aug 12 2025 Pedro Henrique <seu-email@example.com> - ${phgit_VERSION}-1
 - Release inicial do pacote RPM.

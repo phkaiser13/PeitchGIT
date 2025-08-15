@@ -1,11 +1,11 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
 # build-windows.yml
-# This GitHub Actions workflow automates the build, test, and release packaging process for the gitph project on Windows.
+# This GitHub Actions workflow automates the build, test, and release packaging process for the phgit project on Windows.
 # It uses the MSVC toolchain, manages C++ dependencies with vcpkg, and integrates Rust modules.
 # The workflow ensures that all necessary runtime DLLs are included in the final release package for standalone execution.
 # SPDX-License-Identifier: Apache-2.0
 
-name: Build gitph (Windows)
+name: Build phgit (Windows)
 
 on:
   push:
@@ -135,7 +135,7 @@ jobs:
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
-          name: gitph-build-artifacts-windows-x64
+          name: phgit-build-artifacts-windows-x64
           # Paths corrected for executable, modules, plugins, and license
           path: |
             build/bin/
@@ -147,12 +147,12 @@ jobs:
       - name: Create Release Package
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          $releaseDir = "gitph-release"
+          $releaseDir = "phgit-release"
           $buildBinDir = "build/bin/Release" # Source for executable and copied DLLs
           $pluginsDir = "src/plugins"
           $licenseFile = "LICENSE"
           $tagVersion = "${{ github.ref_name }}" # e.g., v1.0.0
-          $zipFileName = "gitph-windows-x64-$tagVersion.zip"
+          $zipFileName = "phgit-windows-x64-$tagVersion.zip"
 
           Write-Host "Preparing release package for version: $tagVersion"
           Write-Host "Output ZIP file: $zipFileName"
@@ -186,5 +186,5 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
-          name: gitph-release-windows-x64-${{ github.ref_name }} # Artifact name includes version
-          path: gitph-windows-x64-*.zip # Path to the generated ZIP file
+          name: phgit-release-windows-x64-${{ github.ref_name }} # Artifact name includes version
+          path: phgit-windows-x64-*.zip # Path to the generated ZIP file

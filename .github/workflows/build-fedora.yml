@@ -1,4 +1,4 @@
-name: Build gitph (Fedora-like Linux)
+name: Build phgit (Fedora-like Linux)
 
 on:
   # Run on pushes to the main branch
@@ -88,7 +88,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           # A different artifact name to avoid confusion with the release package.
-          name: gitph-build-artifacts-fedora
+          name: phgit-build-artifacts-fedora
           path: |
             build/bin/
             src/plugins/

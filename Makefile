@@ -16,7 +16,7 @@ CMAKE ?= cmake
 # Diretório de compilação
 BUILD_DIR := build
 # Nome do executável final
-EXECUTABLE_NAME := gitph
+EXECUTABLE_NAME := phgit
 # Caminho para o executável
 EXECUTABLE_PATH := ${BUILD_DIR}/bin/${EXECUTABLE_NAME}
 
@@ -52,17 +52,17 @@ rebuild: clean all
 # Constrói e executa a aplicação com quaisquer argumentos passados.
 # Exemplo: make run ARGS="--version"
 run: build
-	@echo "--- A executar o gitph ---"
+	@echo "--- A executar o phgit ---"
 	@${EXECUTABLE_PATH} ${ARGS}
 
 # Instala a aplicação usando as regras definidas no CMake.
 install: build
-	@echo "--- A instalar o gitph ---"
+	@echo "--- A instalar o phgit ---"
 	@${CMAKE} --install ${BUILD_DIR}
 
 # Exibe informações de ajuda.
 help:
-	@echo "Wrapper Makefile do gitph"
+	@echo "Wrapper Makefile do phgit"
 	@echo "-------------------------"
 	@echo "Uso: make [alvo]"
 	@echo ""

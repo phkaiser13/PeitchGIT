@@ -1,5 +1,5 @@
 /* Copyright (C) 2025 Pedro Henrique / phkaiser13
-* main.h - Header for the main entry point of the gitph application.
+* main.h - Header for the main entry point of the phgit application.
  *
  * This header file corresponds to `main.c`. In a typical C project, the main
  * function is the ultimate entry point and is not called by other modules,

@@ -43,7 +43,7 @@ static int g_module_count = 0;
 static int g_module_capacity = 0;
 
 // The context passed to modules, containing pointers to core functions.
-static GitphCoreContext g_core_context;
+static phgitCoreContext g_core_context;
 
 
 // --- Private Helper Functions ---
@@ -52,19 +52,19 @@ static GitphCoreContext g_core_context;
  * @brief Adds a successfully loaded module to the internal registry.
  *        Handles dynamic resizing of the module array if necessary.
  */
-static GitphStatus add_module_to_registry(LoadedModule* module) {
+static phgitStatus add_module_to_registry(LoadedModule* module) {
     if (g_module_count >= g_module_capacity) {
         int new_capacity = (g_module_capacity == 0) ? 8 : g_module_capacity * 2;
         LoadedModule** new_registry = realloc(g_loaded_modules, sizeof(LoadedModule*) * new_capacity);
         if (!new_registry) {
             logger_log(LOG_LEVEL_FATAL, "LOADER", "Failed to allocate memory for module registry.");
-            return GITPH_ERROR_GENERAL;
+            return phgit_ERROR_GENERAL;
         }
         g_loaded_modules = new_registry;
         g_module_capacity = new_capacity;
     }
     g_loaded_modules[g_module_count++] = module;
-    return GITPH_SUCCESS;
+    return phgit_SUCCESS;
 }
 
 /**
@@ -83,7 +83,7 @@ static void free_loaded_module(LoadedModule* module) {
 /**
  * @see loader.h
  */
-GitphStatus modules_load(const char* directory_path) {
+phgitStatus modules_load(const char* directory_path) {
     // NOTE: The fixed-size `log_buffer` has been removed to prevent buffer overflows.
     // We now use `logger_log_fmt` for safe, dynamically-sized log messages.
     logger_log_fmt(LOG_LEVEL_INFO, "LOADER", "Scanning for modules in: %s", directory_path);
@@ -103,7 +103,7 @@ GitphStatus modules_load(const char* directory_path) {
     HANDLE hFind = FindFirstFile(search_path, &fd);
     if (hFind == INVALID_HANDLE_VALUE) {
         logger_log(LOG_LEVEL_WARN, "LOADER", "Could not find any modules or read directory. This is not a fatal error.");
-        return GITPH_SUCCESS;
+        return phgit_SUCCESS;
     }
 
     do {
@@ -131,8 +131,8 @@ GitphStatus modules_load(const char* directory_path) {
         }
 
         // Initialize and register the module
-        const GitphModuleInfo* info = get_info_func();
-        if (init_func(&g_core_context) != GITPH_SUCCESS) {
+        const phgitModuleInfo* info = get_info_func();
+        if (init_func(&g_core_context) != phgit_SUCCESS) {
             // SAFETIFY: Replaced snprintf + logger_log with a single safe call.
             logger_log_fmt(LOG_LEVEL_ERROR, "LOADER", "Module '%s' failed to initialize. Skipping.", info->name);
             FreeLibrary(handle);
@@ -159,7 +159,7 @@ GitphStatus modules_load(const char* directory_path) {
     DIR* d = opendir(directory_path);
     if (!d) {
         logger_log_fmt(LOG_LEVEL_ERROR, "LOADER", "Cannot open modules directory: %s", directory_path);
-        return GITPH_ERROR_NOT_FOUND;
+        return phgit_ERROR_NOT_FOUND;
     }
 
     struct dirent* dir;
@@ -196,8 +196,8 @@ GitphStatus modules_load(const char* directory_path) {
         }
 
         // Initialize and register the module
-        const GitphModuleInfo* info = get_info_func();
-        if (init_func(&g_core_context) != GITPH_SUCCESS) {
+        const phgitModuleInfo* info = get_info_func();
+        if (init_func(&g_core_context) != phgit_SUCCESS) {
             // SAFETIFY: Replaced snprintf + logger_log with a single safe call.
             logger_log_fmt(LOG_LEVEL_ERROR, "LOADER", "Module '%s' failed to initialize. Skipping.", info->name);
             dlclose(handle);
@@ -219,7 +219,7 @@ GitphStatus modules_load(const char* directory_path) {
     closedir(d);
 #endif
 
-    return GITPH_SUCCESS;
+    return phgit_SUCCESS;
 }
 
 /**

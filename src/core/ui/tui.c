@@ -69,7 +69,7 @@ void tui_show_main_menu(void) {
 
         // --- Header ---
         printf("========================================\n");
-        printf("  gitph - The Polyglot Git Helper\n");
+        printf("  phgit - The Polyglot Git Helper\n");
         printf("========================================\n\n");
         printf("Please select an option:\n\n");
 
@@ -124,9 +124,9 @@ void tui_show_main_menu(void) {
             // A valid command was chosen
             const MenuItem* selected_item = &menu_items[choice - 1];
 
-            // We simulate a command-line call: `gitph <command>`
+            // We simulate a command-line call: `phgit <command>`
             // This reuses the entire CLI dispatch logic.
-            const char* argv[] = { "gitph", selected_item->command_alias, NULL };
+            const char* argv[] = { "phgit", selected_item->command_alias, NULL };
             int argc = 2;
 
             printf("\nExecuting '%s'...\n", selected_item->command_alias);
@@ -148,7 +148,7 @@ void tui_show_main_menu(void) {
     }
 
     free(menu_items);
-    printf("\nExiting gitph. Goodbye!\n");
+    printf("\nExiting phgit. Goodbye!\n");
 }
 
 /**

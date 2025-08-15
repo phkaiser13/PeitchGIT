@@ -28,7 +28,7 @@ mod sync;
 // --- FFI Type Definitions (matching the core C API) ---
 
 #[repr(C)]
-pub enum GitphStatus {
+pub enum phgitStatus {
     Success = 0,
     ErrorInvalidArgs = -2,
     ErrorInitFailed = -4,
@@ -36,7 +36,7 @@ pub enum GitphStatus {
 }
 
 #[repr(C)]
-pub enum GitphLogLevel {
+pub enum phgitLogLevel {
     Debug,
     Info,
     Warn,
@@ -45,10 +45,10 @@ pub enum GitphLogLevel {
 }
 
 // Function pointer type for the core logger callback.
-type LogFn = extern "C" fn(GitphLogLevel, *const c_char, *const c_char);
+type LogFn = extern "C" fn(phgitLogLevel, *const c_char, *const c_char);
 
 #[repr(C)]
-pub struct GitphCoreContext {
+pub struct phgitCoreContext {
     log: Option<LogFn>,
 }
 
@@ -63,11 +63,11 @@ lazy_static! {
 
     // The core context is stored globally to allow logging from anywhere.
     // A Mutex is necessary here because it's written to once during initialization.
-    static ref CORE_CONTEXT: Mutex<Option<GitphCoreContext>> = Mutex::new(None);
+    static ref CORE_CONTEXT: Mutex<Option<phgitCoreContext>> = Mutex::new(None);
 }
 
 /// Logs a message back to the core application using the provided callback.
-fn log_to_core(level: GitphLogLevel, message: &str) {
+fn log_to_core(level: phgitLogLevel, message: &str) {
     if let Ok(guard) = CORE_CONTEXT.lock() {
         if let Some(context) = &*guard {
             if let Some(log_fn) = context.log {
@@ -84,15 +84,15 @@ fn log_to_core(level: GitphLogLevel, message: &str) {
 // --- Module Metadata ---
 
 #[repr(C)]
-pub struct GitphModuleInfo {
+pub struct phgitModuleInfo {
     name: *const c_char,
     version: *const c_char,
     description: *const c_char,
     commands: *const *const c_char,
 }
 
-// A wrapper to safely mark GitphModuleInfo as Sync.
-struct SafeModuleInfo(GitphModuleInfo);
+// A wrapper to safely mark phgitModuleInfo as Sync.
+struct SafeModuleInfo(phgitModuleInfo);
 unsafe impl Sync for SafeModuleInfo {}
 
 // Static C-strings for module information. The null terminator is included.
@@ -108,7 +108,7 @@ const SUPPORTED_COMMANDS_PTRS: &[*const c_char] = &[
     std::ptr::null(),
 ];
 
-static MODULE_INFO: SafeModuleInfo = SafeModuleInfo(GitphModuleInfo {
+static MODULE_INFO: SafeModuleInfo = SafeModuleInfo(phgitModuleInfo {
     name: MODULE_NAME.as_ptr() as *const c_char,
     version: MODULE_VERSION.as_ptr() as *const c_char,
     description: MODULE_DESC.as_ptr() as *const c_char,
@@ -118,15 +118,15 @@ static MODULE_INFO: SafeModuleInfo = SafeModuleInfo(GitphModuleInfo {
 // --- FFI Function Implementations ---
 
 #[no_mangle]
-pub extern "C" fn module_get_info() -> *const GitphModuleInfo {
+pub extern "C" fn module_get_info() -> *const phgitModuleInfo {
     &MODULE_INFO.0
 }
 
 #[no_mangle]
-pub extern "C" fn module_init(context: *const GitphCoreContext) -> GitphStatus {
+pub extern "C" fn module_init(context: *const phgitCoreContext) -> phgitStatus {
     if context.is_null() {
         // Cannot log here as context is not available.
-        return GitphStatus::ErrorInitFailed;
+        return phgitStatus::ErrorInitFailed;
     }
 
     // Safely store the context provided by the core.
@@ -134,7 +134,7 @@ pub extern "C" fn module_init(context: *const GitphCoreContext) -> GitphStatus {
         *guard = Some(unsafe { std::ptr::read(context) });
     } else {
         // Mutex is poisoned, a panic occurred while it was locked.
-        return GitphStatus::ErrorInitFailed;
+        return phgitStatus::ErrorInitFailed;
     }
 
     // Eagerly initialize the runtime and enter its context.
@@ -142,15 +142,15 @@ pub extern "C" fn module_init(context: *const GitphCoreContext) -> GitphStatus {
     // The returned guard must be kept in scope for the duration of the context.
     let _enter = RUNTIME.enter();
 
-    log_to_core(GitphLogLevel::Info, "sync_engine module initialized successfully.");
-    GitphStatus::Success
+    log_to_core(phgitLogLevel::Info, "sync_engine module initialized successfully.");
+    phgitStatus::Success
 }
 
 #[no_mangle]
-pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphStatus {
+pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> phgitStatus {
     if argv.is_null() || argc < 1 {
-        log_to_core(GitphLogLevel::Error, "Execution failed: No command provided.");
-        return GitphStatus::ErrorInvalidArgs;
+        log_to_core(phgitLogLevel::Error, "Execution failed: No command provided.");
+        return phgitStatus::ErrorInvalidArgs;
     }
 
     // Safely parse arguments from C into a Vec<String>.
@@ -176,24 +176,24 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphS
 
     match result {
         Ok(success_message) => {
-            log_to_core(GitphLogLevel::Info, &success_message);
+            log_to_core(phgitLogLevel::Info, &success_message);
             // For CLI tools, printing to stdout is often expected on success.
             println!("{}", success_message);
-            GitphStatus::Success
+            phgitStatus::Success
         }
         Err(e) => {
             let error_message = format!("Command failed: {}", e);
-            log_to_core(GitphLogLevel::Error, &error_message);
+            log_to_core(phgitLogLevel::Error, &error_message);
             // Printing to stderr is standard for errors.
-            eprintln!("[gitph SYNC ERROR] {}", e);
-            GitphStatus::ErrorExecFailed
+            eprintln!("[phgit SYNC ERROR] {}", e);
+            phgitStatus::ErrorExecFailed
         }
     }
 }
 
 #[no_mangle]
 pub extern "C" fn module_cleanup() {
-    log_to_core(GitphLogLevel::Info, "sync_engine module cleaned up.");
+    log_to_core(phgitLogLevel::Info, "sync_engine module cleaned up.");
     // The RUNTIME will be dropped automatically when the program exits.
     // No explicit cleanup is required for lazy_static variables.
 }

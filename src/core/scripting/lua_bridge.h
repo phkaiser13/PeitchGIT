@@ -6,17 +6,17 @@
  * loading and executing user-provided scripts from the `plugins` directory,
  * and exposing core application functionalities to those scripts.
  *
- * By exposing functions like `gitph.log()` or `gitph.register_command()`, we
+ * By exposing functions like `phgit.log()` or `phgit.register_command()`, we
  * empower users to create powerful extensions, custom workflows, and aliases
  * directly in a simple scripting language. This is a key feature for making
- * gitph highly customizable.
+ * phgit highly customizable.
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
 #ifndef LUA_BRIDGE_H
 #define LUA_BRIDGE_H
 
-#include "../../ipc/include/gitph_core_api.h" // For GitphStatus
+#include "../../ipc/include/phgit_core_api.h" // For phgitStatus
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,12 +27,12 @@ extern "C" {
  *
  * This function creates a new Lua state, opens the standard Lua libraries,
  * and registers custom C functions into the Lua global state (e.g., inside a
- * `gitph` table). It then scans the `plugins` directory and executes each
+ * `phgit` table). It then scans the `plugins` directory and executes each
  * `.lua` file found, allowing them to register custom commands or hooks.
  *
- * @return GITPH_SUCCESS on success, or an error code on failure.
+ * @return phgit_SUCCESS on success, or an error code on failure.
  */
-GitphStatus lua_bridge_init(void);
+phgitStatus lua_bridge_init(void);
 
 /**
  * @brief Executes a specific function within the loaded Lua scripts.
@@ -43,11 +43,11 @@ GitphStatus lua_bridge_init(void);
  * @param function_name The name of the global Lua function to call.
  * @param argc The number of string arguments to pass to the Lua function.
  * @param argv An array of string arguments.
- * @return GITPH_SUCCESS if the function was called successfully, or an error
+ * @return phgit_SUCCESS if the function was called successfully, or an error
  *         code if the function doesn't exist or an error occurred during
  *         its execution.
  */
-GitphStatus lua_bridge_run_hook(const char* function_name, int argc, const char** argv);
+phgitStatus lua_bridge_run_hook(const char* function_name, int argc, const char** argv);
 
 /**
  * @brief Closes the Lua state and frees all associated resources.

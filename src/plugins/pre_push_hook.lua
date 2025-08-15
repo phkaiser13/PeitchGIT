@@ -2,7 +2,7 @@
 -- pre_push_hook.lua - Example plugin for a pre-push hook.
 --
 -- This script demonstrates the event-driven capabilities of the scripting
--- engine. It defines a global function, `on_pre_push`, which the gitph
+-- engine. It defines a global function, `on_pre_push`, which the phgit
 -- core will automatically call before executing a push operation.
 --
 -- The script can perform checks and return `false` to cancel the push,
@@ -11,20 +11,20 @@
 --
 -- SPDX-License-Identifier: Apache-2.0
 
-gitph.log("INFO", "pre_push_hook.lua plugin loaded.")
+phgit.log("INFO", "pre_push_hook.lua plugin loaded.")
 
 ---
--- Global hook function called by the gitph core before a push operation.
+-- Global hook function called by the phgit core before a push operation.
 -- @param remote (string)  The name of the remote being pushed to.
 -- @param branch (string)  The name of the branch being pushed.
 -- @return (boolean)       true to allow the push, false to cancel it.
 ---
 function on_pre_push(remote, branch)
-    gitph.log("INFO", "Executing on_pre_push hook for remote '" .. remote .. "' and branch '" .. branch .. "'.")
+    phgit.log("INFO", "Executing on_pre_push hook for remote '" .. remote .. "' and branch '" .. branch .. "'.")
 
     -- Policy Check: Prevent direct pushes to the 'main' branch.
     if branch == "main" then
-        gitph.log("ERROR", "Direct push to 'main' branch is forbidden by pre_push_hook.lua policy.")
+        phgit.log("ERROR", "Direct push to 'main' branch is forbidden by pre_push_hook.lua policy.")
         print("[POLICY VIOLATION] You cannot push directly to the main branch. Please use a pull request.")
         return false -- Cancels the push operation.
     end
@@ -36,10 +36,10 @@ function on_pre_push(remote, branch)
     -- os.execute returns different formats depending on Lua version and OS.
     -- Normalize result to detect failure (non-zero exit code).
     if type(lint_status) == "number" and lint_status ~= 0 then
-        gitph.log("ERROR", "Linter failed. Cancelling push.")
+        phgit.log("ERROR", "Linter failed. Cancelling push.")
         return false
     elseif type(lint_status) == "boolean" and not lint_status then
-        gitph.log("ERROR", "Linter failed. Cancelling push.")
+        phgit.log("ERROR", "Linter failed. Cancelling push.")
         return false
     end
 

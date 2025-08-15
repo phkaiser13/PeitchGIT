@@ -1,13 +1,13 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
 # SPDX-License-Identifier: Apache-2.0
 
-class Gitph < Formula
+class phgit < Formula
   desc "The Polyglot Assistant for Git & DevOps Workflows"
   homepage "https://github.com/phkaiser13/peitchgit"
   
   # Estas variáveis serão atualizadas pelo workflow de release
-  url "https://github.com/phkaiser13/peitchgit/archive/refs/tags/v${GITPH_VERSION}.tar.gz"
-  sha256 "${GITPH_SHA256}" 
+  url "https://github.com/phkaiser13/peitchgit/archive/refs/tags/v${phgit_VERSION}.tar.gz"
+  sha256 "${phgit_SHA256}" 
   
   license "Apache-2.0"
 
@@ -34,6 +34,6 @@ class Gitph < Formula
 
   test do
     # Verifica se o comando --version funciona
-    assert_match "gitph version", shell_output("#{bin}/gitph --version")
+    assert_match "phgit version", shell_output("#{bin}/phgit --version")
   end
 end

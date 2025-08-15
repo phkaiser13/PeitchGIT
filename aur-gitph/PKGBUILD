@@ -1,10 +1,10 @@
 # Maintainer: Pedro Henrique / phkaiser13 <seu-email@example.com>
 
 # Metadados do pacote
-pkgname='gitph'
+pkgname='phgit'
 _pkgname='peitchgit'
 # O workflow irá atualizar o pkgver
-pkgver=${GITPH_VERSION}
+pkgver=${phgit_VERSION}
 pkgrel=1
 pkgdesc="The Polyglot Assistant for Git & DevOps Workflows"
 arch=('x86_64' 'aarch64')
@@ -19,7 +19,7 @@ makedepends=('cmake' 'rust')
 # Fonte do código
 source=("${_pkgname}-${pkgver}.tar.gz::https://github.com/phkaiser13/${_pkgname}/archive/refs/tags/v${pkgver}.tar.gz")
 # O workflow irá gerar e inserir o hash SHA256 aqui
-sha256sums=('${GITPH_SHA256}')
+sha256sums=('${phgit_SHA256}')
 
 # Função de compilação
 build() {

@@ -16,7 +16,7 @@
 #ifndef LOADER_H
 #define LOADER_H
 
-#include "../../ipc/include/gitph_core_api.h" // For GitphStatus and module function pointers
+#include "../../ipc/include/phgit_core_api.h" // For phgitStatus and module function pointers
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,12 +28,12 @@ extern "C" {
  *
  * This structure holds all necessary information about a loaded module,
  * including its metadata, a handle to the dynamic library, and pointers to its
- * core functions as defined by the gitph_core_api.h contract.
+ * core functions as defined by the phgit_core_api.h contract.
  */
 typedef struct {
     void* handle;                   // Opaque handle to the loaded library (from dlopen/LoadLibrary)
     char* file_path;                // The full path to the module's file
-    GitphModuleInfo info;           // A copy of the module's metadata
+    phgitModuleInfo info;           // A copy of the module's metadata
     PFN_module_init init_func;      // Pointer to the module's init function
     PFN_module_exec exec_func;      // Pointer to the module's exec function
     PFN_module_cleanup cleanup_func;// Pointer to the module's cleanup function
@@ -49,10 +49,10 @@ typedef struct {
  * module's init function, and stores it in an internal registry.
  *
  * @param directory_path The path to the directory containing the modules.
- * @return GITPH_SUCCESS on success, or an error code if a critical failure
+ * @return phgit_SUCCESS on success, or an error code if a critical failure
  *         (like being unable to read the directory) occurs.
  */
-GitphStatus modules_load(const char* directory_path);
+phgitStatus modules_load(const char* directory_path);
 
 /**
  * @brief Finds the module responsible for handling a given command.

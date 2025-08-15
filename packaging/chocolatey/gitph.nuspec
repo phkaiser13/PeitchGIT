@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
   <metadata>
-    <id>gitph</id>
-    <version>${GITPH_VERSION}</version>
-    <title>gitph (Peitch Git)</title>
+    <id>phgit</id>
+    <version>${phgit_VERSION}</version>
+    <title>phgit (Peitch Git)</title>
     <authors>Pedro Henrique / phkaiser13</authors>
     <owners>Pedro Henrique / phkaiser13</owners>
     

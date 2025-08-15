@@ -9,9 +9,9 @@ vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO phkaiser13/peitchgit
     # O workflow irá substituir esta tag de versão
-    REF "v${GITPH_VERSION}" 
+    REF "v${phgit_VERSION}" 
     # O workflow irá substituir este hash
-    SHA512 "${GITPH_SHA512}" 
+    SHA512 "${phgit_SHA512}" 
     HEAD_REF main
 )
 
@@ -31,8 +31,8 @@ vcpkg_cmake_install()
 
 # 5. Copia o executável para a pasta de ferramentas do vcpkg.
 file(INSTALL
-    "${CURRENT_PACKAGES_DIR}/bin/gitph${VCPKG_HOST_EXECUTABLE_SUFFIX}"
-    DESTINATION "${CURRENT_PACKAGES_DIR}/tools/gitph"
+    "${CURRENT_PACKAGES_DIR}/bin/phgit${VCPKG_HOST_EXECUTABLE_SUFFIX}"
+    DESTINATION "${CURRENT_PACKAGES_DIR}/tools/phgit"
 )
 file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/bin" "${CURRENT_PACKAGES_DIR}/debug")
 

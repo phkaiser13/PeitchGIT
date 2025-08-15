@@ -4,7 +4,7 @@
  * This file serves as the main library entry point and the Foreign Function
  * Interface (FFI) layer for the `git_ops` module. It is responsible for
  * exposing a C-compatible API that adheres to the contract defined in the
- * core `gitph_core_api.h` header.
+ * core `phgit_core_api.h` header.
  *
  * Key responsibilities:
  * - Defining C-compatible data structures (`#[repr(C)]`).
@@ -15,7 +15,7 @@
  * - Dispatching commands received from the core to the appropriate Rust
  *   functions within the `commands` submodule.
  * - Translating the specific Rust `CommandError` enum into the generic
- *   C-compatible `GitphStatus` enum for the core.
+ *   C-compatible `phgitStatus` enum for the core.
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
@@ -29,10 +29,10 @@ mod commands;
 mod git_wrapper;
 
 // --- C API Data Structure Definitions ---
-// These must match the definitions in `gitph_core_api.h` exactly.
+// These must match the definitions in `phgit_core_api.h` exactly.
 
 #[repr(C)]
-pub enum GitphStatus {
+pub enum phgitStatus {
     Success = 0,
     ErrorGeneral = -1,
     ErrorInvalidArgs = -2,
@@ -43,7 +43,7 @@ pub enum GitphStatus {
 
 #[repr(C)]
 #[derive(Debug)] // Add Debug for easier logging
-pub enum GitphLogLevel {
+pub enum phgitLogLevel {
     Debug,
     Info,
     Warn,
@@ -52,10 +52,10 @@ pub enum GitphLogLevel {
 }
 
 // A function pointer type for the logger callback from the C core.
-type LogFn = extern "C" fn(GitphLogLevel, *const c_char, *const c_char);
+type LogFn = extern "C" fn(phgitLogLevel, *const c_char, *const c_char);
 
 #[repr(C)]
-pub struct GitphCoreContext {
+pub struct phgitCoreContext {
     log: Option<LogFn>,
     _get_config_value: Option<extern "C" fn()>,
     _print_ui: Option<extern "C" fn()>,
@@ -63,11 +63,11 @@ pub struct GitphCoreContext {
 
 // Make the context globally and safely accessible within the Rust module.
 lazy_static::lazy_static! {
-    static ref CORE_CONTEXT: Mutex<Option<GitphCoreContext>> = Mutex::new(None);
+    static ref CORE_CONTEXT: Mutex<Option<phgitCoreContext>> = Mutex::new(None);
 }
 
 // Helper function to log messages back to the C core.
-fn log_to_core(level: GitphLogLevel, message: &str) {
+fn log_to_core(level: phgitLogLevel, message: &str) {
     if let Ok(guard) = CORE_CONTEXT.lock() {
         if let Some(context) = &*guard {
             if let Some(log_fn) = context.log {
@@ -82,15 +82,15 @@ fn log_to_core(level: GitphLogLevel, message: &str) {
 // --- C-compatible API Implementation ---
 
 #[repr(C)]
-pub struct GitphModuleInfo {
+pub struct phgitModuleInfo {
     name: *const c_char,
     version: *const c_char,
     description: *const c_char,
     commands: *const *const c_char,
 }
 
-// A wrapper to safely mark GitphModuleInfo as Sync.
-struct SafeModuleInfo(GitphModuleInfo);
+// A wrapper to safely mark phgitModuleInfo as Sync.
+struct SafeModuleInfo(phgitModuleInfo);
 unsafe impl Sync for SafeModuleInfo {}
 
 // Define the static data for our module's information.
@@ -106,7 +106,7 @@ const SUPPORTED_COMMANDS_PTRS: &[*const c_char] = &[
     std::ptr::null(), // Null terminator for the C array
 ];
 
-static MODULE_INFO: SafeModuleInfo = SafeModuleInfo(GitphModuleInfo {
+static MODULE_INFO: SafeModuleInfo = SafeModuleInfo(phgitModuleInfo {
     name: MODULE_NAME.as_ptr() as *const c_char,
     version: MODULE_VERSION.as_ptr() as *const c_char,
     description: MODULE_DESC.as_ptr() as *const c_char,
@@ -114,29 +114,29 @@ static MODULE_INFO: SafeModuleInfo = SafeModuleInfo(GitphModuleInfo {
 });
 
 #[no_mangle]
-pub extern "C" fn module_get_info() -> *const GitphModuleInfo {
+pub extern "C" fn module_get_info() -> *const phgitModuleInfo {
     &MODULE_INFO.0
 }
 
 #[no_mangle]
-pub extern "C" fn module_init(context: *const GitphCoreContext) -> GitphStatus {
+pub extern "C" fn module_init(context: *const phgitCoreContext) -> phgitStatus {
     if context.is_null() {
-        return GitphStatus::ErrorInitFailed;
+        return phgitStatus::ErrorInitFailed;
     }
     if let Ok(mut guard) = CORE_CONTEXT.lock() {
         *guard = Some(unsafe { std::ptr::read(context) });
     } else {
-        return GitphStatus::ErrorInitFailed;
+        return phgitStatus::ErrorInitFailed;
     }
     log_to_core(
-        GitphLogLevel::Info,
+        phgitLogLevel::Info,
         "git_ops module initialized successfully.",
     );
-    GitphStatus::Success
+    phgitStatus::Success
 }
 
 #[no_mangle]
-pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphStatus {
+pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> phgitStatus {
     // Safely convert C-style arguments to a Rust `Vec<String>`.
     let args: Vec<String> = (0..argc as isize)
         .map(|i| unsafe {
@@ -147,16 +147,16 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphS
 
     if args.is_empty() {
         log_to_core(
-            GitphLogLevel::Error,
+            phgitLogLevel::Error,
             "Execution called with no arguments.",
         );
-        return GitphStatus::ErrorInvalidArgs;
+        return phgitStatus::ErrorInvalidArgs;
     }
 
     // Dispatch to the correct command handler based on the first argument.
     let command = args[0].as_str();
     log_to_core(
-        GitphLogLevel::Debug,
+        phgitLogLevel::Debug,
         &format!("Executing command: {}", command),
     );
 
@@ -168,50 +168,50 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphS
         "status" => commands::handle_status(None),
         _ => {
             let err_msg = format!("Unknown command '{}' for git_ops module.", command);
-            log_to_core(GitphLogLevel::Error, &err_msg);
+            log_to_core(phgitLogLevel::Error, &err_msg);
             // Use the GitError variant for unknown commands.
             Err(commands::CommandError::GitError(err_msg))
         }
     };
 
-    // Translate the specific CommandError into a generic GitphStatus for the C core.
+    // Translate the specific CommandError into a generic phgitStatus for the C core.
     match result {
         Ok(success_message) => {
             // Log the success message from the command handler.
-            log_to_core(GitphLogLevel::Info, &success_message);
+            log_to_core(phgitLogLevel::Info, &success_message);
             println!("{}", success_message); // Also print to user stdout
-            GitphStatus::Success
+            phgitStatus::Success
         }
         Err(e) => match e {
             commands::CommandError::GitError(msg) => {
-                log_to_core(GitphLogLevel::Error, &format!("Execution failed: {}", msg));
+                log_to_core(phgitLogLevel::Error, &format!("Execution failed: {}", msg));
                 println!("Error: {}", msg); // Print error to user stderr
-                GitphStatus::ErrorExecFailed
+                phgitStatus::ErrorExecFailed
             }
             commands::CommandError::MissingCommitMessage => {
-                let msg = "Missing commit message for 'SND' command. Usage: gitph SND <message>";
-                log_to_core(GitphLogLevel::Error, msg);
+                let msg = "Missing commit message for 'SND' command. Usage: phgit SND <message>";
+                log_to_core(phgitLogLevel::Error, msg);
                 println!("{}", msg);
-                GitphStatus::ErrorInvalidArgs
+                phgitStatus::ErrorInvalidArgs
             }
             commands::CommandError::NoUpstreamConfigured => {
                 let msg = "Current branch has no upstream configured. Cannot push.\nHint: Use 'git push -u <remote> <branch>' to set the upstream.";
-                log_to_core(GitphLogLevel::Error, msg);
+                log_to_core(phgitLogLevel::Error, msg);
                 println!("{}", msg);
-                GitphStatus::ErrorExecFailed
+                phgitStatus::ErrorExecFailed
             }
             // These are not "errors" in the sense of failure, but successful "no-op" states.
             commands::CommandError::NoChanges => {
                 let msg = "Working tree clean. No changes to send.";
-                log_to_core(GitphLogLevel::Info, msg);
+                log_to_core(phgitLogLevel::Info, msg);
                 println!("{}", msg);
-                GitphStatus::Success
+                phgitStatus::Success
             }
             commands::CommandError::OperationAborted => {
                 let msg = "Operation aborted by user.";
-                log_to_core(GitphLogLevel::Info, msg);
+                log_to_core(phgitLogLevel::Info, msg);
                 println!("{}", msg);
-                GitphStatus::Success
+                phgitStatus::Success
             }
         },
     }
@@ -219,5 +219,5 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphS
 
 #[no_mangle]
 pub extern "C" fn module_cleanup() {
-    log_to_core(GitphLogLevel::Info, "git_ops module cleaned up.");
+    log_to_core(phgitLogLevel::Info, "git_ops module cleaned up.");
 }

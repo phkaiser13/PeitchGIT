@@ -48,10 +48,10 @@ void cli_dispatch_command(int argc, const char** argv) {
         // We pass the arguments to the module, but we shift them so that the
         // command itself is the first argument (argv[0]) from the module's
         // perspective. This simplifies parsing within the modules.
-        // For example, `gitph SND -m "msg"` becomes `SND -m "msg"` for the module.
-        GitphStatus status = handler_module->exec_func(argc - 1, &argv[1]);
+        // For example, `phgit SND -m "msg"` becomes `SND -m "msg"` for the module.
+        phgitStatus status = handler_module->exec_func(argc - 1, &argv[1]);
 
-        if (status != GITPH_SUCCESS) {
+        if (status != phgit_SUCCESS) {
             // The module indicated that an error occurred during execution.
             logger_log_fmt(LOG_LEVEL_ERROR, "CLI", "Execution of command '%s' failed with status code %d.", command, status);
 

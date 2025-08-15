@@ -1,4 +1,4 @@
-name: Build gitph (Arch-like - containerized)
+name: Build phgit (Arch-like - containerized)
 
 #
 # Triggers for the workflow
@@ -81,7 +81,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           # A different artifact name to avoid confusion with the release package.
-          name: gitph-build-artifacts-arch
+          name: phgit-build-artifacts-arch
           # Upload the contents of the build directory for inspection.
           path: |
             build/

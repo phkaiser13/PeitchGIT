@@ -8,9 +8,9 @@
  * using the safe `logger_log_fmt` function to prevent buffer overflows when
  * reporting errors from the Lua subsystem.
  *
- * The core of the bridge is a global table named `gitph` that is injected
+ * The core of the bridge is a global table named `phgit` that is injected
  * into the Lua state. This table contains functions that scripts can call,
- * such as `gitph.log()`. These C functions are carefully written to interact
+ * such as `phgit.log()`. These C functions are carefully written to interact
  * with the Lua stack, pulling arguments and pushing return values. This
  * provides a powerful yet controlled way for users to extend the application.
  *
@@ -47,21 +47,21 @@ static lua_State* g_lua_state = NULL;
  * @brief Lua binding for the core logging function.
  *
  * Exposes `logger_log` to Lua scripts.
- * Lua usage: `gitph.log("INFO", "My message from Lua")`
+ * Lua usage: `phgit.log("INFO", "My message from Lua")`
  *
  * @param L The Lua state.
  * @return The number of return values pushed onto the stack (0).
  */
-static int l_gitph_log(lua_State* L) {
+static int l_phgit_log(lua_State* L) {
     int n_args = lua_gettop(L);
     if (n_args != 2) {
-        return luaL_error(L, "gitph.log expects 2 arguments: level (string) and message (string)");
+        return luaL_error(L, "phgit.log expects 2 arguments: level (string) and message (string)");
     }
 
     const char* level_str = luaL_checkstring(L, 1);
     const char* message = luaL_checkstring(L, 2);
 
-    GitphLogLevel level = LOG_LEVEL_INFO; // Default
+    phgitLogLevel level = LOG_LEVEL_INFO; // Default
     if (strcmp(level_str, "DEBUG") == 0) level = LOG_LEVEL_DEBUG;
     else if (strcmp(level_str, "WARN") == 0) level = LOG_LEVEL_WARN;
     else if (strcmp(level_str, "ERROR") == 0) level = LOG_LEVEL_ERROR;
@@ -75,27 +75,27 @@ static int l_gitph_log(lua_State* L) {
  * @brief Lua binding for the core command dispatcher.
  *
  * Exposes `cli_dispatch_command` to Lua scripts.
- * Lua usage: `gitph.run_command("status")`
+ * Lua usage: `phgit.run_command("status")`
  *
  * @param L The Lua state.
  * @return The number of return values pushed onto the stack (0).
  */
-static int l_gitph_run_command(lua_State* L) {
+static int l_phgit_run_command(lua_State* L) {
     const char* command_str = luaL_checkstring(L, 1);
 
     // We need to simulate argc/argv. For now, we only support simple commands
     // without arguments from Lua. This can be expanded later.
-    const char* argv[] = { "gitph", command_str, NULL };
+    const char* argv[] = { "phgit", command_str, NULL };
     int argc = 2;
 
     cli_dispatch_command(argc, argv);
     return 0;
 }
 
-// Array defining the functions to be registered in the `gitph` Lua table.
-static const struct luaL_Reg gitph_lib[] = {
-    {"log", l_gitph_log},
-    {"run_command", l_gitph_run_command},
+// Array defining the functions to be registered in the `phgit` Lua table.
+static const struct luaL_Reg phgit_lib[] = {
+    {"log", l_phgit_log},
+    {"run_command", l_phgit_run_command},
     {NULL, NULL} // Sentinel
 };
 
@@ -105,23 +105,23 @@ static const struct luaL_Reg gitph_lib[] = {
 /**
  * @see lua_bridge.h
  */
-GitphStatus lua_bridge_init(void) {
+phgitStatus lua_bridge_init(void) {
     if (g_lua_state) {
         logger_log(LOG_LEVEL_WARN, "LUA_BRIDGE", "Lua bridge already initialized.");
-        return GITPH_SUCCESS;
+        return phgit_SUCCESS;
     }
 
     // 1. Create Lua state and load standard libraries
     g_lua_state = luaL_newstate();
     if (!g_lua_state) {
         logger_log(LOG_LEVEL_FATAL, "LUA_BRIDGE", "Failed to create Lua state.");
-        return GITPH_ERROR_INIT_FAILED;
+        return phgit_ERROR_INIT_FAILED;
     }
     luaL_openlibs(g_lua_state);
 
-    // 2. Create the `gitph` library table and register our C functions
-    luaL_newlib(g_lua_state, gitph_lib);
-    lua_setglobal(g_lua_state, "gitph");
+    // 2. Create the `phgit` library table and register our C functions
+    luaL_newlib(g_lua_state, phgit_lib);
+    lua_setglobal(g_lua_state, "phgit");
 
     // 3. Scan and load all scripts from the "plugins" directory
     const char* plugin_dir = "plugins";
@@ -164,21 +164,21 @@ GitphStatus lua_bridge_init(void) {
 #endif
 
     logger_log(LOG_LEVEL_INFO, "LUA_BRIDGE", "Lua scripting engine initialized.");
-    return GITPH_SUCCESS;
+    return phgit_SUCCESS;
 }
 
 /**
  * @see lua_bridge.h
  */
-GitphStatus lua_bridge_run_hook(const char* function_name, int argc, const char** argv) {
-    if (!g_lua_state) return GITPH_ERROR_GENERAL;
+phgitStatus lua_bridge_run_hook(const char* function_name, int argc, const char** argv) {
+    if (!g_lua_state) return phgit_ERROR_GENERAL;
 
     // Get the global function from Lua
     lua_getglobal(g_lua_state, function_name);
 
     if (!lua_isfunction(g_lua_state, -1)) {
         lua_pop(g_lua_state, 1); // Pop non-function value
-        return GITPH_ERROR_NOT_FOUND; // Hook doesn't exist, which is not an error
+        return phgit_ERROR_NOT_FOUND; // Hook doesn't exist, which is not an error
     }
 
     // Push arguments onto the stack
@@ -191,10 +191,10 @@ GitphStatus lua_bridge_run_hook(const char* function_name, int argc, const char*
         // SAFETIFY: Replaced snprintf + logger_log with a single safe call.
         logger_log_fmt(LOG_LEVEL_ERROR, "LUA_BRIDGE", "Error running hook '%s': %s", function_name, lua_tostring(g_lua_state, -1));
         lua_pop(g_lua_state, 1); // Pop error message
-        return GITPH_ERROR_EXEC_FAILED;
+        return phgit_ERROR_EXEC_FAILED;
     }
 
-    return GITPH_SUCCESS;
+    return phgit_SUCCESS;
 }
 
 /**

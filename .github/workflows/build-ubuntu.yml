@@ -1,4 +1,4 @@
-name: Build gitph (Ubuntu/Debian-like Systems)
+name: Build phgit (Ubuntu/Debian-like Systems)
 
 # Workflow triggers:
 on:
@@ -55,7 +55,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           # A different artifact name to avoid confusion with the release package.
-          name: gitph-build-artifacts-ubuntu
+          name: phgit-build-artifacts-ubuntu
           # Upload the contents of the build directory for inspection.
           path: |
             build/bin/

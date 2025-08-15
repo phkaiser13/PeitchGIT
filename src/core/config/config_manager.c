@@ -108,7 +108,7 @@ void config_cleanup(void) {
 /**
  * @see config_manager.h
  */
-GitphStatus config_load(const char* filename) {
+phgitStatus config_load(const char* filename) {
     // Ensure the previous configuration is cleared before loading a new one.
     config_cleanup();
 
@@ -117,7 +117,7 @@ GitphStatus config_load(const char* filename) {
         // It's not an error if the config file doesn't exist.
         // The application will just use default values.
         logger_log(LOG_LEVEL_INFO, "CONFIG", "Configuration file not found. Using defaults.");
-        return GITPH_SUCCESS;
+        return phgit_SUCCESS;
     }
 
     char line[1024];
@@ -157,7 +157,7 @@ GitphStatus config_load(const char* filename) {
         if (!new_node) {
             logger_log(LOG_LEVEL_FATAL, "CONFIG", "Memory allocation failed for config node.");
             fclose(file);
-            return GITPH_ERROR_GENERAL;
+            return phgit_ERROR_GENERAL;
         }
         new_node->key = strdup(key);
         new_node->value = strdup(value);
@@ -167,7 +167,7 @@ GitphStatus config_load(const char* filename) {
 
     fclose(file);
     logger_log(LOG_LEVEL_INFO, "CONFIG", "Configuration loaded successfully.");
-    return GITPH_SUCCESS;
+    return phgit_SUCCESS;
 }
 
 /**

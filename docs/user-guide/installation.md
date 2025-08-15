@@ -1,42 +1,42 @@
 # Installation
 
-`gitph` is designed to be built from source on a variety of platforms. We also offer pre-built packages for several popular package managers to simplify the installation process.
+`phgit` is designed to be built from source on a variety of platforms. We also offer pre-built packages for several popular package managers to simplify the installation process.
 
 ## Option 1: Installing from a Package Manager (Recommended)
 
-Using a package manager is the easiest way to get `gitph` up and running.
+Using a package manager is the easiest way to get `phgit` up and running.
 
 ### Homebrew (macOS)
 
-If you are on macOS and use Homebrew, you can install `gitph` from our official tap:
+If you are on macOS and use Homebrew, you can install `phgit` from our official tap:
 
 ```bash
-brew install phkaiser13/peitchgit/gitph
+brew install phkaiser13/peitchgit/phgit
 ```
 
 ### Chocolatey (Windows)
 
-If you are on Windows and use Chocolatey, you can install `gitph` with the following command:
+If you are on Windows and use Chocolatey, you can install `phgit` with the following command:
 
 ```bash
-choco install gitph
+choco install phgit
 ```
 
 ### Arch User Repository (Arch Linux)
 
-For Arch Linux users, `gitph` is available on the AUR. You can use an AUR helper like `yay` to install it:
+For Arch Linux users, `phgit` is available on the AUR. You can use an AUR helper like `yay` to install it:
 
 ```bash
-yay -S gitph
+yay -S phgit
 ```
 
 ## Option 2: Building from Source
 
-If a package is not available for your system, or if you want to build the latest development version, you can build `gitph` from source.
+If a package is not available for your system, or if you want to build the latest development version, you can build `phgit` from source.
 
 ### Prerequisites
 
-Before you begin, you need to install the necessary development toolchain for your platform. `gitph` is a polyglot project and requires:
+Before you begin, you need to install the necessary development toolchain for your platform. `phgit` is a polyglot project and requires:
 
 - A modern C/C++ compiler (e.g., GCC, Clang, MSVC)
 - `cmake` (version 3.15 or newer)
@@ -79,14 +79,14 @@ Once the prerequisites are installed, you can clone the repository and build the
     ```
     This will create a `build` directory containing the compiled binaries.
 
-3.  **Run `gitph`:**
-    The main executable will be located at `build/bin/gitph`.
+3.  **Run `phgit`:**
+    The main executable will be located at `build/bin/phgit`.
     ```bash
-    ./build/bin/gitph --version
+    ./build/bin/phgit --version
     ```
 
 4.  **(Optional) Install the binary:**
-    To make `gitph` available system-wide, you can install it to a location in your `PATH`.
+    To make `phgit` available system-wide, you can install it to a location in your `PATH`.
     ```bash
     sudo make install
     ```

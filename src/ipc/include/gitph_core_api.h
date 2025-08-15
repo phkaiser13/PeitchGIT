@@ -1,5 +1,5 @@
 /* Copyright (C) 2025 Pedro Henrique / phkaiser13
- * gitph_core_api.h - Core API contract for gitph modules.
+ * phgit_core_api.h - Core API contract for phgit modules.
  *
  * This header file defines the essential interface that every dynamically loaded
  * module must implement. It acts as a strict contract between the C-based core
@@ -23,8 +23,8 @@
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
-#ifndef GITPH_CORE_API_H
-#define GITPH_CORE_API_H
+#ifndef phgit_CORE_API_H
+#define phgit_CORE_API_H
 
 #include <stdint.h> // For fixed-width integer types like int32_t
 #include <stddef.h> // For size_t
@@ -37,22 +37,22 @@ extern "C" {
 #endif
 
 /**
- * @enum GitphStatus
+ * @enum phgitStatus
  * @brief Defines standard status codes returned by module functions.
  *        This provides a consistent error handling mechanism across the
  *        entire application.
  */
 typedef enum {
-    GITPH_SUCCESS = 0,          /**< Operation completed successfully. */
-    GITPH_ERROR_GENERAL = -1,   /**< A generic, unspecified error occurred. */
-    GITPH_ERROR_INVALID_ARGS = -2,/**< Invalid arguments were passed to the function. */
-    GITPH_ERROR_NOT_FOUND = -3, /**< A required resource (file, config) was not found. */
-    GITPH_ERROR_INIT_FAILED = -4,/**< Module initialization failed. */
-    GITPH_ERROR_EXEC_FAILED = -5 /**< Command execution failed. */
-} GitphStatus;
+    phgit_SUCCESS = 0,          /**< Operation completed successfully. */
+    phgit_ERROR_GENERAL = -1,   /**< A generic, unspecified error occurred. */
+    phgit_ERROR_INVALID_ARGS = -2,/**< Invalid arguments were passed to the function. */
+    phgit_ERROR_NOT_FOUND = -3, /**< A required resource (file, config) was not found. */
+    phgit_ERROR_INIT_FAILED = -4,/**< Module initialization failed. */
+    phgit_ERROR_EXEC_FAILED = -5 /**< Command execution failed. */
+} phgitStatus;
 
 /**
- * @enum GitphLogLevel
+ * @enum phgitLogLevel
  * @brief Defines the severity levels for the logging system.
  *        Modules use these levels when calling the logger provided by the core.
  */
@@ -62,11 +62,11 @@ typedef enum {
     LOG_LEVEL_WARN,    /**< Warnings about potential issues. */
     LOG_LEVEL_ERROR,   /**< Errors that occurred but are recoverable. */
     LOG_LEVEL_FATAL    /**< Critical errors causing the application to terminate. */
-} GitphLogLevel;
+} phgitLogLevel;
 
 
 /**
- * @struct GitphModuleInfo
+ * @struct phgitModuleInfo
  * @brief A structure to hold metadata about a module.
  *        This is returned by `module_get_info` and used by the core to
  *        register the module and its commands.
@@ -76,11 +76,11 @@ typedef struct {
     const char* version;      /**< The module's version string (e.g., "1.0.0"). */
     const char* description;  /**< A brief description of the module's purpose. */
     const char** commands;    /**< A NULL-terminated array of command strings this module handles. */
-} GitphModuleInfo;
+} phgitModuleInfo;
 
 
 /**
- * @struct GitphCoreContext
+ * @struct phgitCoreContext
  * @brief A context object passed from the core to the modules during init.
  *        It provides access to core functionalities (callbacks) without
  *        exposing internal core data structures. This is a form of
@@ -93,7 +93,7 @@ typedef struct {
      * @param module_name The name of the module logging the message.
      * @param message The pre-formatted log message.
      */
-    void (*log)(GitphLogLevel level, const char* module_name, const char* message);
+    void (*log)(phgitLogLevel level, const char* module_name, const char* message);
 
     /**
      * @brief A function pointer to the core's safe formatted logging system.
@@ -108,7 +108,7 @@ typedef struct {
      * @param format The printf-style format string.
      * @param ... Variable arguments for the format string.
      */
-    void (*log_fmt)(GitphLogLevel level, const char* module_name, const char* format, ...);
+    void (*log_fmt)(phgitLogLevel level, const char* module_name, const char* format, ...);
 
     /**
      * @brief A function pointer to the core's configuration manager.
@@ -124,7 +124,7 @@ typedef struct {
      */
     void (*print_ui)(const char* text);
 
-} GitphCoreContext;
+} phgitCoreContext;
 
 
 // --- REQUIRED MODULE EXPORTED FUNCTIONS ---
@@ -137,9 +137,9 @@ typedef struct {
  * The returned pointer and its contents must remain valid for the lifetime
  * of the application.
  *
- * @return A pointer to a static GitphModuleInfo struct.
+ * @return A pointer to a static phgitModuleInfo struct.
  */
-typedef const GitphModuleInfo* (*PFN_module_get_info)(void);
+typedef const phgitModuleInfo* (*PFN_module_get_info)(void);
 
 /**
  * @brief Initializes the module.
@@ -149,9 +149,9 @@ typedef const GitphModuleInfo* (*PFN_module_get_info)(void);
  * connections. It receives a context with callbacks to core functions.
  *
  * @param context A pointer to the core context object.
- * @return GITPH_SUCCESS on success, or an error code on failure.
+ * @return phgit_SUCCESS on success, or an error code on failure.
  */
-typedef GitphStatus (*PFN_module_init)(const GitphCoreContext* context);
+typedef phgitStatus (*PFN_module_init)(const phgitCoreContext* context);
 
 /**
  * @brief Executes a command handled by the module.
@@ -161,9 +161,9 @@ typedef GitphStatus (*PFN_module_init)(const GitphCoreContext* context);
  *
  * @param argc The number of arguments in the argv array. argv[0] is the command itself.
  * @param argv An array of argument strings.
- * @return GITPH_SUCCESS on success, or an error code on failure.
+ * @return phgit_SUCCESS on success, or an error code on failure.
  */
-typedef GitphStatus (*PFN_module_exec)(int argc, const char** argv);
+typedef phgitStatus (*PFN_module_exec)(int argc, const char** argv);
 
 /**
  * @brief Cleans up and de-initializes the module.
@@ -178,4 +178,4 @@ typedef void (*PFN_module_cleanup)(void);
 } // extern "C"
 #endif
 
-#endif // GITPH_CORE_API_H
+#endif // phgit_CORE_API_H

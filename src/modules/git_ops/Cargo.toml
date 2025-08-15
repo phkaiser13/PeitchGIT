@@ -20,7 +20,7 @@ name = "git_ops"
 version = "0.2.0"
 edition = "2021"
 authors = ["Pedro Henrique / phkaiser13 <pedro.garcia@vytruve.org>"]
-description = "A gitph module for intelligent, workflow-aware Git operations."
+description = "A phgit module for intelligent, workflow-aware Git operations."
 
 [lib]
 # This is the crucial part for FFI. It creates a C-style dynamic library.

@@ -2,7 +2,7 @@
 * src/lib.rs - FFI bridge and entry point for the api_client Rust module.
 *
 * This file is the core of the C-Rust interaction. It implements the
-* `gitph_core_api.h` contract, allowing this Rust crate to be compiled as a
+* `phgit_core_api.h` contract, allowing this Rust crate to be compiled as a
 * C shared library (.so/.dll) and be loaded by the main C application.
 *
 * It handles data type translation between Rust and C, manages the module
@@ -24,7 +24,7 @@ use std::sync::Mutex;
 use tokio::runtime::Runtime;
 
 // --- C ABI Definitions ---
-// These definitions mirror the C header file `gitph_core_api.h`.
+// These definitions mirror the C header file `phgit_core_api.h`.
 
 #[repr(C)]
 pub enum Status {

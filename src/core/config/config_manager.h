@@ -3,7 +3,7 @@
  *
  * This header file defines the public API for the configuration manager module.
  * This module is responsible for parsing and providing access to settings
- * stored in a configuration file (e.g., `.gitph.conf`). The file format is a
+ * stored in a configuration file (e.g., `.phgit.conf`). The file format is a
  * simple key-value store, with one `key=value` pair per line.
  *
  * The manager abstracts the file I/O and parsing logic, providing clean
@@ -16,7 +16,7 @@
 #ifndef CONFIG_MANAGER_H
 #define CONFIG_MANAGER_H
 
-#include "../../ipc/include/gitph_core_api.h" // For GitphStatus enum
+#include "../../ipc/include/phgit_core_api.h" // For phgitStatus enum
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,11 +32,11 @@ extern "C" {
  * default values.
  *
  * @param filename The path to the configuration file.
- * @return GITPH_SUCCESS if the file was loaded successfully or if it doesn't
+ * @return phgit_SUCCESS if the file was loaded successfully or if it doesn't
  *         exist (which is not a fatal error). Returns an error code like
- *         GITPH_ERROR_GENERAL on file read errors.
+ *         phgit_ERROR_GENERAL on file read errors.
  */
-GitphStatus config_load(const char* filename);
+phgitStatus config_load(const char* filename);
 
 /**
  * @brief Retrieves a configuration value for a given key.
