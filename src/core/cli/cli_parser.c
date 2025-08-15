@@ -3,15 +3,16 @@
  *
  * This file implements the logic for routing commands to their respective
  * modules. It acts as a simple, yet powerful, intermediary that decouples the
- * command invocation from the command execution.
+ * command invocation from the command execution. This version has been hardened
+ * by removing a fixed-size log buffer and replacing it with calls to the safe,
+ * variadic `logger_log_fmt` function, eliminating a potential buffer overflow
+ * vulnerability.
  *
  * The `cli_dispatch_command` function is the single point of entry. It does not
  * contain any business logic itself; its sole purpose is to query the module
-
  * loader for a "handler" for a given command string and, if one is found,
  * to invoke that handler's `exec_func`. This design keeps the core clean and
- * extensible, as adding new commands only requires adding a new module, with
- * no changes needed in this file.
+ * extensible.
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
@@ -34,17 +35,15 @@ void cli_dispatch_command(int argc, const char** argv) {
     }
 
     const char* command = argv[1];
-    char log_buffer[256];
-    snprintf(log_buffer, sizeof(log_buffer), "Attempting to dispatch command: '%s'", command);
-    logger_log(LOG_LEVEL_INFO, "CLI", log_buffer);
+    // NOTE: The fixed-size `log_buffer` has been removed to prevent buffer overflows.
+    logger_log_fmt(LOG_LEVEL_INFO, "CLI", "Attempting to dispatch command: '%s'", command);
 
     // Ask the module loader to find which module handles this command.
     const LoadedModule* handler_module = modules_find_handler(command);
 
     if (handler_module) {
         // A handler was found, so we can execute it.
-        snprintf(log_buffer, sizeof(log_buffer), "Found handler for '%s' in module '%s'. Executing...", command, handler_module->info.name);
-        logger_log(LOG_LEVEL_INFO, "CLI", log_buffer);
+        logger_log_fmt(LOG_LEVEL_INFO, "CLI", "Found handler for '%s' in module '%s'. Executing...", command, handler_module->info.name);
 
         // We pass the arguments to the module, but we shift them so that the
         // command itself is the first argument (argv[0]) from the module's
@@ -54,24 +53,23 @@ void cli_dispatch_command(int argc, const char** argv) {
 
         if (status != GITPH_SUCCESS) {
             // The module indicated that an error occurred during execution.
-            snprintf(log_buffer, sizeof(log_buffer), "Execution of command '%s' failed with status code %d.", command, status);
-            logger_log(LOG_LEVEL_ERROR, "CLI", log_buffer);
+            logger_log_fmt(LOG_LEVEL_ERROR, "CLI", "Execution of command '%s' failed with status code %d.", command, status);
 
             // Provide generic feedback to the user. The module itself should
             // have already printed a more specific error message.
             tui_print_error("The command failed to execute successfully.");
         } else {
-            snprintf(log_buffer, sizeof(log_buffer), "Command '%s' executed successfully.", command);
-            logger_log(LOG_LEVEL_INFO, "CLI", log_buffer);
+            logger_log_fmt(LOG_LEVEL_INFO, "CLI", "Command '%s' executed successfully.", command);
         }
 
     } else {
         // No module in our registry claimed this command.
+        // This buffer is for the UI, not the logger. While it could also be improved,
+        // it is outside the scope of the logger vulnerability fix.
         char error_msg[128];
         snprintf(error_msg, sizeof(error_msg), "Unknown command: '%s'", command);
         tui_print_error(error_msg);
 
-        snprintf(log_buffer, sizeof(log_buffer), "No handler found for command: '%s'", command);
-        logger_log(LOG_LEVEL_WARN, "CLI", log_buffer);
+        logger_log_fmt(LOG_LEVEL_WARN, "CLI", "No handler found for command: '%s'", command);
     }
 }
