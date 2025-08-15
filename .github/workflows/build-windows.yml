@@ -1,13 +1,10 @@
-#
-# build-windows.yml - Continuous Integration workflow for gitph on Windows.
-#
-# This workflow is carefully configured to build the project using the MSVC toolchain
-# with dependencies managed by vcpkg. It builds and tests on every push/pull_request.
-# When a tag is pushed, it creates a compressed .zip package ready for release.
-#
-# NOTE: The vcpkg and CMake configuration steps are highly specific.
-# They should be modified with extreme caution.
-#
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
+* build-windows.yml
+* This GitHub Actions workflow builds, tests, and packages the gitph project on Windows.
+* It uses the MSVC toolchain, manages dependencies with vcpkg, and integrates Rust modules.
+* For tagged pushes, it creates a comprehensive .zip release package including all
+* necessary runtime DLLs from vcpkg, ensuring the final executable is self-contained.
+ * SPDX-License-Identifier: Apache-2.0 */
 
 name: Build gitph (Windows)
 
@@ -101,14 +98,84 @@ jobs:
         shell: pwsh
         continue-on-error: true
 
+      # Step 11: Ensure Release output directory exists for DLLs.
+      # This step is crucial for tagged builds to prepare the final package.
+      - name: Ensure Release Output Directory Exists
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          New-Item -ItemType Directory -Path "build/bin/Release" -Force
+        shell: pwsh
 
-      # Step 13: Upload intermediate build artifacts for non-tag builds (CI).
+      # Step 12: Copy Runtime DLLs for the Release Package.
+      # These DLLs are required for the gitph.exe to run without external dependencies.
+      - name: Copy Runtime DLLs for Release Package
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          $vcpkgBinPath = "${{ env.VCPKG_ROOT }}\installed\x64-windows\bin"
+          $targetPath = "build/bin/Release"
+          
+          Write-Host "Copying DLLs from $vcpkgBinPath to $targetPath"
+          Copy-Item -Path "$vcpkgBinPath\lua.dll" -Destination "$targetPath\" -Force
+          Copy-Item -Path "$vcpkgBinPath\libcurl.dll" -Destination "$targetPath\" -Force
+          Copy-Item -Path "$vcpkgBinPath\libcrypto-3-x64.dll" -Destination "$targetPath\" -Force
+          Copy-Item -Path "$vcpkgBinPath\libssl-3-x64.dll" -Destination "$targetPath\" -Force
+          Copy-Item -Path "$vcpkgBinPath\zlib1.dll" -Destination "$targetPath\" -Force
+          
+          Write-Host "Contents of $targetPath after copying DLLs:"
+          Get-ChildItem -Path "$targetPath" | Select-Object Name, Length
+        shell: pwsh
+
+      # Step 13: Create Release ZIP Archive.
+      # This step bundles the executable, copied DLLs, plugins, and license into a single ZIP.
+      - name: Create Release ZIP Archive
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          $tagName = "${{ github.ref_name }}"
+          $zipFileName = "gitph-windows-x64-$tagName.zip"
+          
+          # Create a temporary directory for packaging
+          $packageDir = "gitph-package"
+          New-Item -ItemType Directory -Path $packageDir -Force
+          
+          # Copy executable and DLLs from the Release build directory
+          # Assuming gitph.exe is located at build/bin/Release/gitph.exe
+          Write-Host "Copying gitph.exe and DLLs to package directory..."
+          Copy-Item -Path "build/bin/Release/gitph.exe" -Destination "$packageDir/" -Force
+          Copy-Item -Path "build/bin/Release/*.dll" -Destination "$packageDir/" -Force
+          
+          # Copy plugins (recursively)
+          Write-Host "Copying plugins..."
+          Copy-Item -Path "src/plugins/" -Destination "$packageDir/" -Recurse -Force
+          
+          # Copy LICENSE file
+          Write-Host "Copying LICENSE file..."
+          Copy-Item -Path "LICENSE" -Destination "$packageDir/" -Force
+          
+          # Create the ZIP archive
+          Write-Host "Creating ZIP archive: $zipFileName"
+          Compress-Archive -Path "$packageDir/*" -DestinationPath "$zipFileName" -Force
+          
+          Write-Host "Successfully created $zipFileName"
+          Get-ChildItem -Path "." -Filter "*.zip" | Select-Object Name, Length
+        shell: pwsh
+
+      # Step 14: Upload Release Artifact (for tags).
+      # This makes the generated ZIP file available as a build artifact.
+      - name: Upload Release Artifact
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitph-windows-x64-release-${{ github.ref_name }}
+          path: gitph-windows-x64-${{ github.ref_name }}.zip
+
+      # Step 15: Upload CI Build Artifacts (for non-tag builds).
+      # This step remains for regular CI builds to provide intermediate artifacts.
       - name: Upload CI Build Artifacts (not for tags)
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
           name: gitph-build-artifacts-windows-x64
-          # Caminhos corrigidos para o executável, módulos, plugins e licença
+          # Corrected paths for executable, modules, plugins, and license
           path: |
             build/bin/
             src/plugins/
