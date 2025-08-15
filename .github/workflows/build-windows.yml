@@ -108,9 +108,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gitph-build-artifacts-windows-x64
-          # Upload the entire Release directory for debugging, plus plugins and license
+          # Caminhos corrigidos para o executável, módulos, plugins e licença
           path: |
-            build/Release/
+            build/bin/
             src/plugins/
             LICENSE
-          retention-days: 3
