@@ -1,3 +1,12 @@
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
+* File: control
+* This file contains the main metadata for the 'phgit' Debian package. It defines
+* dependencies, package description, maintainer information, and other essential
+* details required by the dpkg and apt package management systems. It does not
+* directly reference maintainer scripts like 'postrm'; the debhelper build system
+* includes them automatically if they are present in the 'debian/' directory.
+* SPDX-License-Identifier: Apache-2.0 */
+
 Source: phgit
 Section: utils
 Priority: optional
