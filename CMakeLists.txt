@@ -294,7 +294,7 @@ install(
 )
 
  #--- ADDING THIS PART ---
- Installation rules for the installer engine
+# Installation rules for the installer engine
  if(PHGIT_BUILD_INSTALLER)
      # Install the installer executable itself into the main bin directory
      install(TARGETS installer DESTINATION bin)
