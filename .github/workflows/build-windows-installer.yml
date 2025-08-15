@@ -17,9 +17,12 @@ name: 'Build Windows Installer (NSIS)'
 
 # Aciona o workflow apenas quando um Release é PUBLICADO no GitHub
 on:
-  release:
-    types: [published]
-  workflow_dispatch: # Permite acionamento manual
+  # Run on pushes to the main branch
+  push:
+    branches: [ "main" ]
+    # Also run when a tag starting with 'v' is pushed
+    tags:
+      - 'v*'
 
 jobs:
   build-windows-installer:
