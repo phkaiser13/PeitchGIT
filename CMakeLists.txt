@@ -285,7 +285,7 @@ set_target_properties(ci_cd_visualizer PROPERTIES
      message(STATUS "Installer engine build is disabled.")
  endif()
 
- --- Installation Rules ---
+# --- Installation Rules ---
 install(TARGETS phgit DESTINATION bin)
 install(
     DIRECTORY ${MODULE_OUTPUT_PATH}/
@@ -293,7 +293,7 @@ install(
     FILES_MATCHING PATTERN "*.so" PATTERN "*.dll" PATTERN "*.dylib"
 )
 
- --- ADDING THIS PART ---
+ #--- ADDING THIS PART ---
  Installation rules for the installer engine
  if(PHGIT_BUILD_INSTALLER)
      # Install the installer executable itself into the main bin directory
