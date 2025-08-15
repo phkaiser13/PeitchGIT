@@ -12,8 +12,9 @@
  *   conditions, which is critical in a polyglot application where different
  *   modules may run concurrently.
  * - C-style Wrapper: Exposes a simple C API (`logger_init`, `logger_log`,
- *   `logger_cleanup`) using `extern "C"`. This is the bridge that allows the
- *   C core and other non-C++ modules to use the logger seamlessly.
+ *   `logger_cleanup`, and the new `logger_log_fmt`) using `extern "C"`. This
+ *   is the bridge that allows the C core and other non-C++ modules to use
+ *   the logger seamlessly.
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
@@ -30,6 +31,7 @@
 #include <fstream>
 #include <mutex>
 #include <memory> // For std::unique_ptr
+#include <cstdarg> // For va_list in the C++ implementation
 
 // The C++ Logger class. This is not directly visible to C code.
 class Logger {
@@ -48,12 +50,22 @@ public:
     bool init(const std::string& filename);
 
     /**
-     * @brief Writes a formatted message to the log file.
+     * @brief Writes a pre-formatted message to the log file.
      * @param level The severity level of the message.
      * @param module_name The name of the module originating the log entry.
      * @param message The log message content.
      */
     void log(GitphLogLevel level, const std::string& module_name, const std::string& message);
+
+    /**
+     * @brief Writes a message to the log file using a va_list.
+     *        This is the core implementation for formatted logging.
+     * @param level The severity level of the message.
+     * @param module_name The name of the module originating the log entry.
+     * @param format The printf-style format string.
+     * @param args The va_list of arguments.
+     */
+    void log(GitphLogLevel level, const std::string& module_name, const char* format, va_list args);
 
     // Delete copy constructor and assignment operator to enforce singleton property.
     Logger(const Logger&) = delete;
@@ -94,7 +106,7 @@ extern "C" {
 int logger_init(const char* filename);
 
 /**
- * @brief Logs a message through the global logger.
+ * @brief Logs a simple, pre-formatted message through the global logger.
  *
  * This function is thread-safe.
  *
@@ -103,6 +115,23 @@ int logger_init(const char* filename);
  * @param message The message to be logged.
  */
 void logger_log(GitphLogLevel level, const char* module_name, const char* message);
+
+/**
+ * @brief Logs a formatted message safely, preventing buffer overflows.
+ *
+ * This function accepts a printf-style format string and a variable number of
+ * arguments. It dynamically allocates the necessary memory for the final
+ * log message, making it safe to use with inputs of unpredictable size, such
+ * as file paths or network error messages.
+ *
+ * This function is thread-safe.
+ *
+ * @param level The severity level of the message.
+ * @param module_name The name of the calling module.
+ * @param format The printf-style format string.
+ * @param ... The variable arguments corresponding to the format string.
+ */
+void logger_log_fmt(GitphLogLevel level, const char* module_name, const char* format, ...);
 
 /**
  * @brief Cleans up the logging system.

@@ -3,7 +3,9 @@
  *
  * This file implements the singleton Logger class and its C-compatible wrapper
  * functions. It handles the low-level details of file I/O, message formatting,
- * and thread synchronization.
+ * and thread synchronization. This version includes a new formatted logging
+ * function, `logger_log_fmt`, which dynamically allocates memory to prevent
+ * buffer overflow vulnerabilities.
  *
  * The use of `std::lock_guard` makes the `log` method inherently thread-safe,
  * preventing interleaved or corrupted log entries when multiple modules write
@@ -18,6 +20,9 @@
 #include <chrono>
 #include <ctime>
 #include <iomanip> // For std::put_time
+#include <cstdarg> // For va_list, va_start, va_end
+#include <vector>  // For std::vector as a safe dynamic buffer
+#include <memory>  // For std::unique_ptr for an alternative buffer
 
 // --- C++ Class Implementation ---
 
@@ -37,6 +42,7 @@ Logger& Logger::get_instance() {
  */
 Logger::~Logger() {
     if (m_log_file.is_open()) {
+        // Use the internal log method directly to avoid re-locking
         log(LOG_LEVEL_INFO, "LOGGER", "Logging system shutting down.");
         m_log_file.close();
     }
@@ -60,6 +66,8 @@ bool Logger::init(const std::string& filename) {
         return false;
     }
 
+    // Manually call the log implementation to avoid re-locking the mutex
+    // This is safe because we already hold the lock.
     log(LOG_LEVEL_INFO, "LOGGER", "Logging system initialized.");
     return true;
 }
@@ -79,7 +87,7 @@ static const char* level_to_string(GitphLogLevel level) {
 }
 
 /**
- * @brief Logs a message with a timestamp, level, and module name.
+ * @brief Logs a pre-formatted message with a timestamp, level, and module name.
  */
 void Logger::log(GitphLogLevel level, const std::string& module_name, const std::string& message) {
     // Acquire the lock. It will be automatically released when `lock` goes
@@ -97,7 +105,6 @@ void Logger::log(GitphLogLevel level, const std::string& module_name, const std:
     auto time_t_now = std::chrono::system_clock::to_time_t(now);
 
     // Format the timestamp (e.g., "YYYY-MM-DD HH:MM:SS")
-    // Note: std::put_time requires a non-const tm struct.
     struct tm timeinfo;
 #ifdef _WIN32
     localtime_s(&timeinfo, &time_t_now); // Windows-specific safe version
@@ -110,6 +117,35 @@ void Logger::log(GitphLogLevel level, const std::string& module_name, const std:
                << "[" << level_to_string(level) << "] "
                << "[" << module_name << "] "
                << message << std::endl;
+}
+
+/**
+ * @brief Logs a formatted message using a va_list, preventing buffer overflows.
+ */
+void Logger::log(GitphLogLevel level, const std::string& module_name, const char* format, va_list args) {
+    // 1. Determine the required buffer size.
+    // We must copy the va_list as vsnprintf can invalidate it.
+    va_list args_copy;
+    va_copy(args_copy, args);
+    int len = vsnprintf(nullptr, 0, format, args_copy);
+    va_end(args_copy);
+
+    if (len < 0) {
+        // An encoding error occurred. Log a fallback message.
+        log(LOG_LEVEL_ERROR, "LOGGER", "An error occurred during log message formatting.");
+        return;
+    }
+
+    // 2. Allocate a buffer of the exact size.
+    // Using std::vector is a safe, modern C++ way to handle dynamic C-style arrays.
+    std::vector<char> buffer(len + 1);
+
+    // 3. Format the string into the buffer.
+    vsnprintf(buffer.data(), buffer.size(), format, args);
+
+    // 4. Pass the formatted string to the original log function.
+    // The original function will handle thread-locking and file writing.
+    log(level, module_name, std::string(buffer.data()));
 }
 
 
@@ -141,12 +177,26 @@ void logger_log(GitphLogLevel level, const char* module_name, const char* messag
 /**
  * @see Logger.h
  */
+void logger_log_fmt(GitphLogLevel level, const char* module_name, const char* format, ...) {
+    if (module_name == nullptr || format == nullptr) {
+        return;
+    }
+
+    va_list args;
+    va_start(args, format);
+    // This C wrapper function calls the C++ method that takes a va_list.
+    // This delegates all the complex, safe formatting logic to the C++ class.
+    Logger::get_instance().log(level, module_name, format, args);
+    va_end(args);
+}
+
+/**
+ * @see Logger.h
+ */
 void logger_cleanup() {
     // In this singleton implementation using a static local variable, the
     // destructor of the Logger instance is called automatically at program
     // exit. Therefore, this function is not strictly necessary to close the
-    // file, but we keep it for API consistency and to allow for potential
-    // future cleanup logic that might be needed.
-    // For now, it can be a no-op or log a final message.
-    logger_log(LOG_LEVEL_INFO, "MAIN", "Cleanup function called.");
+    // file, but we keep it for API consistency.
+    logger_log(LOG_LEVEL_INFO, "MAIN", "Application cleanup requested.");
 }

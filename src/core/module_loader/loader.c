@@ -4,7 +4,9 @@
  * This file contains the core logic for discovering, loading, validating, and
  * managing external modules. It uses platform-specific APIs to handle shared
  * libraries and directory traversal, abstracting these differences from the
- * rest of the application.
+ * rest of the application. This corrected version eliminates a fixed-size log
+ * buffer, replacing it with calls to a variadic logging function `logger_log_fmt`
+ * to dynamically allocate memory for log messages and prevent buffer overflows.
  *
  * The process for loading a module is as follows:
  * 1. Scan the specified directory for files with the correct extension.
@@ -82,12 +84,13 @@ static void free_loaded_module(LoadedModule* module) {
  * @see loader.h
  */
 GitphStatus modules_load(const char* directory_path) {
-char log_buffer[2048]; // was 512   
-    snprintf(log_buffer, sizeof(log_buffer), "Scanning for modules in: %s", directory_path);
-    logger_log(LOG_LEVEL_INFO, "LOADER", log_buffer);
+    // NOTE: The fixed-size `log_buffer` has been removed to prevent buffer overflows.
+    // We now use `logger_log_fmt` for safe, dynamically-sized log messages.
+    logger_log_fmt(LOG_LEVEL_INFO, "LOADER", "Scanning for modules in: %s", directory_path);
 
     // Setup the core context to be passed to modules
-    g_core_context.log = logger_log;
+    g_core_context.log = logger_log; // The old function pointer remains for modules
+    g_core_context.log_fmt = logger_log_fmt; // Expose the new formatted logger
     g_core_context.get_config_value = config_get_value;
     // g_core_context.print_ui will be set once the TUI is initialized.
 
@@ -99,8 +102,8 @@ char log_buffer[2048]; // was 512
     WIN32_FIND_DATA fd;
     HANDLE hFind = FindFirstFile(search_path, &fd);
     if (hFind == INVALID_HANDLE_VALUE) {
-        logger_log(LOG_LEVEL_WARN, "LOADER", "Could not find any modules or read directory.");
-        return GITPH_SUCCESS; // Not a fatal error
+        logger_log(LOG_LEVEL_WARN, "LOADER", "Could not find any modules or read directory. This is not a fatal error.");
+        return GITPH_SUCCESS;
     }
 
     do {
@@ -109,8 +112,8 @@ char log_buffer[2048]; // was 512
 
         HMODULE handle = LoadLibrary(full_path);
         if (!handle) {
-            snprintf(log_buffer, sizeof(log_buffer), "Failed to load library: %s", full_path);
-            logger_log(LOG_LEVEL_ERROR, "LOADER", log_buffer);
+            // SAFETIFY: Replaced snprintf + logger_log with a single safe call.
+            logger_log_fmt(LOG_LEVEL_ERROR, "LOADER", "Failed to load library: %s", full_path);
             continue;
         }
 
@@ -121,8 +124,8 @@ char log_buffer[2048]; // was 512
         PFN_module_cleanup cleanup_func = (PFN_module_cleanup)GetProcAddress(handle, "module_cleanup");
 
         if (!get_info_func || !init_func || !exec_func || !cleanup_func) {
-            snprintf(log_buffer, sizeof(log_buffer), "Module '%s' does not conform to API contract. Skipping.", full_path);
-            logger_log(LOG_LEVEL_ERROR, "LOADER", log_buffer);
+            // SAFETIFY: Replaced snprintf + logger_log with a single safe call.
+            logger_log_fmt(LOG_LEVEL_ERROR, "LOADER", "Module '%s' does not conform to API contract. Skipping.", full_path);
             FreeLibrary(handle);
             continue;
         }
@@ -130,23 +133,23 @@ char log_buffer[2048]; // was 512
         // Initialize and register the module
         const GitphModuleInfo* info = get_info_func();
         if (init_func(&g_core_context) != GITPH_SUCCESS) {
-            snprintf(log_buffer, sizeof(log_buffer), "Module '%s' failed to initialize. Skipping.", info->name);
-            logger_log(LOG_LEVEL_ERROR, "LOADER", log_buffer);
+            // SAFETIFY: Replaced snprintf + logger_log with a single safe call.
+            logger_log_fmt(LOG_LEVEL_ERROR, "LOADER", "Module '%s' failed to initialize. Skipping.", info->name);
             FreeLibrary(handle);
             continue;
         }
 
         LoadedModule* new_module = malloc(sizeof(LoadedModule));
         new_module->handle = handle;
-        new_module->file_path = strdup(full_path);
+        new_module->file_path = _strdup(full_path); // Use _strdup on Windows
         new_module->info = *info;
         new_module->init_func = init_func;
         new_module->exec_func = exec_func;
         new_module->cleanup_func = cleanup_func;
 
         add_module_to_registry(new_module);
-        snprintf(log_buffer, sizeof(log_buffer), "Successfully loaded module: %s (v%s)", info->name, info->version);
-        logger_log(LOG_LEVEL_INFO, "LOADER", log_buffer);
+        // SAFETIFY: Replaced snprintf + logger_log with a single safe call.
+        logger_log_fmt(LOG_LEVEL_INFO, "LOADER", "Successfully loaded module: %s (v%s)", info->name, info->version);
 
     } while (FindNextFile(hFind, &fd) != 0);
     FindClose(hFind);
@@ -155,7 +158,7 @@ char log_buffer[2048]; // was 512
     // --- POSIX Implementation ---
     DIR* d = opendir(directory_path);
     if (!d) {
-        logger_log(LOG_LEVEL_ERROR, "LOADER", "Cannot open modules directory.");
+        logger_log_fmt(LOG_LEVEL_ERROR, "LOADER", "Cannot open modules directory: %s", directory_path);
         return GITPH_ERROR_NOT_FOUND;
     }
 
@@ -165,13 +168,13 @@ char log_buffer[2048]; // was 512
             continue; // Not a shared library
         }
 
-        char full_path[1024];
+        char full_path[1024]; // This buffer is for path construction, not logging. It's acceptable if paths are reasonably limited.
         snprintf(full_path, sizeof(full_path), "%s/%s", directory_path, dir->d_name);
 
         void* handle = dlopen(full_path, RTLD_LAZY);
         if (!handle) {
-            snprintf(log_buffer, sizeof(log_buffer), "Failed to load library: %s (Reason: %s)", full_path, dlerror());
-            logger_log(LOG_LEVEL_ERROR, "LOADER", log_buffer);
+            // SAFETIFY: Replaced snprintf + logger_log with a single safe call.
+            logger_log_fmt(LOG_LEVEL_ERROR, "LOADER", "Failed to load library: %s (Reason: %s)", full_path, dlerror());
             continue;
         }
 
@@ -186,8 +189,8 @@ char log_buffer[2048]; // was 512
 
         const char* dlsym_error = dlerror();
         if (dlsym_error) {
-            snprintf(log_buffer, sizeof(log_buffer), "Module '%s' does not conform to API contract. Skipping. (Error: %s)", full_path, dlsym_error);
-            logger_log(LOG_LEVEL_ERROR, "LOADER", log_buffer);
+            // SAFETIFY: Replaced snprintf + logger_log with a single safe call.
+            logger_log_fmt(LOG_LEVEL_ERROR, "LOADER", "Module '%s' does not conform to API contract. Skipping. (Error: %s)", full_path, dlsym_error);
             dlclose(handle);
             continue;
         }
@@ -195,8 +198,8 @@ char log_buffer[2048]; // was 512
         // Initialize and register the module
         const GitphModuleInfo* info = get_info_func();
         if (init_func(&g_core_context) != GITPH_SUCCESS) {
-            snprintf(log_buffer, sizeof(log_buffer), "Module '%s' failed to initialize. Skipping.", info->name);
-            logger_log(LOG_LEVEL_ERROR, "LOADER", log_buffer);
+            // SAFETIFY: Replaced snprintf + logger_log with a single safe call.
+            logger_log_fmt(LOG_LEVEL_ERROR, "LOADER", "Module '%s' failed to initialize. Skipping.", info->name);
             dlclose(handle);
             continue;
         }
@@ -210,8 +213,8 @@ char log_buffer[2048]; // was 512
         new_module->cleanup_func = cleanup_func;
 
         add_module_to_registry(new_module);
-        snprintf(log_buffer, sizeof(log_buffer), "Successfully loaded module: %s (v%s)", info->name, info->version);
-        logger_log(LOG_LEVEL_INFO, "LOADER", log_buffer);
+        // SAFETIFY: Replaced snprintf + logger_log with a single safe call.
+        logger_log_fmt(LOG_LEVEL_INFO, "LOADER", "Successfully loaded module: %s (v%s)", info->name, info->version);
     }
     closedir(d);
 #endif
@@ -242,9 +245,6 @@ const LoadedModule** modules_get_all(int* count) {
     if (count) {
         *count = g_module_count;
     }
-    // We can return the raw list, but a safer approach would be a copy
-    // or ensuring it's NULL-terminated for easier iteration.
-    // For now, returning the direct pointer is efficient.
     return (const LoadedModule**)g_loaded_modules;
 }
 

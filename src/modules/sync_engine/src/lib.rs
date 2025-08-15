@@ -1,7 +1,19 @@
 /* Copyright (C) 2025 Pedro Henrique / phkaiser13
- * lib.rs - FFI bridge and async entry point for the sync_engine module.
- * ... (comentários) ...
- * SPDX-License-Identifier: Apache-2.0 */
+* File: src/modules/sync_engine/src/lib.rs
+*
+* This file provides the Foreign Function Interface (FFI) bridge for the
+* sync_engine module. It exposes a C-compatible API that the core application
+* can use to initialize, execute, and clean up the module.
+*
+* The core of this module's architecture is a globally shared Tokio runtime,
+* managed by lazy_static. This allows asynchronous Rust code to be executed
+* from a synchronous C context. The Mutex wrapper around the Runtime has been
+* intentionally removed to prevent potential deadlocks. The tokio::runtime::Runtime
+* is thread-safe (Sync) by design, making an external lock not only redundant
+* but dangerous, as a task attempting a re-entrant call to the module would
+* self-deadlock.
+*
+* SPDX-License-Identifier: Apache-2.0 */
 
 use libc::{c_char, c_int};
 use std::ffi::{CStr, CString};
@@ -10,9 +22,11 @@ use std::sync::Mutex;
 use lazy_static::lazy_static;
 use tokio::runtime::Runtime;
 
+// The internal module containing the actual synchronization logic.
 mod sync;
 
-// --- FFI Boilerplate (Types, Context, Logger) ---
+// --- FFI Type Definitions (matching the core C API) ---
+
 #[repr(C)]
 pub enum GitphStatus {
     Success = 0,
@@ -30,30 +44,38 @@ pub enum GitphLogLevel {
     Fatal,
 }
 
+// Function pointer type for the core logger callback.
 type LogFn = extern "C" fn(GitphLogLevel, *const c_char, *const c_char);
-
 
 #[repr(C)]
 pub struct GitphCoreContext {
     log: Option<LogFn>,
 }
 
+// --- Global State Management ---
+
 lazy_static! {
-    static ref RUNTIME: Mutex<Runtime> = Mutex::new(Runtime::new().expect("Failed to create Tokio runtime"));
+    // The global Tokio runtime for executing all async tasks within this module.
+    // CRITICAL: It is NOT wrapped in a Mutex. `tokio::runtime::Runtime` is thread-safe.
+    // Wrapping it in a Mutex creates a risk of deadlocks if an async task ever
+    // needs to call back into a function that also tries to lock the runtime.
+    static ref RUNTIME: Runtime = Runtime::new().expect("Failed to create Tokio runtime");
+
+    // The core context is stored globally to allow logging from anywhere.
+    // A Mutex is necessary here because it's written to once during initialization.
     static ref CORE_CONTEXT: Mutex<Option<GitphCoreContext>> = Mutex::new(None);
 }
 
+/// Logs a message back to the core application using the provided callback.
 fn log_to_core(level: GitphLogLevel, message: &str) {
     if let Ok(guard) = CORE_CONTEXT.lock() {
         if let Some(context) = &*guard {
             if let Some(log_fn) = context.log {
                 let module_name = CString::new("SYNC_ENGINE").unwrap();
-                if let Ok(msg) = CString::new(message) {
-                    log_fn(level, module_name.as_ptr(), msg.as_ptr());
-                } else {
-                    let error_msg = CString::new("Error: Log message contained null bytes.").unwrap();
-                    log_fn(GitphLogLevel::Error, module_name.as_ptr(), error_msg.as_ptr());
-                }
+                let msg = CString::new(message).unwrap_or_else(|_| {
+                    CString::new("Error: Log message contained null bytes.").unwrap()
+                });
+                log_fn(level, module_name.as_ptr(), msg.as_ptr());
             }
         }
     }
@@ -69,14 +91,16 @@ pub struct GitphModuleInfo {
     commands: *const *const c_char,
 }
 
+// A wrapper to safely mark GitphModuleInfo as Sync.
 struct SafeModuleInfo(GitphModuleInfo);
 unsafe impl Sync for SafeModuleInfo {}
 
+// Static C-strings for module information. The null terminator is included.
 static MODULE_NAME: &[u8] = b"sync_engine\0";
 static MODULE_VERSION: &[u8] = b"1.0.0\0";
 static MODULE_DESC: &[u8] = b"Performs complex, bi-directional repository synchronization.\0";
 
-// ✅ SUGESTÃO: Usar `const` em vez de `static` para o array de ponteiros. É o padrão mais seguro.
+// A null-terminated array of supported command strings.
 const SUPPORTED_COMMANDS_PTRS: &[*const c_char] = &[
     b"sync-run\0".as_ptr() as *const c_char,
     b"sync-config\0".as_ptr() as *const c_char,
@@ -101,22 +125,24 @@ pub extern "C" fn module_get_info() -> *const GitphModuleInfo {
 #[no_mangle]
 pub extern "C" fn module_init(context: *const GitphCoreContext) -> GitphStatus {
     if context.is_null() {
+        // Cannot log here as context is not available.
         return GitphStatus::ErrorInitFailed;
     }
 
-    // ✅ SUGESTÃO: Usar `ptr::read` para consistência, sem depender de `Copy`.
+    // Safely store the context provided by the core.
     if let Ok(mut guard) = CORE_CONTEXT.lock() {
         *guard = Some(unsafe { std::ptr::read(context) });
     } else {
+        // Mutex is poisoned, a panic occurred while it was locked.
         return GitphStatus::ErrorInitFailed;
     }
 
-    // ✅ CORREÇÃO: Força a inicialização do runtime de forma idiomática.
-    {
-        let _guard = RUNTIME.lock().unwrap();
-    }
+    // Eagerly initialize the runtime and enter its context.
+    // This is the idiomatic way to ensure the runtime is ready without locking.
+    // The returned guard must be kept in scope for the duration of the context.
+    let _enter = RUNTIME.enter();
 
-    log_to_core(GitphLogLevel::Info, "sync_engine module initialized.");
+    log_to_core(GitphLogLevel::Info, "sync_engine module initialized successfully.");
     GitphStatus::Success
 }
 
@@ -127,6 +153,7 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphS
         return GitphStatus::ErrorInvalidArgs;
     }
 
+    // Safely parse arguments from C into a Vec<String>.
     let args: Vec<String> = (0..argc as isize)
         .map(|i| unsafe {
             let arg_ptr = *argv.offset(i);
@@ -136,23 +163,28 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphS
 
     let command = args[0].as_str();
     let user_args = &args[1..];
-    let runtime = RUNTIME.lock().unwrap();
 
-    let result = runtime.block_on(async {
+    // Get a reference to the global runtime and block on the async execution.
+    // No .lock() is needed, which eliminates the deadlock risk.
+    let result = RUNTIME.block_on(async {
         match command {
             "sync-run" => sync::handle_run_sync(user_args).await,
+            // Add handlers for other commands here.
             _ => Err(format!("Unknown command '{}' for sync_engine", command)),
         }
     });
 
     match result {
         Ok(success_message) => {
-            println!("{}", success_message);
             log_to_core(GitphLogLevel::Info, &success_message);
+            // For CLI tools, printing to stdout is often expected on success.
+            println!("{}", success_message);
             GitphStatus::Success
         }
         Err(e) => {
-            log_to_core(GitphLogLevel::Error, &format!("Command failed: {}", e));
+            let error_message = format!("Command failed: {}", e);
+            log_to_core(GitphLogLevel::Error, &error_message);
+            // Printing to stderr is standard for errors.
             eprintln!("[gitph SYNC ERROR] {}", e);
             GitphStatus::ErrorExecFailed
         }
@@ -162,4 +194,6 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> GitphS
 #[no_mangle]
 pub extern "C" fn module_cleanup() {
     log_to_core(GitphLogLevel::Info, "sync_engine module cleaned up.");
+    // The RUNTIME will be dropped automatically when the program exits.
+    // No explicit cleanup is required for lazy_static variables.
 }
