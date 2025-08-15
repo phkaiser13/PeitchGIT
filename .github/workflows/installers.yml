@@ -1,1 +1,63 @@
+# .github/workflows/installers.yml
+name: 'Build Installers'
 
+# Aciona o workflow apenas quando um novo Release é PUBLICADO no GitHub
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-windows-installer:
+    name: Build Windows Installer (NSIS)
+    runs-on: windows-latest
+
+    steps:
+      # 1. Checkout do código
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Instala as dependências de build (vcpkg, etc., igual ao seu build-windows.yml)
+      - name: 'Setup Build Environment'
+        uses: ./.github/actions/setup-windows-build
+
+      # 3. Compila o projeto principal E o motor do instalador
+      - name: Configure and Build Project + Installer
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DPHGIT_BUILD_INSTALLER=ON
+          cmake --build build --config Release --parallel
+        shell: pwsh
+
+      # 4. Instala o NSIS (ferramenta para criar o instalador)
+      - name: Setup NSIS
+        uses: joncloud/setup-nsis@v1
+
+      # 5. Prepara a pasta de empacotamento
+      - name: Prepare Staging Directory
+        run: |
+          mkdir staging
+          cp build/bin/Release/phgit.exe staging/
+          cp build/bin/Release/phgit-installer.exe staging/
+          cp -r build/bin/modules staging/
+          cp -r src/plugins staging/
+          cp LICENSE staging/
+          # Copia as DLLs de runtime necessárias para a pasta staging
+          cp build/bin/Release/*.dll staging/
+        shell: bash
+        
+      # 6. Compila o instalador com NSIS
+      - name: Compile NSIS Installer
+        run: |
+          $tagVersion = "${{ github.ref_name }}"
+          $version = $tagVersion.Substring(1) # Remove 'v' from tag, e.g., v1.1.0 -> 1.1.0
+          makensis.exe /DPRODUCT_VERSION=$version installer/packaging/nsis/phgit.nsi
+        shell: pwsh
+
+      # 7. Faz o upload do instalador gerado para o Release do GitHub
+      - name: Upload Installer to Release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: phgit-*-installer.exe
+          asset_name: phgit-windows-x64-setup.exe
+          tag: ${{ github.ref_name }}
+          overwrite: true
