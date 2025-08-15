@@ -33,6 +33,9 @@ FetchContent_MakeAvailable(spdlog)
 FetchContent_Declare(miniz
     GIT_REPOSITORY https://github.com/richgel999/miniz.git
     GIT_TAG 3.0.0
+    # --- CORREÇÃO AQUI ---
+    # Força a miniz a usar uma política de versão compatível
+    CMAKE_ARGS -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 )
 FetchContent_MakeAvailable(miniz)
 
