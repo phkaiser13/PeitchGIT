@@ -1,26 +1,9 @@
-# Copyright (C) 2025 Pedro Henrique / phkaiser13
-# SPDX-License-Identifier: Apache-2.0
-#
-# Este workflow do GitHub Actions automatiza a criação de um instalador executável
-# para Windows usando o NSIS (Nullsoft Scriptable Install System).
-# Ele é acionado apenas quando uma nova versão é publicada no GitHub.
-#
-# O processo consiste em:
-# 1. Configurar o ambiente de build do Windows com todas as dependências (vcpkg, Rust, etc.).
-# 2. Compilar o projeto principal 'phgit' e o motor do instalador C++ 'phgit-installer'.
-# 3. Instalar a ferramenta de criação de instaladores NSIS.
-# 4. Preparar um diretório de "staging" com todos os artefatos necessários.
-# 5. Compilar o script NSIS (.nsi) para criar o instalador final .exe.
-# 6. Anexar o instalador .exe gerado ao release do GitHub.
-
 name: 'Build Windows Installer (NSIS)'
 
-# Aciona o workflow apenas quando um Release é PUBLICADO no GitHub
 on:
-  # Run on pushes to the main branch
   push:
-    branches: [ "main" ]
-    # Also run when a tag starting with 'v' is pushed
+    branches:
+      - "main"
     tags:
       - 'v*'
 
@@ -33,11 +16,9 @@ jobs:
       VCPKG_DEFAULT_TRIPLET: x64-windows
 
     steps:
-      # 1. Checkout do código-fonte
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Instalação das dependências de build (CMake, Ninja, vcpkg, Rust)
       - name: Install CMake and Ninja
         uses: jwlawson/actions-setup-cmake@v1
         with:
@@ -57,8 +38,6 @@ jobs:
         with:
           toolchain: stable
 
-      # 3. Compila o projeto principal E o motor do instalador C++
-      # A flag -DPHGIT_BUILD_INSTALLER=ON ativa a compilação do subprojeto do instalador
       - name: Configure and Build Project + Installer
         run: |
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
@@ -68,45 +47,32 @@ jobs:
           cmake --build build --config Release --parallel
         shell: pwsh
 
-      # 4. Instala o NSIS, a ferramenta para criar o instalador
       - name: Setup NSIS
         uses: joncloud/setup-nsis@v1
 
-      # 5. Prepara o diretório de 'staging' com todos os arquivos necessários para o pacote
       - name: Prepare Staging Directory
         run: |
           mkdir staging
-          # Copia os executáveis principais
           cp build/bin/Release/phgit.exe staging/
           cp build/bin/Release/phgit-installer.exe staging/
-          # Copia as DLLs de runtime do vcpkg e dos módulos Rust
           cp build/bin/Release/*.dll staging/
-          # Copia o config.json necessário para o motor do instalador
           cp installer/config.json staging/
-          # Copia os módulos e plugins
           cp -r build/bin/modules staging/
           cp -r src/plugins staging/
-          # Copia a licença
           cp LICENSE staging/
         shell: bash
 
-      # 6. Compila o instalador com NSIS
       - name: Compile NSIS Installer
         run: |
-          # Extrai a versão da tag do Git (ex: v1.2.0 -> 1.2.0)
           $version = "${{ github.ref_name }}".Substring(1)
-          # Passa a versão como uma definição para o script NSIS
           makensis.exe /DPRODUCT_VERSION=$version installer/packaging/nsis/phgit.nsi
         shell: pwsh
 
-      # 7. Faz o upload do instalador gerado para o Release do GitHub
       - name: Upload Installer to Release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          # Procura pelo arquivo do instalador gerado
           file: phgit-*-installer.exe
-          # Define o nome do arquivo no release
           asset_name: phgit-windows-x64-${{ github.ref_name }}-setup.exe
           tag: ${{ github.ref_name }}
           overwrite: true
