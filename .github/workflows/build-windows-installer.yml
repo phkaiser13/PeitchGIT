@@ -1,6 +1,6 @@
 name: 'Build Windows Installer (NSIS)'
 
-on:
+#on:
   push:
     branches:
       - "main"
