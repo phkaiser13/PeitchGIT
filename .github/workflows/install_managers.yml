@@ -1,0 +1,146 @@
+# .github/workflows/release-and-mirror.yml
+name: 'Release Automation & Directory Mirroring'
+
+on:
+  # 1. Aciona o workflow quando um novo Release é publicado no GitHub.
+  #    Isto é usado para atualizar os manifestos de pacotes com a nova versão e checksums.
+  release:
+    types: [published]
+
+  # 2. Aciona o workflow em cada push para a branch 'main'.
+  #    Isto é usado para espelhar as alterações nos diretórios de empacotamento
+  #    para seus respectivos repositórios externos.
+  push:
+    branches: [main]
+
+jobs:
+  # =====================================================================================
+  # JOB 1: Atualiza os manifestos de pacotes quando um novo Release é criado.
+  # =====================================================================================
+  update-package-files-on-release:
+    name: Update Package Files on Release
+    # Este job só executa se o evento que o acionou for um 'release'.
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Usamos um token de acesso pessoal (PAT) aqui para que possamos
+          # fazer commit das alterações de volta para o repositório.
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Setup Git User
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Get Release Version and Assets
+        id: release_info
+        run: |
+          # Extrai a versão da tag do Git (ex: v1.2.3 -> 1.2.3)
+          VERSION=$(echo "${{ github.ref_name }}" | sed 's/v//')
+          echo "GITPH_VERSION=${VERSION}" >> $GITHUB_ENV
+
+          # Baixa o tarball do código-fonte para calcular os checksums
+          TARBALL_URL="https://github.com/${{ github.repository }}/archive/refs/tags/v${VERSION}.tar.gz"
+          wget -q -O "gitph-v${VERSION}.tar.gz" "${TARBALL_URL}"
+
+          # Calcula os checksums e os armazena em variáveis de ambiente
+          echo "GITPH_SHA256=$(sha256sum "gitph-v${VERSION}.tar.gz" | awk '{print $1}')" >> $GITHUB_ENV
+          echo "GITPH_SHA512=$(sha512sum "gitph-v${VERSION}.tar.gz" | awk '{print $1}')" >> $GITHUB_ENV
+          echo "TARBALL_PATH=gitph-v${VERSION}.tar.gz" >> $GITHUB_ENV
+
+      - name: Update Package Manifests
+        run: |
+          echo "Updating package manifests with Version=${{ env.GITPH_VERSION }} and SHA256=${{ env.GITPH_SHA256 }}"
+          
+          # Atualiza Homebrew Formula
+          sed -i "s/\${GITPH_VERSION}/${{ env.GITPH_VERSION }}/g" homebrew-tap/Formula/gitph.rb
+          sed -i "s/\${GITPH_SHA256}/${{ env.GITPH_SHA256 }}/g" homebrew-tap/Formula/gitph.rb
+
+          # Atualiza AUR PKGBUILD
+          sed -i "s/\${GITPH_VERSION}/${{ env.GITPH_VERSION }}/g" aur-gitph/PKGBUILD
+          sed -i "s/\${GITPH_SHA256}/${{ env.GITPH_SHA256 }}/g" aur-gitph/PKGBUILD
+
+          # Atualiza vcpkg portfile
+          sed -i "s/\${GITPH_VERSION}/${{ env.GITPH_VERSION }}/g" vcpkg-registry/ports/portfile.cmake
+          sed -i "s/\${GITPH_SHA512}/${{ env.GITPH_SHA512 }}/g" vcpkg-registry/ports/portfile.cmake
+
+          # Atualiza Chocolatey nuspec e install script
+          sed -i "s/\${GITPH_VERSION}/${{ env.GITPH_VERSION }}/g" packaging/chocolatey/gitph.nuspec
+          sed -i "s/\${GITPH_VERSION}/${{ env.GITPH_VERSION }}/g" packaging/chocolatey/tools/chocolateyinstall.ps1
+          sed -i "s/\${CHECKSUM_SHA256}/${{ env.GITPH_SHA256 }}/g" packaging/chocolatey/tools/chocolateyinstall.ps1
+
+          # Atualiza RPM spec
+          sed -i "s/\${GITPH_VERSION}/${{ env.GITPH_VERSION }}/g" packaging/rpm/gitph.spec
+
+
+      - name: Commit and Push Updated Manifests
+        run: |
+          # Adiciona apenas os arquivos de manifesto que podem ter sido alterados
+          git add homebrew-tap/Formula/gitph.rb aur-gitph/PKGBUILD vcpkg-registry/ports/portfile.cmake packaging/chocolatey/* packaging/rpm/gitph.spec
+          
+          # Verifica se há alterações para commitar
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore(release): Update package manifests for v${{ env.GITPH_VERSION }}"
+            git push
+          fi
+
+  # =====================================================================================
+  # JOB 2: Espelha os diretórios de empacotamento para repositórios externos.
+  # =====================================================================================
+  mirror-packaging-directories:
+    name: Mirror Packaging Directories
+    # Este job só executa se o evento que o acionou for um 'push'.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main repository
+        uses: actions/checkout@v4
+        with:
+          # Precisamos de um fetch-depth de 0 para obter todo o histórico
+          # para a ação de espelhamento.
+          fetch-depth: 0
+
+      - name: Mirror homebrew-tap directory
+        uses: pixta-dev/repository-mirroring-action@v1
+        with:
+          source_repo: 'github/${{ github.repository }}'
+          source_branch: '${{ github.ref_name }}'
+          source_dir: 'homebrew-tap/'
+          target_repo: 'github.com/phkaiser13/homebrew-tap' # Repositório de destino
+          target_dir: '/'
+          ssh_private_key: ${{ secrets.MIRROR_SSH_PRIVATE_KEY }}
+
+      - name: Mirror aur-gitph directory
+        uses: pixta-dev/repository-mirroring-action@v1
+        with:
+          source_repo: 'github/${{ github.repository }}'
+          source_branch: '${{ github.ref_name }}'
+          source_dir: 'aur-gitph/'
+          target_repo: 'github.com/phkaiser13/aur-gitph' # Repositório de destino
+          target_dir: '/'
+          ssh_private_key: ${{ secrets.MIRROR_SSH_PRIVATE_KEY }}
+
+      - name: Mirror vcpkg-registry directory
+        uses: pixta-dev/repository-mirroring-action@v1
+        with:
+          source_repo: 'github/${{ github.repository }}'
+          source_branch: '${{ github.ref_name }}'
+          source_dir: 'vcpkg-registry/'
+          target_repo: 'github.com/phkaiser13/vcpkg-registry' # Repositório de destino
+          target_dir: '/'
+          ssh_private_key: ${{ secrets.MIRROR_SSH_PRIVATE_KEY }}
+
+      - name: Mirror chocolatey directory
+        uses: pixta-dev/repository-mirroring-action@v1
+        with:
+          source_repo: 'github/${{ github.repository }}'
+          source_branch: '${{ github.ref_name }}'
+          source_dir: 'packaging/chocolatey/'
+          target_repo: 'github.com/phkaiser13/chocolatey-packaging' # Repositório de destino
+          target_dir: '/'
+          ssh_private_key: ${{ secrets.MIRROR_SSH_PRIVATE_KEY }}
