@@ -1,113 +1,107 @@
-
-# .github/workflows/mirror-repositories.yml
-
 name: 'Mirror Package Manager Repositories'
 
-# Este workflow é acionado sempre que há um push na branch 'main'.
 on:
   push:
     branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GH_PAT: ${{ secrets.GH_PAT }}
 
 jobs:
-  mirror-homebrew:
-    name: 'Mirror Homebrew Tap'
+  mirror:
+    name: Mirror repositories
     runs-on: ubuntu-latest
-    steps:
-      # 1. Faz o checkout do código do seu repositório principal (peitchgit)
-      - name: 'Checkout main repository'
-        uses: actions/checkout@v4
+    strategy:
+      matrix:
+        include:
+          - name: homebrew-tap
+            src_dir: homebrew-tap
+            repo: phkaiser13/homebrew-tap
+            dest_path: homebrew-tap-mirror
+          - name: vcpkg-registry
+            src_dir: vcpkg-registry
+            repo: phkaiser13/vcpkg-registry
+            dest_path: vcpkg-registry-mirror
+          - name: aur-gitph
+            src_dir: aur-gitph
+            repo: phkaiser13/aur-gitph
+            dest_path: aur-gitph-mirror
 
-      # 2. Clona o repositório de destino (homebrew-tap)
-      - name: 'Clone target repository'
+    steps:
+      - name: Checkout main repository (source)
         uses: actions/checkout@v4
         with:
-          repository: 'phkaiser13/homebrew-tap' # Substitua pelo seu repositório de destino
-          path: 'homebrew-tap-mirror'
-          token: ${{ secrets.GH_PAT }} # Use um Personal Access Token (PAT) para permissão de push
+          fetch-depth: 0
 
-      # 3. Sincroniza os arquivos
-      - name: 'Sync files to mirror repository'
-        run: |
-          # Copia o conteúdo da pasta local 'homebrew-tap' para o repositório clonado
-          rsync -av --delete ./homebrew-tap/ ./homebrew-tap-mirror/
+      - name: Ensure rsync & git are available
+        run: sudo apt-get update && sudo apt-get install -y rsync git
 
-      # 4. Faz o commit e push das alterações, se houver
-      - name: 'Commit and push changes'
+      - name: "Mirror repo: ${{ matrix.name }}"
+        env:
+          TARGET_REPO: ${{ matrix.repo }}
+          TARGET_PATH: ${{ matrix.dest_path }}
+          SRC_DIR: ${{ matrix.src_dir }}
+          TARGET_URL: https://${{ secrets.GH_PAT }}@github.com/${{ matrix.repo }}.git
         run: |
-          cd homebrew-tap-mirror
-          # Configura o usuário do Git para o commit
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Verifica se há alterações para commitar
-          if ! git diff-index --quiet HEAD; then
-            git add .
-            git commit -m "chore: Sync updates from main repository"
-            git push
-          else
-            echo "No changes to sync."
+          set -euo pipefail
+          echo "---- Mirror: $TARGET_REPO ----"
+          echo "Source dir: $SRC_DIR"
+          echo "Target path: $TARGET_PATH"
+
+          # If source directory doesn't exist or is empty -> nothing to sync
+          if [ ! -d "$SRC_DIR" ] || [ -z "$(ls -A "$SRC_DIR" 2>/dev/null || true)" ]; then
+            echo "Source directory '$SRC_DIR' is missing or empty. Skipping mirror for $TARGET_REPO."
+            exit 0
           fi
 
-  mirror-vcpkg:
-    name: 'Mirror vcpkg Registry'
-    runs-on: ubuntu-latest
-    steps:
-      - name: 'Checkout main repository'
-        uses: actions/checkout@v4
-
-      - name: 'Clone target repository'
-        uses: actions/checkout@v4
-        with:
-          repository: 'phkaiser13/vcpkg-registry' # Substitua pelo seu repositório de destino
-          path: 'vcpkg-registry-mirror'
-          token: ${{ secrets.GH_PAT }}
-
-      - name: 'Sync files to mirror repository'
-        run: |
-          rsync -av --delete ./vcpkg-registry/ ./vcpkg-registry-mirror/
-
-      - name: 'Commit and push changes'
-        run: |
-          cd vcpkg-registry-mirror
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          if ! git diff-index --quiet HEAD; then
-            git add .
-            git commit -m "chore: Sync updates from main repository"
-            git push
+          # Check remote refs (if empty -> remote likely has no commits)
+          REMOTE_REFS="$(git ls-remote "$TARGET_URL" || true)"
+          if [ -n "$REMOTE_REFS" ]; then
+            echo "Remote has refs — cloning into $TARGET_PATH"
+            rm -rf "$TARGET_PATH"
+            git clone --depth 1 "$TARGET_URL" "$TARGET_PATH"
+            cd "$TARGET_PATH"
+            # try to checkout main (or create it)
+            git checkout main 2>/dev/null || git checkout -b main || true
           else
-            echo "No changes to sync."
+            echo "Remote appears empty — initializing local repo at $TARGET_PATH and adding origin"
+            rm -rf "$TARGET_PATH"
+            mkdir -p "$TARGET_PATH"
+            cd "$TARGET_PATH"
+            git init
+            git checkout -b main || true
+            git remote add origin "$TARGET_URL"
           fi
-          
-  mirror-aur:
-    name: 'Mirror AUR Package'
-    runs-on: ubuntu-latest
-    steps:
-      - name: 'Checkout main repository'
-        uses: actions/checkout@v4
 
-      - name: 'Clone target repository'
-        uses: actions/checkout@v4
-        with:
-          repository: 'phkaiser13/aur-gitph' # Substitua pelo seu repositório de destino
-          path: 'aur-gitph-mirror'
-          token: ${{ secrets.GH_PAT }}
+          # Sync files from source into target (exclude .git)
+          echo "Syncing files..."
+          rsync -av --delete --exclude='.git' "../${SRC_DIR}/" .
 
-      - name: 'Sync files to mirror repository'
-        run: |
-          rsync -av --delete ./aur-gitph/ ./aur-gitph-mirror/
-
-      - name: 'Commit and push changes'
-        run: |
-          cd aur-gitph-mirror
+          # Configure git author
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          if ! git diff-index --quiet HEAD; then
-            git add .
+
+          # If repo has no commits yet, create an initial commit
+          if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
+            echo "No commits found in target; creating initial commit."
+            git add -A
+            git commit -m "chore: initial mirror from main repository"
+            git push --set-upstream origin main
+            echo "Pushed initial commit to origin/main"
+            exit 0
+          fi
+
+          # Only commit & push if there are changes
+          if git status --porcelain | grep -q .; then
+            echo "Changes detected — committing and pushing."
+            git add -A
             git commit -m "chore: Sync updates from main repository"
-            git push
+            git push origin HEAD:main
+            echo "Pushed changes to origin/main"
           else
             echo "No changes to sync."
           fi
