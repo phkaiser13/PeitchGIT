@@ -1,115 +1,243 @@
 # .github/workflows/managers.yml
-name: 'Publish to Package Managers'
+name: Publish to Package Managers
 
-# Aciona o workflow apenas quando um novo Release é PUBLICADO
 on:
+  push:
+    branches:
+      - main        # roda a cada push em main; ajuste conforme desejar
   release:
     types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  REPO: ${{ github.repository }}
+  PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
 
 jobs:
   publish:
-    name: Update Homebrew, AUR, and vcpkg
+    name: Update Homebrew, AUR and vcpkg
     runs-on: ubuntu-latest
-    
+    defaults:
+      run:
+        shell: bash
+
     steps:
-      # 1. Extrai a versão da tag do release
-      - name: 'Get release version from tag'
-        run: |
-          echo "RELEASE_TAG=${{ github.ref_name }}" >> $GITHUB_ENV
-          echo "RELEASE_VERSION=${{ github.ref_name#v }}" >> $GITHUB_ENV
+      - name: Checkout repository (full history & tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # 2. Baixa o código-fonte e calcula os hashes
-      - name: 'Download source tarball and calculate checksums'
+      - name: Install helper tools
         run: |
-          TARBALL_URL="https://github.com/${{ github.repository }}/archive/refs/tags/${{ env.RELEASE_TAG }}.tar.gz"
-          curl -L -o source.tar.gz "$TARBALL_URL"
-          echo "TARBALL_SHA256=$(sha256sum source.tar.gz | awk '{print $1}')" >> $GITHUB_ENV
-          echo "TARBALL_SHA512=$(sha512sum source.tar.gz | awk '{print $1}')" >> $GITHUB_ENV
+          sudo apt-get update
+          sudo apt-get install -y jq curl git python3 python3-distutils ca-certificates
+          # coreutils (sha256sum/sha512sum) já estão disponíveis por padrão
 
-      # --- Bloco de Configuração de Git ---
-      # Passo explícito para configurar a identidade do Git que será usada para os pushes
-      - name: 'Configure Git for pushes'
+      - name: Determine release tag / version
+        id: determine_tag
+        run: |
+          set -euo pipefail
+          echo "Event: $GITHUB_EVENT_NAME"
+          TAG=""
+          if [ "${GITHUB_EVENT_NAME}" = "release" ]; then
+            # evento release (publicado)
+            TAG="${GITHUB_REF_NAME}"
+            echo "Triggered by release event -> $TAG"
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            # push foi uma tag
+            TAG="${GITHUB_REF_NAME}"
+            echo "Triggered by tag push -> $TAG"
+          else
+            # tenta pegar latest release via API
+            echo "Not a release/tag push. Querying latest release via GitHub API..."
+            LATEST_TAG=$(curl -sSf -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${REPO}/releases/latest" | jq -r .tag_name // empty)
+            if [ -n "$LATEST_TAG" ]; then
+              TAG="$LATEST_TAG"
+              echo "Found latest published release: $TAG"
+            else
+              echo "No published release found. Falling back to newest git tag from repo..."
+              TAG=$(git tag --sort=-creatordate | head -n1 || true)
+              if [ -z "$TAG" ]; then
+                echo "ERROR: No tags or releases found in repository. Aborting."
+                exit 1
+              fi
+              echo "Using newest git tag: $TAG"
+            fi
+          fi
+
+          # exporta variáveis
+          echo "RELEASE_TAG=${TAG}" >> $GITHUB_ENV
+          VERSION="${TAG#v}"
+          echo "RELEASE_VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "::set-output name=tag::$TAG"
+
+      - name: Download source tarball and calculate checksums
+        run: |
+          set -euo pipefail
+          TARBALL_URL="https://github.com/${REPO}/archive/refs/tags/${RELEASE_TAG}.tar.gz"
+          echo "Downloading $TARBALL_URL"
+          curl -L -f -o source.tar.gz "$TARBALL_URL"
+          echo "Calculating checksums..."
+          TARBALL_SHA256=$(sha256sum source.tar.gz | awk '{print $1}')
+          TARBALL_SHA512=$(sha512sum source.tar.gz | awk '{print $1}')
+          echo "TARBALL_SHA256=${TARBALL_SHA256}" >> $GITHUB_ENV
+          echo "TARBALL_SHA512=${TARBALL_SHA512}" >> $GITHUB_ENV
+          echo "Downloaded and checksummed."
+
+      - name: Configure Git for pushes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      # --- Homebrew Tap ---
-      - name: 'Checkout Homebrew Tap repository'
+      # ----------------
+      # Homebrew Tap
+      # ----------------
+      - name: Checkout Homebrew Tap repository
         uses: actions/checkout@v4
         with:
-          repository: 'phkaiser13/homebrew-tap' # Corrigido para seu username
+          repository: 'phkaiser13/homebrew-tap'
           token: ${{ secrets.PAT_TOKEN }}
           path: 'homebrew-tap'
 
-      - name: 'Update Homebrew formula'
+      - name: Update Homebrew formula (safe replace)
         run: |
-          FORMULA_PATH="homebrew-tap/Formula/gitph.rb"
-          sed -i -e "s|url \".*\"|url \"https://github.com/phkaiser13/peitchgit/archive/refs/tags/${{ env.RELEASE_TAG }}.tar.gz\"|" "${FORMULA_PATH}"
-          sed -i -e "s|sha256 \".*\"|sha256 \"${{ env.TARBALL_SHA256 }}\"|" "${FORMULA_PATH}"
-        
-      - name: 'Commit and push changes to Homebrew Tap'
+          python3 - <<'PY'
+import os, re, io
+p = 'homebrew-tap/Formula/gitph.rb'
+if not os.path.exists(p):
+    print("Homebrew formula not found:", p)
+    raise SystemExit(0)
+s = open(p, 'r', encoding='utf-8').read()
+s = re.sub(r'url\s+"[^"]+"', f'url "https://github.com/{os.environ["REPO"]}/archive/refs/tags/{os.environ["RELEASE_TAG"]}.tar.gz"', s)
+s = re.sub(r'sha256\s+"[0-9a-fA-F]+"', f'sha256 "{os.environ["TARBALL_SHA256"]}"', s)
+open(p, 'w', encoding='utf-8').write(s)
+print("Updated Homebrew formula.")
+PY
+
+      - name: Commit and push changes to Homebrew Tap (if any)
         run: |
           cd homebrew-tap
-          git add Formula/gitph.rb
-          if ! git diff --staged --quiet; then
-            git commit -m "chore: Update gitph formula to ${{ env.RELEASE_TAG }}"
+          git add Formula/gitph.rb || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: Update gitph formula to ${RELEASE_TAG}" || true
             git push
           else
             echo "No changes to commit for Homebrew."
           fi
           cd ..
 
-      # --- AUR ---
-      - name: 'Checkout AUR repository'
+      # ----------------
+      # AUR
+      # ----------------
+      - name: Checkout AUR repository
         uses: actions/checkout@v4
         with:
-          repository: 'phkaiser13/aur-gitph' # Corrigido para seu username
+          repository: 'phkaiser13/aur-gitph'
           token: ${{ secrets.PAT_TOKEN }}
           path: 'aur-gitph'
 
-      - name: 'Update PKGBUILD'
+      - name: Update PKGBUILD and .SRCINFO
+        run: |
+          set -euo pipefail
+          cd aur-gitph
+          if [ -f PKGBUILD ]; then
+            python3 - <<'PY'
+import os, re
+p='PKGBUILD'
+s=open(p).read()
+s=re.sub(r'pkgver=.*', f'pkgver={os.environ["RELEASE_VERSION"]}', s)
+s=re.sub(r"sha256sums=\([^)]+\)", f"sha256sums=('${{}}')".format(os.environ["TARBALL_SHA256"]), s)
+open(p,'w').write(s)
+print("PKGBUILD updated")
+PY
+            # Try to generate .SRCINFO; arch-install-scripts may provide makepkg on ubuntu
+            sudo apt-get update -y
+            sudo apt-get install -y arch-install-scripts || true
+            if command -v makepkg >/dev/null 2>&1; then
+              makepkg --printsrcinfo > .SRCINFO || true
+            else
+              echo "makepkg not available; skipping .SRCINFO generation. You can generate it locally if needed."
+            fi
+          else
+            echo "PKGBUILD not found; skipping AUR update."
+          fi
+          cd ..
+
+      - name: Commit and push changes to AUR (if any)
         run: |
           cd aur-gitph
-          sed -i -e "s/pkgver=.*/pkgver=${{ env.RELEASE_VERSION }}/" PKGBUILD
-          sed -i -e "s/sha256sums=('.*')/sha256sums=('${{ env.TARBALL_SHA256 }}')/" PKGBUILD
-          sudo apt-get update && sudo apt-get install -y arch-install-scripts
-          makepkg --printsrcinfo > .SRCINFO
-          
-      - name: 'Commit and push changes to AUR repository'
-        run: |
-          cd aur-gitph
-          git add PKGBUILD .SRCINFO
-          if ! git diff --staged --quiet; then
-            git commit -m "chore: Update gitph PKGBUILD to ${{ env.RELEASE_VERSION }}"
+          git add PKGBUILD .SRCINFO || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: Update gitph PKGBUILD to ${RELEASE_VERSION}" || true
             git push
           else
             echo "No changes to commit for AUR."
           fi
           cd ..
 
-      # --- vcpkg Registry ---
-      - name: 'Checkout vcpkg registry repository'
+      # ----------------
+      # vcpkg Registry
+      # ----------------
+      - name: Checkout vcpkg registry repository
         uses: actions/checkout@v4
         with:
-          repository: 'phkaiser13/vcpkg-registry' # Corrigido para seu username
+          repository: 'phkaiser13/vcpkg-registry'
           token: ${{ secrets.PAT_TOKEN }}
           path: 'vcpkg-registry'
 
-      - name: 'Update vcpkg port files'
+      - name: Update vcpkg port files
         run: |
+          set -euo pipefail
           VCPKG_JSON="vcpkg-registry/ports/gitph/vcpkg.json"
           PORTFILE="vcpkg-registry/ports/gitph/portfile.cmake"
-          sed -i -e "s/\"version\": \".*\"/\"version\": \"${{ env.RELEASE_VERSION }}\"/" "${VCPKG_JSON}"
-          sed -i -e "s/REF \".*\"/REF \"${{ env.RELEASE_TAG }}\"/" "${PORTFILE}"
-          sed -i -e "s/SHA512 \".*\"/SHA512 \"${{ env.TARBALL_SHA512 }}\"/" "${PORTFILE}"
-          
-      - name: 'Commit and push changes to vcpkg registry'
+          if [ -f "$VCPKG_JSON" ]; then
+            python3 - <<'PY'
+import json, os
+p=os.environ["VCPKG_JSON"]
+j=json.load(open(p))
+# update version (best-effort — adapt if your JSON schema is different)
+if "version" in j:
+    j["version"]=os.environ["RELEASE_VERSION"]
+else:
+    # try version-string or similar keys if needed
+    j["version"]=os.environ["RELEASE_VERSION"]
+open(p,"w").write(json.dumps(j, indent=2))
+print("Updated vcpkg.json")
+PY
+          else
+            echo "vcpkg.json not found at $VCPKG_JSON, skipping."
+          fi
+
+          if [ -f "$PORTFILE" ]; then
+            # safer textual replacements for REF and SHA512
+            python3 - <<'PY'
+import os, re
+p=os.environ["PORTFILE"]
+s=open(p).read()
+s=re.sub(r'REF\s+"[^"]+"', f'REF "{os.environ["RELEASE_TAG"]}"', s)
+s=re.sub(r'SHA512\s+"[^"]+"', f'SHA512 "{os.environ["TARBALL_SHA512"]}"', s)
+open(p,'w').write(s)
+print("Updated portfile.cmake")
+PY
+          else
+            echo "portfile.cmake not found at $PORTFILE, skipping."
+          fi
+
+      - name: Commit and push changes to vcpkg registry (if any)
         run: |
           cd vcpkg-registry
-          git add ports/gitph/vcpkg.json ports/gitph/portfile.cmake
-          if ! git diff --staged --quiet; then
-            git commit -m "chore(gitph): Update port to ${{ env.RELEASE_TAG }}"
+          git add ports/gitph/vcpkg.json ports/gitph/portfile.cmake || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(gitph): Update port to ${RELEASE_TAG}" || true
             git push
           else
             echo "No changes to commit for vcpkg."
           fi
+          cd ..
+
+      - name: Finished
+        run: |
+          echo "Publish-to-managers workflow finished. RELEASE_TAG=${RELEASE_TAG} RELEASE_VERSION=${RELEASE_VERSION}"
