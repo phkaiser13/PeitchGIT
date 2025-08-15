@@ -1,0 +1,96 @@
+name: Build phgit (Fedora-like Linux)
+
+on:
+  # Run on pushes to the main branch
+  push:
+    branches: [ "main" ]
+    # Also run when a tag starting with 'v' is pushed
+    tags:
+      - 'v*'
+  # Run on pull requests targeting the main branch
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    # Job name for the UI
+    name: Build and Package (Fedora Container)
+    # Run the job on the latest Ubuntu runner provided by GitHub
+    runs-on: ubuntu-latest
+    # Use a Fedora container for a consistent build environment
+    container:
+      image: fedora:latest
+
+    steps:
+      # Step 1: Check out the repository's code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Install system dependencies using DNF package manager.
+      # -y flag automatically answers 'yes' to prompts.
+      # A single dnf command is used to install all dependencies efficiently.
+      - name: Install system dependencies (Fedora)
+        run: |
+          dnf -y update
+          dnf install -y \
+            gcc-c++ \
+            make \
+            cmake \
+            pkgconf-pkg-config \
+            lua-devel \
+            libcurl-devel \
+            openssl-devel \
+            nlohmann-json-devel \
+            binutils \
+            git \
+            tar \
+            gzip \
+            which
+          # Clean dnf cache to reduce layer size
+          dnf clean all
+
+
+      # Step 4: Set up the Rust toolchain and cache dependencies
+      - name: Setup Rust environment
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      # Step 5: Configure the project using CMake
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      # Step 6: Compile the project
+      - name: Compile Project
+        run: cmake --build build --parallel
+
+      # Step 7: Run unit tests (if they are configured with CTest)
+      # The `if: always()` condition ensures this step runs even if previous steps fail,
+      # which can be useful for test reporting.
+      - name: Run unit tests
+        if: always()
+        run: |
+          # Check if CTest configuration exists before trying to run it
+          if [ -f build/CTestTestfile.cmake ]; then
+            (cd build && ctest --output-on-failure)
+          else
+            echo "No tests configured (CTestTestfile.cmake not found)."
+          fi
+
+
+
+      # Step 10: Upload intermediate build artifacts for non-tag builds (CI).
+      # This step runs for pushes and pull requests, but NOT for tags.
+      - name: Upload CI Build Artifacts (not for tags)
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          # A different artifact name to avoid confusion with the release package.
+          name: phgit-build-artifacts-fedora
+          path: |
+            build/bin/
+            src/plugins/
+            LICENSE
+          retention-days: 3
