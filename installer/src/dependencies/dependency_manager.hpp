@@ -8,7 +8,7 @@
 * SPDX-License-Identifier: Apache-2.0
 */
 
-#include "dependencies/dependency_manager.hpp"
+
 #include "utils/process_executor.hpp" // Use the new, robust process executor
 #include "spdlog/spdlog.h"
 
