@@ -15,8 +15,8 @@
 #include "utils/api_manager.hpp"
 #include "utils/config_manager.hpp"
 
-#include <string>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace phgit_installer::platform {

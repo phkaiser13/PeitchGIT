@@ -14,9 +14,10 @@
 #include "utils/api_manager.hpp" // Added ApiManager dependency
 #include "utils/config_manager.hpp" // Added ConfigManager dependency
 
+#include <memory>
 #include <string>
 #include <vector>
-#include <memory>
+
 
 namespace phgit_installer::platform {
 

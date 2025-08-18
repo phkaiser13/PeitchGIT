@@ -66,7 +66,8 @@ set_target_properties(installer PROPERTIES OUTPUT_NAME "phgit-installer")
 target_include_directories(installer PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
     ${CURL_INCLUDE_DIRS}
-    ${miniz_SOURCE_DIR} # Add miniz.h's directory
+        "${miniz_SOURCE_DIR}" # Add miniz.h's directory
+        "${miniz_BINARY_DIR}" # Add generated headers like miniz_export.h
 )
 
 # --- Linking Dependencies ---
