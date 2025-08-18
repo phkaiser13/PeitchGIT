@@ -1,208 +1,173 @@
-/* Copyright (C) 2025 Pedro Henrique / phkaiser13
-* File: dependency_manager.cpp
-* This file implements the DependencyManager class. It has been refactored to be fully
-* data-driven and robust. It retrieves the list of dependencies to check from the
-* ConfigManager and uses the powerful ProcessExecutor utility to run version checks,
-* capturing all output for accurate diagnostics. This removes all hardcoded values
-* and brittle process logic from this component.
-* SPDX-License-Identifier: Apache-2.0
-*/
+// Copyright (C) 2025 Pedro Henrique / phkaiser13
+// File: dependency_manager.hpp
+// SPDX-License-Identifier: Apache-2.0
+//
+// Header for DependencyManager: checks presence and minimum versions of
+// external command-line tools used by the installer. Designed to be
+// lightweight in compile-time by using forward-declarations where possible.
+//
+// Usage notes:
+//  - The ConfigManager should provide a list of dependencies to check.
+//    A compatible return type is: std::vector<phgit_installer::dependencies::DependencyRequirement>.
+//  - The implementation (.cpp) performs filesystem/search and process execution.
+//  - This header intentionally avoids heavy headers (e.g. <filesystem>) to keep compile times small.
 
-// Corresponding header for this implementation file.
-#include "dependencies/dependency_manager.hpp"
+#pragma once
 
-// Utility for running external processes.
-#include "utils/process_executor.hpp"
+#include <string>
+#include <vector>
+#include <optional>
+#include <memory>
+#include <mutex>
 
-// For spdlog logging library.
-#include "spdlog/spdlog.hh"
-
-// Standard library headers required for the implementation in this file.
-#include <filesystem>       // For std::filesystem for path manipulation.
-#include <regex>            // For std::regex to parse version strings.
-#include <sstream>          // For std::stringstream to parse the PATH variable.
-#include <stdexcept>        // For std::runtime_error.
-#include <cstdlib>          // For std::getenv.
-
-// Platform-specific includes for process execution fallbacks if needed (now abstracted by ProcessExecutor).
-#if defined(_WIN32) || defined(_WIN64)
-    #define WIN32_LEAN_AND_MEAN
-    #include <windows.h>
-#else
-    #include <cstdio> // For popen (though abstracted).
-#endif
-
-namespace phgit_installer::dependencies {
-
-    // A namespace alias for std::filesystem to improve readability.
-    namespace fs = std::filesystem;
-
-    // Constructor now accepts the ConfigManager, which is dependency injection.
-    DependencyManager::DependencyManager(platform::PlatformInfo info, std::shared_ptr<utils::ConfigManager> config)
-        : m_platform_info(std::move(info)), m_config(std::move(config)) {
-        spdlog::debug("DependencyManager initialized for OS: {}", m_platform_info.os_family);
+namespace phgit_installer {
+    namespace platform {
+        // Forward-declare PlatformInfo. Define this in your platform headers.
+        struct PlatformInfo;
     }
 
-    // This method is now data-driven, reading dependencies from the config file.
-    void DependencyManager::check_all() {
-        spdlog::info("Starting check for all external dependencies defined in configuration.");
-        m_dependency_statuses.clear();
-
-        auto dependencies_to_check = m_config->get_dependencies();
-        if (dependencies_to_check.empty()) {
-            spdlog::warn("No dependencies are defined in the configuration file.");
-            return;
-        }
-
-        for (const auto& dep_info : dependencies_to_check) {
-            check_dependency(dep_info.name, dep_info.min_version, dep_info.is_required);
-        }
+    namespace utils {
+        // Forward-declare ConfigManager to avoid pulling heavy config headers here.
+        class ConfigManager;
     }
 
-    // Retrieves the status of a specific dependency by name.
-    std::optional<DependencyStatus> DependencyManager::get_status(const std::string& name) const {
-        for (const auto& status : m_dependency_statuses) {
-            if (status.name == name) {
-                return status;
-            }
-        }
-        return std::nullopt;
-    }
+    namespace dependencies {
 
-    // Checks if all *required* dependencies are met.
-    bool DependencyManager::are_core_dependencies_met() const {
-        for (const auto& status : m_dependency_statuses) {
-            if (status.is_required && (!status.is_found || !status.is_version_ok)) {
-                return false; // A required dependency is missing or outdated.
-            }
-        }
-        return true;
-    }
+        /**
+         * @brief Minimal description of a dependency requirement.
+         *
+         * This type represents one dependency entry that the ConfigManager
+         * may provide. If your ConfigManager returns a custom type, ensure
+         * it's convertible or compatible with this struct.
+         */
+        struct DependencyRequirement {
+            std::string name;           ///< Executable name to search (e.g. "git", "python")
+            std::string min_version;    ///< Minimum required semantic version (e.g. "2.34.0")
+            bool is_required = false;   ///< If true, installer treats this dependency as fatal when missing/outdated
+        };
 
-    // The core logic to check a single dependency.
-    void DependencyManager::check_dependency(const std::string& name, const std::string& min_version, bool is_required) {
-        DependencyStatus status;
-        status.name = name;
-        status.minimum_version = min_version;
-        status.is_required = is_required;
+        /**
+         * @brief Runtime status for a discovered dependency.
+         *
+         * All fields are public POD-style for convenient logging and serialization.
+         */
+        struct DependencyStatus {
+            std::string name;             ///< name used to look for executable
+            std::string minimum_version;  ///< required minimum version
+            std::string found_path;       ///< full path to discovered executable (empty if not found)
+            std::string found_version;    ///< parsed version string (empty if not parsed)
+            bool is_found = false;        ///< true if executable was found on PATH
+            bool is_required = false;     ///< mirrors requirement flag
+            bool is_version_ok = false;   ///< true if found_version >= minimum_version
+        };
 
-        spdlog::debug("Checking dependency: {}", name);
+        /**
+         * @brief DependencyManager
+         *
+         * Responsible for:
+         *  - Querying the ConfigManager for a list of dependencies to check.
+         *  - Locating executables on PATH (cross-platform).
+         *  - Running a version command and parsing version output.
+         *  - Producing DependencyStatus results consumable by the rest of the installer.
+         *
+         * Thread-safety:
+         *  - This class is safe for concurrent read access to results. Public mutation
+         *    methods lock an internal mutex to protect state.
+         */
+        class DependencyManager {
+        public:
+            /**
+             * @brief Construct a DependencyManager.
+             * @param info Platform information (OS family, arch, etc.)
+             * @param config Shared pointer to the ConfigManager instance used to retrieve dependency definitions.
+             *
+             * Note: we take ConfigManager as a shared_ptr so ownership is shared with the caller.
+             */
+            DependencyManager(platform::PlatformInfo info,
+                              std::shared_ptr<utils::ConfigManager> config) noexcept;
 
-        auto executable_path = find_executable_in_path(name);
-        if (!executable_path) {
-            spdlog::warn("Dependency '{}' not found in PATH.", name);
-            status.is_found = false;
-            m_dependency_statuses.push_back(status);
-            return;
-        }
+            DependencyManager(const DependencyManager&) = delete;
+            DependencyManager& operator=(const DependencyManager&) = delete;
+            DependencyManager(DependencyManager&&) = delete;
+            DependencyManager& operator=(DependencyManager&&) = delete;
 
-        status.is_found = true;
-        status.found_path = *executable_path;
-        spdlog::debug("Found '{}' at: {}", name, status.found_path);
+            ~DependencyManager() = default;
 
-        // --- REFACTORED SECTION ---
-        // Use the robust ProcessExecutor instead of the old internal method.
-        std::string command = "\"" + status.found_path + "\" --version";
-        auto proc_result = utils::ProcessExecutor::execute(command);
+            /**
+             * @brief Perform checks for all dependencies defined by the ConfigManager.
+             *
+             * This method is the main entry point: it queries the config, checks each
+             * dependency and stores the resulting statuses internally.
+             */
+            void check_all();
 
-        if (proc_result.exit_code != 0) {
-            spdlog::warn("Command '{}' failed with exit code {}. Stderr: {}", command, proc_result.exit_code, proc_result.std_err);
-            m_dependency_statuses.push_back(status);
-            return;
-        }
+            /**
+             * @brief Get the status of a dependency by name.
+             * @param name Dependency executable name (case-sensitive match).
+             * @return Optional containing DependencyStatus if found, std::nullopt otherwise.
+             */
+            std::optional<DependencyStatus> get_status(const std::string& name) const;
 
-        // Some tools (like git) print version to stdout, others to stderr. Check both.
-        std::string raw_output = !proc_result.std_out.empty() ? proc_result.std_out : proc_result.std_err;
-        // --- END REFACTORED SECTION ---
+            /**
+             * @brief Return a const reference to all collected statuses.
+             * @note The returned reference remains valid until the next mutating call (e.g. check_all()).
+             */
+            const std::vector<DependencyStatus>& all_statuses() const noexcept;
 
-        status.found_version = parse_version_from_output(raw_output);
-        if (status.found_version.empty()) {
-            spdlog::warn("Could not parse version for '{}' from output: {}", name, raw_output);
-            m_dependency_statuses.push_back(status);
-            return;
-        }
+            /**
+             * @brief Are all required dependencies found and meet the minimum versions?
+             * @return true if all required dependencies are satisfied.
+             */
+            bool are_core_dependencies_met() const;
 
-        spdlog::debug("Found version for '{}': {}", name, status.found_version);
-        status.is_version_ok = (compare_versions(status.found_version, status.minimum_version) >= 0);
+        private:
+            // Platform information (OS family, architecture, etc.)
+            platform::PlatformInfo m_platform_info;
 
-        if (status.is_version_ok) {
-            spdlog::info("Dependency '{}' is OK (version {}, required >= {}).", name, status.found_version, status.minimum_version);
-        } else {
-            spdlog::warn("Dependency '{}' is outdated (version {}, required >= {}).", name, status.found_version, status.minimum_version);
-        }
+            // Config manager used to retrieve dependency definitions.
+            std::shared_ptr<utils::ConfigManager> m_config;
 
-        m_dependency_statuses.push_back(status);
-    }
+            // Collected dependency statuses from the last run.
+            std::vector<DependencyStatus> m_dependency_statuses;
 
-    // Cross-platform function to find an executable in the system's PATH.
-    std::optional<std::string> DependencyManager::find_executable_in_path(const std::string& name) {
-        const char* path_env = std::getenv("PATH");
-        if (!path_env) {
-            return std::nullopt;
-        }
+            // Protects m_dependency_statuses and other mutable state.
+            mutable std::mutex m_mutex;
 
-        std::string path_str(path_env);
-        #if defined(_WIN32) || defined(_WIN64)
-            const char delimiter = ';';
-            const std::vector<std::string> extensions = { ".exe", ".cmd", ".bat" };
-        #else
-            const char delimiter = ':';
-            const std::vector<std::string> extensions = { "" };
-        #endif
+            //
+            // Internal helpers (implementation details in .cpp)
+            //
 
-        std::stringstream ss(path_str);
-        std::string path_item;
-        while (std::getline(ss, path_item, delimiter)) {
-            if (path_item.empty()) continue;
+            /**
+             * @brief Search the system PATH for an executable named 'name'.
+             * @param name File name without extension (e.g. "git").
+             * @return full path to executable if found, std::nullopt otherwise.
+             *
+             * Implementation notes:
+             *  - On Windows, consider PATHEXT and try common extensions (.exe, .cmd, .bat).
+             *  - On POSIX, verify execute permission bits.
+             */
+            std::optional<std::string> find_executable_in_path(const std::string& name) const;
 
-            for (const auto& ext : extensions) {
-                fs::path full_path = fs::path(path_item) / (name + ext);
-                std::error_code ec;
-                if (fs::exists(full_path, ec) && !fs::is_directory(full_path, ec) && !ec) {
-                    // On POSIX, we should also check for execute permissions.
-                    #if !defined(_WIN32) && !defined(_WIN64)
-                        if ((fs::status(full_path, ec).permissions() & (fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec)) == fs::perms::none) {
-                            continue;
-                        }
-                    #endif
-                    return full_path.string();
-                }
-            }
-        }
-        return std::nullopt;
-    }
+            /**
+             * @brief Parse the most likely semantic version from arbitrary program output.
+             * @param raw_output stdout/stderr collected from the tool.
+             * @return version string like "1.2.3" or empty string on failure.
+             *
+             * Implementation should be resilient (allow optional 'v' prefix, X.Y or X.Y.Z).
+             */
+            std::string parse_version_from_output(const std::string& raw_output) const;
 
-    // Parses a version string (e.g., "X.Y.Z") from a raw command output.
-    std::string DependencyManager::parse_version_from_output(const std::string& raw_output) {
-        // Regex to find patterns like X.Y.Z or vX.Y.Z.
-        std::regex version_regex("(\\d+\\.\\d+(\\.\\d+)?)"); // Improved regex for X.Y or X.Y.Z
-        std::smatch match;
-        if (std::regex_search(raw_output, match, version_regex) && match.size() > 1) {
-            return match[1].str();
-        }
-        return "";
-    }
+            /**
+             * @brief Compare two version strings using numeric components.
+             * @param v1 left operand (found version)
+             * @param v2 right operand (minimum required)
+             * @return  1 if v1 > v2, 0 if equal, -1 if v1 < v2
+             *
+             * Implementation should treat missing components as zero (e.g. "1.2" == "1.2.0")
+             * and be safe against malformed segments (prefer non-throwing conversions).
+             */
+            int compare_versions(const std::string& v1, const std::string& v2) const;
+        };
 
-    // Compares two semantic version strings (e.g., "1.10.0" vs "1.2.0").
-    // Returns: 1 if v1 > v2, -1 if v1 < v2, 0 if v1 == v2.
-    int DependencyManager::compare_versions(const std::string& v1, const std::string& v2) {
-        std::stringstream ss1(v1);
-        std::stringstream ss2(v2);
-        std::string segment;
-        std::vector<int> v1_parts, v2_parts;
-
-        while(std::getline(ss1, segment, '.')) v1_parts.push_back(std::stoi(segment));
-        while(std::getline(ss2, segment, '.')) v2_parts.push_back(std::stoi(segment));
-
-        size_t max_size = std::max(v1_parts.size(), v2_parts.size());
-        v1_parts.resize(max_size, 0);
-        v2_parts.resize(max_size, 0);
-
-        for (size_t i = 0; i < max_size; ++i) {
-            if (v1_parts[i] < v2_parts[i]) return -1;
-            if (v1_parts[i] > v2_parts[i]) return 1;
-        }
-        return 0;
-    }
-
-} // namespace phgit_installer::dependencies
+    } // namespace dependencies
+} // namespace phgit_installer
