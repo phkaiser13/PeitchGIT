@@ -8,40 +8,42 @@
 * SPDX-License-Identifier: Apache-2.0
 */
 
+// Corresponding header for this implementation file.
+#include "dependencies/dependency_manager.hpp"
 
-/*
-* Correct includes for dependency_manager.hpp
-*/
+// Utility for running external processes.
+#include "utils/process_executor.hpp"
 
-#pragma once
+// For spdlog logging library.
+#include "spdlog/spdlog.hh"
 
-// For platform::PlatformInfo struct
-#include "platform/platform_detector.hpp"
-// For utils::ConfigManager
-#include "utils/config_manager.hpp"
+// Standard library headers required for the implementation in this file.
+#include <filesystem>       // For std::filesystem for path manipulation.
+#include <regex>            // For std::regex to parse version strings.
+#include <sstream>          // For std::stringstream to parse the PATH variable.
+#include <stdexcept>        // For std::runtime_error.
+#include <cstdlib>          // For std::getenv.
 
-// For std::string and std::vector
-#include <string>
-#include <vector>
-// For std::optional
-#include <optional>
-// For std::shared_ptr
-#include <memory>
-
-// NOTE: All platform-specific includes for process creation are now gone!
-// This is a sign of successful abstraction.
+// Platform-specific includes for process execution fallbacks if needed (now abstracted by ProcessExecutor).
+#if defined(_WIN32) || defined(_WIN64)
+    #define WIN32_LEAN_AND_MEAN
+    #include <windows.h>
+#else
+    #include <cstdio> // For popen (though abstracted).
+#endif
 
 namespace phgit_installer::dependencies {
 
+    // A namespace alias for std::filesystem to improve readability.
     namespace fs = std::filesystem;
 
-    // Constructor now accepts the ConfigManager
+    // Constructor now accepts the ConfigManager, which is dependency injection.
     DependencyManager::DependencyManager(platform::PlatformInfo info, std::shared_ptr<utils::ConfigManager> config)
         : m_platform_info(std::move(info)), m_config(std::move(config)) {
         spdlog::debug("DependencyManager initialized for OS: {}", m_platform_info.os_family);
     }
 
-    // check_all is now data-driven
+    // This method is now data-driven, reading dependencies from the config file.
     void DependencyManager::check_all() {
         spdlog::info("Starting check for all external dependencies defined in configuration.");
         m_dependency_statuses.clear();
@@ -57,6 +59,7 @@ namespace phgit_installer::dependencies {
         }
     }
 
+    // Retrieves the status of a specific dependency by name.
     std::optional<DependencyStatus> DependencyManager::get_status(const std::string& name) const {
         for (const auto& status : m_dependency_statuses) {
             if (status.name == name) {
@@ -66,15 +69,17 @@ namespace phgit_installer::dependencies {
         return std::nullopt;
     }
 
+    // Checks if all *required* dependencies are met.
     bool DependencyManager::are_core_dependencies_met() const {
         for (const auto& status : m_dependency_statuses) {
             if (status.is_required && (!status.is_found || !status.is_version_ok)) {
-                return false;
+                return false; // A required dependency is missing or outdated.
             }
         }
         return true;
     }
 
+    // The core logic to check a single dependency.
     void DependencyManager::check_dependency(const std::string& name, const std::string& min_version, bool is_required) {
         DependencyStatus status;
         status.name = name;
@@ -98,7 +103,7 @@ namespace phgit_installer::dependencies {
         // --- REFACTORED SECTION ---
         // Use the robust ProcessExecutor instead of the old internal method.
         std::string command = "\"" + status.found_path + "\" --version";
-        auto proc_result = ProcessExecutor::execute(command);
+        auto proc_result = utils::ProcessExecutor::execute(command);
 
         if (proc_result.exit_code != 0) {
             spdlog::warn("Command '{}' failed with exit code {}. Stderr: {}", command, proc_result.exit_code, proc_result.std_err);
@@ -129,10 +134,13 @@ namespace phgit_installer::dependencies {
         m_dependency_statuses.push_back(status);
     }
 
+    // Cross-platform function to find an executable in the system's PATH.
     std::optional<std::string> DependencyManager::find_executable_in_path(const std::string& name) {
-        // This function was already well-written and remains unchanged.
         const char* path_env = std::getenv("PATH");
-        if (!path_env) return std::nullopt;
+        if (!path_env) {
+            return std::nullopt;
+        }
+
         std::string path_str(path_env);
         #if defined(_WIN32) || defined(_WIN64)
             const char delimiter = ';';
@@ -141,15 +149,17 @@ namespace phgit_installer::dependencies {
             const char delimiter = ':';
             const std::vector<std::string> extensions = { "" };
         #endif
+
         std::stringstream ss(path_str);
         std::string path_item;
         while (std::getline(ss, path_item, delimiter)) {
             if (path_item.empty()) continue;
+
             for (const auto& ext : extensions) {
                 fs::path full_path = fs::path(path_item) / (name + ext);
                 std::error_code ec;
                 if (fs::exists(full_path, ec) && !fs::is_directory(full_path, ec) && !ec) {
-                    // On POSIX, we should also check for execute permissions
+                    // On POSIX, we should also check for execute permissions.
                     #if !defined(_WIN32) && !defined(_WIN64)
                         if ((fs::status(full_path, ec).permissions() & (fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec)) == fs::perms::none) {
                             continue;
@@ -162,10 +172,9 @@ namespace phgit_installer::dependencies {
         return std::nullopt;
     }
 
-    // The get_output_from_command method has been completely removed.
-
+    // Parses a version string (e.g., "X.Y.Z") from a raw command output.
     std::string DependencyManager::parse_version_from_output(const std::string& raw_output) {
-        // This function remains unchanged.
+        // Regex to find patterns like X.Y.Z or vX.Y.Z.
         std::regex version_regex("(\\d+\\.\\d+(\\.\\d+)?)"); // Improved regex for X.Y or X.Y.Z
         std::smatch match;
         if (std::regex_search(raw_output, match, version_regex) && match.size() > 1) {
@@ -174,17 +183,21 @@ namespace phgit_installer::dependencies {
         return "";
     }
 
+    // Compares two semantic version strings (e.g., "1.10.0" vs "1.2.0").
+    // Returns: 1 if v1 > v2, -1 if v1 < v2, 0 if v1 == v2.
     int DependencyManager::compare_versions(const std::string& v1, const std::string& v2) {
-        // This function remains unchanged.
         std::stringstream ss1(v1);
         std::stringstream ss2(v2);
         std::string segment;
         std::vector<int> v1_parts, v2_parts;
+
         while(std::getline(ss1, segment, '.')) v1_parts.push_back(std::stoi(segment));
         while(std::getline(ss2, segment, '.')) v2_parts.push_back(std::stoi(segment));
+
         size_t max_size = std::max(v1_parts.size(), v2_parts.size());
         v1_parts.resize(max_size, 0);
         v2_parts.resize(max_size, 0);
+
         for (size_t i = 0; i < max_size; ++i) {
             if (v1_parts[i] < v2_parts[i]) return -1;
             if (v1_parts[i] > v2_parts[i]) return 1;
