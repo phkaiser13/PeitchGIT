@@ -8,13 +8,25 @@
 * SPDX-License-Identifier: Apache-2.0
 */
 
+/*
+* Correct includes for the refactored dependency_manager.cpp
+*/
+
+// Corresponding header for this implementation file
 #include "dependencies/dependency_manager.hpp"
+
+// For ProcessExecutor utility
+#include "utils/process_executor.hpp"
+// For spdlog logging library
 #include "spdlog/spdlog.h"
 
-#include <array>
+// For std::filesystem
 #include <filesystem>
+// For std::regex
 #include <regex>
+// For std::stringstream
 #include <sstream>
+// For std::runtime_error (though not used in the refactored version, good practice)
 #include <stdexcept>
 
 // Platform-specific includes for process execution

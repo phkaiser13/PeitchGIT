@@ -9,13 +9,24 @@
 */
 
 
-#include "utils/process_executor.hpp" // Use the new, robust process executor
-#include "spdlog/spdlog.h"
+/*
+* Correct includes for dependency_manager.hpp
+*/
 
-#include <filesystem>
-#include <regex>
-#include <sstream>
-#include <stdexcept>
+#pragma once
+
+// For platform::PlatformInfo struct
+#include "platform/platform_detector.hpp"
+// For utils::ConfigManager
+#include "utils/config_manager.hpp"
+
+// For std::string and std::vector
+#include <string>
+#include <vector>
+// For std::optional
+#include <optional>
+// For std::shared_ptr
+#include <memory>
 
 // NOTE: All platform-specific includes for process creation are now gone!
 // This is a sign of successful abstraction.
