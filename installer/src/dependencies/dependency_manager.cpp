@@ -8,7 +8,7 @@
 * SPDX-License-Identifier: Apache-2.0
 */
 
-#include "dependencies/dependency_manager.h"
+#include "dependencies/dependency_manager.hpp"
 #include "spdlog/spdlog.h"
 
 #include <array>

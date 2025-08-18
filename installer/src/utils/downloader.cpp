@@ -16,6 +16,7 @@
 #include <memory>
 #include <cstdio>
 #include <fstream>
+#include <filesystem>
 
 namespace phgit_installer::utils {
 

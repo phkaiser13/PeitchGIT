@@ -17,6 +17,8 @@
 #include <filesystem>
 #include <fstream>
 #include <regex>
+#include <sstream>
+
 
 namespace phgit_installer::utils {
 

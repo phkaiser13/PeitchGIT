@@ -13,6 +13,7 @@
 #include <string>
 #include <functional>
 #include <cstdint>
+#include <memory>
 
 namespace phgit_installer::utils {
 
