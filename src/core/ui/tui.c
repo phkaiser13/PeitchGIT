@@ -3,6 +3,11 @@
  *
  * Rewritten for safety, correctness and robustness while preserving existing behavior.
  *
+ * Fixes:
+ *  - Safe truncation in display_menu (no buffer overflow).
+ *  - Robust stdin handling: prompt detects truncation and flushes remainder;
+ *    wait_for_enter always consumes pending input then waits for a fresh Enter.
+ *
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "tui.h"
@@ -36,6 +41,14 @@ static char* safe_strdup_or_empty(const char* s) {
     if (!s) s = "";
     char* r = strdup(s);
     return r;
+}
+
+/* Flush stdin until newline or EOF. Use where we want to discard the rest of the current input line. */
+static void flush_stdin_until_newline(void) {
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF) {
+        /* discard */
+    }
 }
 
 /* Comparison function for qsort. Guard against NULL names just in case. */
@@ -208,14 +221,22 @@ static void display_menu(const MenuItem* items, size_t count) {
         for (size_t i = 0; i < count; ++i) {
             const char* name = items[i].name ? items[i].name : "";
             const char* desc = items[i].description ? items[i].description : "";
-            /* If name is longer than column width, print truncated with ellipsis */
+            /* If name is longer than column width, print truncated with ellipsis (safe) */
             if (strlen(name) > name_col) {
                 char truncated[64];
-                size_t take = name_col > 4 ? name_col - 3 : 1;
-                if (take > sizeof(truncated) - 1) take = sizeof(truncated) - 1;
-                strncpy(truncated, name, take);
-                truncated[take] = '\0';
-                strcat(truncated, "...");
+                /* calculate how many chars we can take so that + "..." fits */
+                size_t avail = sizeof(truncated) - 1; /* room for NUL */
+                size_t dot_len = 3; /* "..." */
+                size_t take = name_col > dot_len ? (name_col - dot_len) : 1;
+                if (take > avail - dot_len) take = avail - dot_len;
+                /* use snprintf for safe bounded copy + ellipsis */
+                int written = snprintf(truncated, sizeof(truncated), "%.*s...", (int)take, name);
+                if (written < 0 || (size_t)written >= sizeof(truncated)) {
+                    /* fallback in improbable snprintf failure */
+                    strncpy(truncated, name, sizeof(truncated) - 4);
+                    truncated[sizeof(truncated) - 4] = '\0';
+                    strcat(truncated, "...");
+                }
                 printf("  [%2zu] %-*s - %s\n", i + 1, (int)name_col, truncated, desc);
             } else {
                 printf("  [%2zu] %-*s - %s\n", i + 1, (int)name_col, name, desc);
@@ -229,20 +250,49 @@ static void display_menu(const MenuItem* items, size_t count) {
     printf("\n----------------------------------------\n");
 }
 
-/* Wait for enter using fgets to avoid confusion with leftover input. */
+/* Wait for enter: ensure any pending input is discarded FIRST, then wait for a fresh newline.
+   This avoids the "leftover chars cause immediate return" problem. */
 static void wait_for_enter(void) {
-    char tmp[16];
-    /* clear any trailing input up to newline */
-    if (fgets(tmp, sizeof(tmp), stdin) == NULL) {
-        /* ignore */
-    }
+    /* Discard any pending characters from previous input (if any). */
+    flush_stdin_until_newline();
+
     printf("\nPress Enter to continue...");
-    if (fgets(tmp, sizeof(tmp), stdin) == NULL) {
-        /* ignore */
+    /* Now wait for a fresh newline from the user. */
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF) {
+        /* spin until newline (user pressed Enter) or EOF */
     }
 }
 
 /* --- Public API Implementation --- */
+
+/*
+ * Enhanced prompt: reads a line into buffer (size buffer_size).
+ * If the line is longer than buffer_size-1, the remainder of that input line is discarded
+ * so we don't leave junk in stdin for subsequent reads.
+ */
+bool tui_prompt_user(const char* prompt, char* buffer, size_t buffer_size) {
+    if (!buffer || buffer_size == 0) return false;
+    printf("%s", prompt);
+    fflush(stdout);
+
+    if (fgets(buffer, (int)buffer_size, stdin) == NULL) {
+        return false;
+    }
+
+    size_t len = strcspn(buffer, "\r\n");
+    if (len < strlen(buffer)) {
+        /* we found a newline inside buffer; strip it */
+        buffer[len] = '\0';
+    } else {
+        /* No newline inside the buffer => the input line was longer than buffer - 1
+           => discard the remainder up to newline so the next read starts fresh. */
+        int ch;
+        while ((ch = getchar()) != '\n' && ch != EOF) { /* discard */ }
+    }
+
+    return true;
+}
 
 void tui_show_main_menu(void) {
     for (;;) {
@@ -307,17 +357,4 @@ void tui_print_error(const char* message) {
 void tui_print_success(const char* message) {
     if (!message) message = "<null>";
     printf("\n[SUCCESS] %s\n", message);
-}
-
-bool tui_prompt_user(const char* prompt, char* buffer, size_t buffer_size) {
-    if (!buffer || buffer_size == 0) return false;
-    printf("%s", prompt);
-    fflush(stdout);
-
-    if (fgets(buffer, (int)buffer_size, stdin) == NULL) {
-        return false;
-    }
-
-    buffer[strcspn(buffer, "\r\n")] = '\0';
-    return true;
 }
