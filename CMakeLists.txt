@@ -1,23 +1,13 @@
-# CMakeLists.txt - phgit (rewritten)
-# Copyright (C) 2025 Pedro Henrique / phkaiser13
-# SPDX-License-Identifier: Apache-2.0
-#
-# Purpose:
-# - Robust dependency discovery (libcurl, Lua, nlohmann_json, etc.)
-# - Support multiple installation workflows: vcpkg, homebrew, apt, pacman, choco, manual
-# - Create modern CMake imported targets for clean linking (CURL::libcurl, Lua::Lua)
-# - Produce reproducible output layout and install rules
-# - Support building Rust modules via cargo (custom target macro)
-#
-# Comments are in English for portability and clarity.
-
 cmake_minimum_required(VERSION 3.15)
 project(phgit VERSION 1.0.0 LANGUAGES C CXX)
 
 # ----------------------
 # Global user options
 # ----------------------
+#logica.instalador: opção que controla se o "installer engine" será construído.
+#logica.instalador: por padrão está OFF — ative com -DPHGIT_BUILD_INSTALLER=ON
 option(PHGIT_BUILD_INSTALLER "Build the installer engine" OFF)
+
 option(PHGIT_ENABLE_TESTS "Enable building tests" OFF)
 option(PHGIT_USE_SYSTEM_CURL "Prefer system libcurl over package manager" ON)
 option(PHGIT_USE_SYSTEM_LUA "Prefer system Lua over package manager" ON)
@@ -90,12 +80,7 @@ find_package(PkgConfig QUIET)
 
 # ----------------------
 # Find libcurl robustly
-# Strategy:
-# 1. Respect user-provided CURL_DIR (or CURL_ROOT)
-# 2. Use find_package(CURL)
-# 3. Use pkg-config (libcurl or curl)
-# 4. Try common prefixes + manual find_path/find_library
-# 5. If still not found, instruct user with helpful message
+# (sem alterações lógicas — mantive sua estratégia original)
 # ----------------------
 set(CURL_TARGET_NAME "")
 
@@ -115,7 +100,6 @@ if(NOT CURL_TARGET_NAME)
         phgit_msg("found CURL via find_package(CURL)")
         set(CURL_TARGET_NAME "CURL::libcurl")
     elseif(CURL_FOUND)
-        # Older modules set variables
         if(DEFINED CURL_LIBRARY AND DEFINED CURL_INCLUDE_DIRS)
             create_imported_library(CURL::libcurl "${CURL_INCLUDE_DIRS}" "${CURL_LIBRARY}")
             set(CURL_TARGET_NAME "CURL::libcurl")
@@ -133,7 +117,6 @@ if(NOT CURL_TARGET_NAME AND PKG_CONFIG_FOUND)
 endif()
 
 if(NOT CURL_TARGET_NAME)
-    # Try common prefixes (manual search)
     phgit_msg("Trying manual search for libcurl in common prefixes")
     foreach(_p IN LISTS _COMMON_PREFIXES)
         find_path(_curl_inc curl/curl.h PATHS ${_p} ${_p}/include ${_p}/include/curl)
@@ -156,7 +139,6 @@ endif()
 
 # ----------------------
 # Find Lua 5.4 (robust)
-# Strategy similar to curl
 # ----------------------
 set(LUA_TARGET_NAME "")
 
@@ -176,7 +158,6 @@ if(NOT LUA_TARGET_NAME)
         phgit_msg("found Lua via find_package(Lua 5.4)")
         set(LUA_TARGET_NAME "Lua::Lua")
     elseif(Lua_FOUND)
-        # configure imported interface if the module provided variables
         if(DEFINED LUA_LIBRARIES OR DEFINED LUA_LIBRARY)
             if(DEFINED LUA_LIBRARIES)
                 set(_lu_lib ${LUA_LIBRARIES})
@@ -293,8 +274,6 @@ endif()
 
 # ----------------------
 # Rust module build macro (cargo integration)
-# - Uses CARGO executable from environment or finds it in PATH
-# - Produces shared libs under ${MODULE_OUTPUT_PATH}
 # ----------------------
 find_program(CARGO_EXECUTABLE cargo HINTS ENV PATH)
 if(NOT CARGO_EXECUTABLE)
@@ -343,23 +322,39 @@ endif()
 set_target_properties(ci_cd_visualizer PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${MODULE_OUTPUT_PATH})
 
 # ----------------------
-# Installer subproject (optional)
+# Installer logic (isolated and documented)
+#logica.instalador: Começo da seção dedicada ao instalador.
+#logica.instalador: Tudo relacionado ao build/instalação do instalador fica aqui.
+#logica.instalador: Se preferir, mova a implementação completa para installer/installer.cmake e use include().
+# Example to extract to separate file:
+#    file(READ "${CMAKE_SOURCE_DIR}/installer/installer.cmake" _dummy)  # placeholder
+#    include("${CMAKE_SOURCE_DIR}/installer/installer.cmake")
+#logica.instalador: Fim dos comentários gerais. Código real abaixo.
 # ----------------------
+
 if(PHGIT_BUILD_INSTALLER)
+    #logica.instalador: Modo BUILD do instalador ativado.
+    #logica.instalador: A pasta installer/ deve conter o CMakeLists.txt específico do instalador.
+    phgit_msg("PHGIT_BUILD_INSTALLER=ON — adicionando subdiretório 'installer'")
     add_subdirectory(installer)
+
+    #logica.instalador: Regras de instalação relacionadas ao instalador.
+    #logica.instalador: Instala o arquivo de configuração do instalador, se existir.
+    if(EXISTS "${CMAKE_SOURCE_DIR}/installer/config.json")
+        install(FILES ${CMAKE_SOURCE_DIR}/installer/config.json DESTINATION bin)
+    endif()
+else()
+    #logica.instalador: Instalador desativado (padrão). Para ativar, rode:
+    #logica.instalador: cmake -S . -B build -DPHGIT_BUILD_INSTALLER=ON
+    phgit_msg("PHGIT_BUILD_INSTALLER=OFF — instalador não será criado")
 endif()
 
 # ----------------------
-# Install rules
+# Install rules (núcleo do projeto)
 # ----------------------
 install(TARGETS phgit RUNTIME DESTINATION bin)
 install(TARGETS ci_cd_visualizer LIBRARY DESTINATION bin/modules)
 install(DIRECTORY ${MODULE_OUTPUT_PATH}/ DESTINATION bin/modules FILES_MATCHING PATTERN "*${CMAKE_SHARED_LIBRARY_SUFFIX}")
-
-# If installer exists, install config
-if(EXISTS "${CMAKE_SOURCE_DIR}/installer/config.json")
-    install(FILES ${CMAKE_SOURCE_DIR}/installer/config.json DESTINATION bin)
-endif()
 
 # ----------------------
 # Final summary message
