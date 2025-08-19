@@ -116,7 +116,7 @@ typedef struct {
      * @return The value as a string, or NULL if not found. The module
      *         should NOT free this string.
      */
-    const char* (*get_config_value)(const char* key);
+    char* (*get_config_value)(const char* key);
 
     /**
      * @brief A function pointer to the core's UI rendering engine.
