@@ -8,7 +8,8 @@
  *
  * The implementation handles:
  * - Parsing of `key=value` files, ignoring comments and whitespace.
- * - Dynamic allocation of memory for keys and values.
+ * - Dynamic allocation and safe copying of keys and values.
+ * - In-memory creation and modification of configuration pairs.
  * - A string hashing function (djb2) to map keys to table indices.
  * - Collision resolution using separate chaining (linked lists).
  * - A thorough cleanup mechanism to prevent memory leaks.
@@ -132,9 +133,7 @@ phgitStatus config_load(const char* filename) {
 
         char* separator = strchr(trimmed_line, '=');
         if (!separator) {
-            char warning_msg[256];
-            snprintf(warning_msg, sizeof(warning_msg), "Malformed line %d in config file. Skipping.", line_number);
-            logger_log(LOG_LEVEL_WARN, "CONFIG", warning_msg);
+            logger_log_fmt(LOG_LEVEL_WARN, "CONFIG", "Malformed line %d in config file. Skipping.", line_number);
             continue;
         }
 
@@ -143,26 +142,12 @@ phgitStatus config_load(const char* filename) {
         char* value = trim_whitespace(separator + 1);
 
         if (strlen(key) == 0) {
-            char warning_msg[256];
-            snprintf(warning_msg, sizeof(warning_msg), "Empty key on line %d in config file. Skipping.", line_number);
-            logger_log(LOG_LEVEL_WARN, "CONFIG", warning_msg);
+            logger_log_fmt(LOG_LEVEL_WARN, "CONFIG", "Empty key on line %d in config file. Skipping.", line_number);
             continue;
         }
 
-        // Create and insert the new node into the hash table
-        unsigned long hash = hash_string(key);
-        unsigned int index = hash % HASH_TABLE_SIZE;
-
-        ConfigNode* new_node = (ConfigNode*)malloc(sizeof(ConfigNode));
-        if (!new_node) {
-            logger_log(LOG_LEVEL_FATAL, "CONFIG", "Memory allocation failed for config node.");
-            fclose(file);
-            return phgit_ERROR_GENERAL;
-        }
-        new_node->key = strdup(key);
-        new_node->value = strdup(value);
-        new_node->next = g_config_table[index]; // Prepend to the list
-        g_config_table[index] = new_node;
+        // Use the new set function to add the value, ensuring consistency.
+        config_set_value(key, value);
     }
 
     fclose(file);
@@ -173,7 +158,7 @@ phgitStatus config_load(const char* filename) {
 /**
  * @see config_manager.h
  */
-const char* config_get_value(const char* key) {
+char* config_get_value(const char* key) {
     if (!key) {
         return NULL;
     }
@@ -184,10 +169,66 @@ const char* config_get_value(const char* key) {
     ConfigNode* current = g_config_table[index];
     while (current != NULL) {
         if (strcmp(current->key, key) == 0) {
-            return current->value;
+            // Return a copy that the caller is responsible for freeing.
+            // This is critical for memory safety with external modules.
+            return strdup(current->value);
         }
         current = current->next;
     }
 
     return NULL; // Key not found
+}
+
+/**
+ * @see config_manager.h
+ */
+phgitStatus config_set_value(const char* key, const char* value) {
+    if (!key || !value) {
+        return phgit_ERROR_INVALID_ARGS;
+    }
+
+    unsigned long hash = hash_string(key);
+    unsigned int index = hash % HASH_TABLE_SIZE;
+
+    // First, check if the key already exists to update it.
+    ConfigNode* current = g_config_table[index];
+    while (current != NULL) {
+        if (strcmp(current->key, key) == 0) {
+            // Key found, update the value.
+            char* new_value = strdup(value);
+            if (!new_value) {
+                logger_log(LOG_LEVEL_FATAL, "CONFIG", "Memory allocation failed for config value update.");
+                return phgit_ERROR_GENERAL;
+            }
+            free(current->value); // Free the old value
+            current->value = new_value; // Assign the new one
+            return phgit_SUCCESS;
+        }
+        current = current->next;
+    }
+
+    // If we reach here, the key does not exist. Create a new node.
+    ConfigNode* new_node = (ConfigNode*)malloc(sizeof(ConfigNode));
+    if (!new_node) {
+        logger_log(LOG_LEVEL_FATAL, "CONFIG", "Memory allocation failed for new config node.");
+        return phgit_ERROR_GENERAL;
+    }
+
+    new_node->key = strdup(key);
+    new_node->value = strdup(value);
+
+    // Check for allocation failures during strdup and clean up if necessary
+    if (!new_node->key || !new_node->value) {
+        logger_log(LOG_LEVEL_FATAL, "CONFIG", "Memory allocation failed for new config key/value.");
+        free(new_node->key);   // free() on NULL is safe
+        free(new_node->value); // free() on NULL is safe
+        free(new_node);
+        return phgit_ERROR_GENERAL;
+    }
+
+    // Prepend the new node to the list at the calculated index.
+    new_node->next = g_config_table[index];
+    g_config_table[index] = new_node;
+
+    return phgit_SUCCESS;
 }

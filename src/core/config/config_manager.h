@@ -8,8 +8,9 @@
  *
  * The manager abstracts the file I/O and parsing logic, providing clean
  * functions for the rest of the application to load settings, retrieve
- * specific values, and clean up resources upon exit. This centralization
- * prevents configuration logic from being scattered throughout the codebase.
+ * specific values, set new values, and clean up resources upon exit. This
+ * centralization prevents configuration logic from being scattered throughout
+ * the codebase.
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
@@ -42,22 +43,38 @@ phgitStatus config_load(const char* filename);
  * @brief Retrieves a configuration value for a given key.
  *
  * This function performs a lookup in the in-memory configuration store.
- * The returned string is a pointer to the internally stored value and MUST NOT
- * be modified or freed by the caller. It remains valid until `config_cleanup`
- * is called.
+ * It returns a NEWLY ALLOCATED string containing the value. The caller
+ * OWNS this memory and MUST free it using `free()` when it is no longer needed.
+ * This design prevents memory corruption when the value is passed to other
+ * modules or scripting engines that might try to manage its lifecycle.
  *
  * @param key The null-terminated string key to look up.
- * @return A read-only pointer to the value string, or NULL if the key is not
- *         found.
+ * @return A pointer to a newly allocated value string, or NULL if the key is
+ *         not found or if memory allocation fails.
  */
-const char* config_get_value(const char* key);
+char* config_get_value(const char* key);
+
+/**
+ * @brief Sets or updates a configuration value in memory.
+ *
+ * This function adds a new key-value pair to the configuration or updates the
+ * value of an existing key. The key and value strings are copied internally,
+ * so the caller does not need to keep the original strings valid after this
+ * function returns. This function does not persist the change to a file.
+ *
+ * @param key The null-terminated string key to set. Cannot be NULL.
+ * @param value The null-terminated string value to associate with the key. Cannot be NULL.
+ * @return phgit_SUCCESS on success, or an error code (e.g., phgit_ERROR_GENERAL)
+ *         if memory allocation fails.
+ */
+phgitStatus config_set_value(const char* key, const char* value);
 
 /**
  * @brief Frees all resources used by the configuration manager.
  *
  * This function should be called once at application shutdown to deallocate
  * all memory used for storing the configuration keys and values, preventing
-* memory leaks.
+ * memory leaks.
  */
 void config_cleanup(void);
 

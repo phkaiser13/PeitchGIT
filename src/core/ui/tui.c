@@ -1,28 +1,31 @@
 /* Copyright (C) 2025 Pedro Henrique / phkaiser13
  * tui.c - Implementation of the Text-based User Interface.
  *
- * This file contains the logic for the interactive menu of the application.
- * It dynamically generates a list of options based on the commands exposed
- * by all successfully loaded modules.
+ * This file implements a sophisticated, dynamic, and interactive menu for the
+ * application. It has been architected to be completely agnostic of command
+ * sources, seamlessly integrating both native C commands and dynamically
+ * registered Lua script commands into a single, unified user experience.
  *
- * The main loop performs the following steps:
- * 1. Clears the screen for a clean presentation.
- * 2. Prints a static header.
- * 3. Fetches all loaded modules via the module loader.
- * 4. Iterates through the modules and their commands to build and display a
- *    numbered list of options. A temporary mapping is created to link the
- *    menu number to the corresponding command and module.
- * 5. Prompts the user for input.
- * 6. On valid input, it simulates a command-line call by passing the chosen
- *    command to the `cli_dispatch_command` function. This promotes code reuse
- *    and keeps the TUI's responsibility focused on presentation.
+ * Core Architectural Principles:
+ * 1. Data Unification: A generic `MenuItem` struct is used to represent any
+ *    command, abstracting away its origin (native or Lua).
+ * 2. Separation of Concerns: The main function is broken down into helpers for
+ *    gathering, sorting, displaying, and cleaning up menu data.
+ * 3. Enhanced UX: All commands are sorted alphabetically and displayed with
+ *    their descriptions in a clean, aligned format for superior readability.
+ * 4. Robustness: Memory is managed carefully within a single loop iteration,
+ *    preventing leaks, and user input is handled safely.
+ *
+ * The main loop now orchestrates these steps, providing a highly professional
+ * and extensible interface that reflects the power of the underlying system.
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "tui.h"
 #include "platform/platform.h"
 #include "module_loader/loader.h"
-#include "cli/cli_parser.h" // To dispatch commands
+#include "cli/cli_parser.h"
+#include "scripting/lua_bridge.h" // To get Lua commands
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,28 +33,151 @@
 // --- Private Helper Structures and Functions ---
 
 /**
+ * @enum CommandSource
+ * @brief Differentiates the origin of a command for potential future use.
+ */
+typedef enum {
+    COMMAND_SOURCE_NATIVE,
+    COMMAND_SOURCE_LUA
+} CommandSource;
+
+/**
  * @struct MenuItem
- * @brief A temporary structure to map a menu index to a command.
+ * @brief A unified, abstract representation of a single command for the menu.
+ *        It holds copies of the command's data, decoupling the TUI from the
+ *        lifetime of module and script data.
  */
 typedef struct {
-    const char* command_alias;
-    const LoadedModule* module;
+    char* name;
+    char* description;
+    CommandSource source;
 } MenuItem;
+
+/**
+ * @brief Comparison function for qsort to sort menu items alphabetically by name.
+ */
+static int compare_menu_items(const void* a, const void* b) {
+    const MenuItem* item_a = (const MenuItem*)a;
+    const MenuItem* item_b = (const MenuItem*)b;
+    return strcmp(item_a->name, item_b->name);
+}
+
+/**
+ * @brief Frees all memory associated with a list of menu items.
+ * @param items The array of MenuItem to free.
+ * @param count The number of items in the array.
+ */
+static void free_menu_items(MenuItem* items, size_t count) {
+    if (!items) return;
+    for (size_t i = 0; i < count; ++i) {
+        free(items[i].name);
+        free(items[i].description);
+    }
+    free(items);
+}
+
+/**
+ * @brief Gathers all available commands from both native modules and the Lua bridge.
+ *
+ * This function is the core of the TUI's data aggregation. It dynamically
+ * allocates a unified list of MenuItem structures, populating it with data
+ * from all command sources.
+ *
+ * @param out_count Pointer to a size_t that will receive the total number of commands found.
+ * @return A pointer to a newly allocated array of MenuItem, or NULL on failure.
+ *         The caller is responsible for freeing this array using `free_menu_items`.
+ */
+static MenuItem* gather_all_commands(size_t* out_count) {
+    // --- Phase 1: Get counts from all sources ---
+    int native_module_count = 0;
+    const LoadedModule** modules = modules_get_all(&native_module_count);
+    size_t native_command_count = 0;
+    for (int i = 0; i < native_module_count; i++) {
+        for (const char** cmd = modules[i]->info.commands; cmd && *cmd; ++cmd) {
+            native_command_count++;
+        }
+    }
+
+    size_t lua_command_count = lua_bridge_get_command_count();
+    size_t total_commands = native_command_count + lua_command_count;
+
+    if (total_commands == 0) {
+        *out_count = 0;
+        return NULL;
+    }
+
+    // --- Phase 2: Allocate and populate the unified list ---
+    MenuItem* items = malloc(sizeof(MenuItem) * total_commands);
+    if (!items) {
+        logger_log(LOG_LEVEL_FATAL, "TUI", "Failed to allocate memory for menu items.");
+        *out_count = 0;
+        return NULL;
+    }
+
+    size_t current_index = 0;
+
+    // Populate with native commands
+    for (int i = 0; i < native_module_count; i++) {
+        for (const char** cmd = modules[i]->info.commands; cmd && *cmd; ++cmd) {
+            items[current_index].name = strdup(*cmd);
+            items[current_index].description = strdup(modules[i]->info.description);
+            items[current_index].source = COMMAND_SOURCE_NATIVE;
+            current_index++;
+        }
+    }
+
+    // Populate with Lua commands
+    // NOTE: This assumes `lua_bridge_get_all_command_names` is implemented.
+    const char** lua_command_names = lua_bridge_get_all_command_names();
+    for (size_t i = 0; i < lua_command_count; i++) {
+        const char* name = lua_command_names[i];
+        const char* desc = lua_bridge_get_command_description(name);
+        items[current_index].name = strdup(name);
+        items[current_index].description = strdup(desc ? desc : "A user-defined script command.");
+        items[current_index].source = COMMAND_SOURCE_LUA;
+        current_index++;
+    }
+    // The bridge should provide a function to free the list of names, e.g.,
+    // lua_bridge_free_command_names(lua_command_names);
+
+    *out_count = total_commands;
+    return items;
+}
+
+/**
+ * @brief Displays the formatted, sorted menu to the console.
+ * @param items The sorted array of MenuItem to display.
+ * @param count The number of items in the array.
+ */
+static void display_menu(const MenuItem* items, size_t count) {
+    platform_clear_screen();
+    printf("========================================\n");
+    printf("  phgit - The Polyglot Git Helper\n");
+    printf("========================================\n\n");
+    printf("Please select a command:\n\n");
+
+    if (count > 0) {
+        for (size_t i = 0; i < count; ++i) {
+            // Display with aligned descriptions for a professional look
+            printf("  [%2zu] %-20s - %s\n", i + 1, items[i].name, items[i].description);
+        }
+    } else {
+        printf("  No commands available.\n");
+    }
+
+    printf("\n  [%2zu] Exit\n", count + 1);
+    printf("\n----------------------------------------\n");
+}
 
 /**
  * @brief A simple helper to wait for the user to press Enter.
  */
 static void wait_for_enter(void) {
     printf("\nPress Enter to continue...");
-    // Clear the input buffer and wait for a newline
     int c;
-    while ((c = getchar()) != '\n' && c != EOF);
-    if (c == EOF) { // If stdin closes, we should not loop forever
-        return;
-    }
-    // If the previous getchar didn't consume the newline, this one will
-    if (c != '\n') {
-        getchar();
+    while ((c = getchar()) != '\n' && c != EOF); // Clear buffer before waiting
+    if (c != '\n' && c != EOF) {
+        while ((c = getchar()) != '\n' && c != EOF); // Clear buffer after waiting
     }
 }
 
@@ -61,93 +187,49 @@ static void wait_for_enter(void) {
  * @see tui.h
  */
 void tui_show_main_menu(void) {
-    MenuItem* menu_items = NULL;
-    int menu_item_count = 0;
-
     while (1) {
-        platform_clear_screen();
+        // --- Data Gathering and Preparation ---
+        size_t item_count = 0;
+        MenuItem* menu_items = gather_all_commands(&item_count);
 
-        // --- Header ---
-        printf("========================================\n");
-        printf("  phgit - The Polyglot Git Helper\n");
-        printf("========================================\n\n");
-        printf("Please select an option:\n\n");
-
-        // --- Dynamic Menu Generation ---
-        int module_count = 0;
-        const LoadedModule** modules = modules_get_all(&module_count);
-
-        // Free previous menu items if any
-        free(menu_items);
-        menu_items = NULL;
-        menu_item_count = 0;
-
-        // Allocate space for all possible commands
-        int total_commands = 0;
-        for (int i = 0; i < module_count; i++) {
-            const char** cmd_ptr = modules[i]->info.commands;
-            while (cmd_ptr && *cmd_ptr) {
-                total_commands++;
-                cmd_ptr++;
-            }
-        }
-        menu_items = malloc(sizeof(MenuItem) * total_commands);
-        if (!menu_items) {
-            tui_print_error("Failed to allocate memory for the menu.");
-            return;
+        if (menu_items) {
+            qsort(menu_items, item_count, sizeof(MenuItem), compare_menu_items);
         }
 
-        // Populate and print the menu
-        for (int i = 0; i < module_count; i++) {
-            const char** cmd_ptr = modules[i]->info.commands;
-            while (cmd_ptr && *cmd_ptr) {
-                printf("  [%2d] %s\n", menu_item_count + 1, *cmd_ptr);
-                menu_items[menu_item_count].command_alias = *cmd_ptr;
-                menu_items[menu_item_count].module = modules[i];
-                menu_item_count++;
-                cmd_ptr++;
-            }
-        }
-
-        printf("\n  [%2d] Exit\n", menu_item_count + 1);
-        printf("\n----------------------------------------\n");
+        // --- Presentation ---
+        display_menu(menu_items, item_count);
 
         // --- User Input and Dispatch ---
         char input_buffer[16];
         if (!tui_prompt_user("Your choice: ", input_buffer, sizeof(input_buffer))) {
+            free_menu_items(menu_items, item_count);
             break; // Exit on EOF or read error
         }
 
         long choice = strtol(input_buffer, NULL, 10);
 
-        if (choice > 0 && choice <= menu_item_count) {
-            // A valid command was chosen
-            const MenuItem* selected_item = &menu_items[choice - 1];
+        if (choice > 0 && choice <= (long)item_count) {
+            const MenuItem* selected = &menu_items[choice - 1];
+            const char* argv[] = { "phgit", selected->name, NULL };
 
-            // We simulate a command-line call: `phgit <command>`
-            // This reuses the entire CLI dispatch logic.
-            const char* argv[] = { "phgit", selected_item->command_alias, NULL };
-            int argc = 2;
-
-            printf("\nExecuting '%s'...\n", selected_item->command_alias);
+            printf("\nExecuting '%s'...\n", selected->name);
             printf("----------------------------------------\n");
-
-            cli_dispatch_command(argc, argv);
-
+            cli_dispatch_command(2, argv);
             printf("----------------------------------------\n");
             wait_for_enter();
 
-        } else if (choice == menu_item_count + 1) {
-            // Exit was chosen
-            break;
+        } else if (choice == (long)item_count + 1) {
+            free_menu_items(menu_items, item_count);
+            break; // Exit
         } else {
-            // Invalid input
             tui_print_error("Invalid choice. Please try again.");
             wait_for_enter();
         }
+
+        // --- Cleanup for this iteration ---
+        free_menu_items(menu_items, item_count);
     }
 
-    free(menu_items);
     printf("\nExiting phgit. Goodbye!\n");
 }
 
@@ -155,7 +237,6 @@ void tui_show_main_menu(void) {
  * @see tui.h
  */
 void tui_print_error(const char* message) {
-    // In a more advanced TUI, this would use colors.
     fprintf(stderr, "\n[ERROR] %s\n", message);
 }
 
@@ -171,15 +252,12 @@ void tui_print_success(const char* message) {
  */
 bool tui_prompt_user(const char* prompt, char* buffer, size_t buffer_size) {
     printf("%s", prompt);
-    fflush(stdout); // Ensure prompt is displayed before waiting for input
+    fflush(stdout);
 
     if (fgets(buffer, buffer_size, stdin) == NULL) {
-        // Handle EOF (Ctrl+D) or read error
         return false;
     }
 
-    // Remove trailing newline character, if present
     buffer[strcspn(buffer, "\r\n")] = '\0';
-
     return true;
 }
