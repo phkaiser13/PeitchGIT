@@ -12,6 +12,9 @@
  * simulates a command-line call to execute an action selected from the menu.
  *
  * SPDX-License-Identifier: Apache-2.0 */
+#include "../../ipc/include/phgit_core_api.h"
+
+
 
 #ifndef CLI_PARSER_H
 #define CLI_PARSER_H
@@ -35,7 +38,7 @@ extern "C" {
      * @param argv An array of argument strings. `argv[0]` is the app name,
      *             `argv[1]` is the command.
      */
-    void cli_dispatch_command(int argc, const char** argv);
+    phgitStatus cli_dispatch_command(int argc, const char** argv);
 
 
 #ifdef __cplusplus
