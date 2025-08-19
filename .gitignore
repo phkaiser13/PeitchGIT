@@ -141,6 +141,7 @@ $RECYCLE.BIN/
 ###################################
 # VSCode
 .vscode/
+.errorviz-version
 
 # JetBrains (CLion, GoLand, etc.)
 .idea/
