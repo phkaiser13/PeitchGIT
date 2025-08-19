@@ -80,6 +80,12 @@ const char* lua_bridge_get_command_description(const char* command_name);
  */
 const char** lua_bridge_get_all_command_names(void);
 
+/**
+ * @brief Libera a lista de nomes de comandos retornada por lua_bridge_get_all_command_names.
+ * @param names_list A lista a ser liberada.
+ */
+void lua_bridge_free_command_names_list(const char** names_list);
+
 
 /**
  * @brief Shuts down the Lua engine and frees all associated resources.

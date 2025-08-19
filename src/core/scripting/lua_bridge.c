@@ -633,6 +633,41 @@ const char* lua_bridge_get_command_description(const char* command_name) {
 /**
  * @see lua_bridge.h
  */
+const char** lua_bridge_get_all_command_names(void) {
+    if (g_lua_command_count == 0) {
+        return NULL;
+    }
+
+    // Aloca memória para um array de ponteiros de string
+    const char** names = malloc(sizeof(char*) * g_lua_command_count);
+    if (!names) {
+        logger_log(LOG_LEVEL_ERROR, "LUA_BRIDGE", "Failed to allocate memory for command names list.");
+        return NULL;
+    }
+
+    // Preenche o array com os ponteiros para os nomes dos comandos
+    for (size_t i = 0; i < g_lua_command_count; i++) {
+        names[i] = g_lua_commands[i].command_name;
+    }
+
+    return names;
+}
+
+/**
+ * @brief Libera a memória alocada por lua_bridge_get_all_command_names.
+ */
+void lua_bridge_free_command_names_list(const char** names_list) {
+    if (names_list) {
+        // Libera apenas o array de ponteiros, não as strings em si.
+        free((void*)names_list);
+    }
+}
+
+
+
+/**
+ * @see lua_bridge.h
+ */
 void lua_bridge_cleanup(void) {
     if (g_lua_state) {
         lua_close(g_lua_state);
