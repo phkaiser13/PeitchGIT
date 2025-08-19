@@ -195,28 +195,6 @@ file(GLOB_RECURSE CORE_SOURCES
 )
 add_executable(phgit ${CORE_SOURCES})
 
-add_library(phgit_core STATIC ${CORE_LIB_SOURCES})
-target_include_directories(phgit_core PUBLIC
- ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/src/core
-    ${CMAKE_SOURCE_DIR}/src/ipc/include
-    ${CMAKE_SOURCE_DIR}/src/libs
-)
-
-target_link_libraries(phgit_core PUBLIC
-    logger
-    ${CURL_TARGET_NAME}
-    ${LUA_TARGET_NAME}
-)
-if(UNIX AND NOT APPLE)
-    target_link_libraries(phgit_core PUBLIC dl m)
-endif()
-
-add_executable(phgit src/core/main/main.c)
-target_link_libraries(phgit PRIVATE phgit_core)
-
-
-
 # --- FIX: Correctly add all necessary include directories to the target ---
 # This is the second part of the fix. Modern imported targets (like Lua::Lua)
 # automatically add their include directories when you link them. However, for
