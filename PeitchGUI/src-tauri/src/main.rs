@@ -34,7 +34,7 @@ fn start_file_watcher(app_handle: AppHandle, repo_path: PathBuf) {
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
-            let repo_path_str = "C:/Users/vitor/Downloads/MeuRepoDeTeste"; 
+            let repo_path_str = "C:/Users/vitor.lemes/Downloads/PeitchGIT"; 
             start_file_watcher(app.handle().clone(), PathBuf::from(repo_path_str));
             Ok(())
         })
