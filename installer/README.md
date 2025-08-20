@@ -10,21 +10,6 @@
   <p style="max-width:700px; font-size:1.05em; line-height:1.5em; color:#444;">
     This is the core engine for the `phgit` installer. It is a standalone, high-performance C++ application designed to provide a robust and intelligent installation experience across Windows, macOS, and various Linux distributions.
   </p>
-
-  <p>
-    <a href="https://github.com/phkaiser13/peitchgit/blob/main/LICENSE">
-      <img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=for-the-badge" alt="License" />
-    </a>
-    <a href="https://github.com/phkaiser13/peitchgit/actions/workflows/build-windows.yml">
-      <img src="https://img.shields.io/github/actions/workflow/status/phkaiser13/peitchgit/build-windows.yml?branch=main&logo=windows&style=for-the-badge" alt="Windows Build Status" />
-    </a>
-    <a href="https://github.com/phkaiser13/peitchgit/actions/workflows/build-ubuntu.yml">
-      <img src="https://img.shields.io/github/actions/workflow/status/phkaiser13/peitchgit/build-ubuntu.yml?branch=main&logo=ubuntu&style=for-the-badge" alt="Ubuntu Build Status" />
-    </a>
-    <a href="https://github.com/phkaiser13/peitchgit/actions/workflows/build-macos.yml">
-        <img src="https://img.shields.io/github/actions/workflow/status/phkaiser13/peitchgit/build-macos.yml?branch=main&logo=apple&style=for-the-badge" alt="macOS Build Status" />
-    </a>
-  </p>
 </div>
 
 
