@@ -188,7 +188,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Listener para o vigia de arquivos
   await listen('file-changed', () => {
       console.log('Evento "file-changed" recebido do Rust!');
-      // Apenas busca os dados se a view de status estiver visível
+
       if(document.querySelector("#staged-files-list")) {
         fetchAllData();
       }

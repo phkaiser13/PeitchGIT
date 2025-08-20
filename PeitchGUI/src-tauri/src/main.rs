@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter}; // <-- CORREÇÃO: Adicionamos Emitter aqui
+use tauri::{AppHandle, Emitter};
 use notify_debouncer_full::{new_debouncer, DebounceEventResult, notify::{RecursiveMode, Watcher}};
 
 mod git_commands;
