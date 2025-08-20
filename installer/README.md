@@ -1,137 +1,132 @@
 <div align="center" style="font-family:Segoe UI, Roboto, sans-serif;">
-  <a href="https://hub.com/phkaiser13/peitch"></a>
+  <a href="https://github.com/phkaiser13/peitchgit"></a>
 
-  <h1 style="font-size:2.5em; margin-bottom:0.2em;">⚙️ Peitch  Installer Engine</h1>
+  <h1 style="font-size:2.5em; margin-bottom:0.2em;">⚙️ Peitch Installation Motor</h1>
   <p style="font-size:1.2em; color:#555; margin-top:0;">
-    <em>A Data-Driven, Cross-Platform Installer for Modern Tooling</em>
+    <em>A Data-Driven, Cross-Platform Engine for Smart Installations</em>
   </p>
 
   <p style="max-width:700px; font-size:1.05em; line-height:1.5em; color:#444;">
-    This is the core engine for the <code>Peitch</code> installer. It is a standalone, high-performance C++ application designed to provide a robust and intelligent installation experience across Windows, macOS, and various Linux distributions.
+    This is the core engine behind the <code>Peitch</code> ecosystem.  
+    A standalone, high-performance C++ application designed to provide a robust and intelligent installation experience across Windows, macOS, and Linux distributions.  
+    It powers installers such as <code>PeitchGIT</code>, <code>PeitchGUI</code> and can be extended to other software.
   </p>
 
-
+  <p>
+    <a href="https://github.com/phkaiser13/peitchgit/blob/main/LICENSE">
+      <img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=for-the-badge" alt="License" />
+    </a>
+    <a href="https://github.com/phkaiser13/peitchgit/actions/workflows/build-windows.yml">
+      <img src="https://img.shields.io/github/actions/workflow/status/phkaiser13/peitchgit/build-windows.yml?branch=main&logo=windows&style=for-the-badge" alt="Windows Build Status" />
+    </a>
+    <a href="https://github.com/phkaiser13/peitchgit/actions/workflows/build-ubuntu.yml">
+      <img src="https://img.shields.io/github/actions/workflow/status/phkaiser13/peitchgit/build-ubuntu.yml?branch=main&logo=ubuntu&style=for-the-badge" alt="Ubuntu Build Status" />
+    </a>
+    <a href="https://github.com/phkaiser13/peitchgit/actions/workflows/build-macos.yml">
+      <img src="https://img.shields.io/github/actions/workflow/status/phkaiser13/peitchgit/build-macos.yml?branch=main&logo=apple&style=for-the-badge" alt="macOS Build Status" />
+    </a>
+  </p>
 </div>
 
 ## Table of Contents
 
-* [What is the Installer Engine?](#what-is-the-installer-engine)
-* [Key Features](#key-features)
-* [Architectural Principles](#architectural-principles)
-* [How It Works](#how-it-works)
-* [Building the Installer](#building-the-installer)
-* [Configuration (config.json)](#configuration-configjson)
-* [Contributing](#contributing)
-* [License](#license)
+- [What is the Installation Motor?](#what-is-the-installation-motor)
+- [Key Features](#-key-features)
+- [Architectural Principles](#-architectural-principles)
+- [How It Works](#-how-it-works)
+- [Building the Installer](#-building-the-installer)
+- [Configuration (`configjson`)](#-configuration-configjson)
+- [Contributing](#-contributing)
+- [License](#-license)
 
-## What is the Installer Engine?
+## What is the Installation Motor?
 
-The `Peitch` installer is more than just a script that copies files. It's an intelligent C++ application responsible for the post-installation or standalone setup of the `Peitch` toolchain. It is designed to be the smart core inside native packages (like DEB, RPM, MSI) or to be run as a standalone executable, handling tasks that require logic and network access, such as dependency validation and dynamic component downloads.
+The **Peitch Installation Motor** is more than just a script.  
+It’s an intelligent C++ engine responsible for installation and post-installation of toolchains and applications.  
+It is designed as the smart core for native packages (DEB, RPM, MSI) or as a standalone executable, handling tasks such as dependency validation and dynamic component downloads.
 
 ## ✨ Key Features
 
-* 🌐 **Cross-Platform by Design**: A single C++ codebase with platform-specific modules to handle the nuances of **Windows**, **macOS**, and major **Linux** distribution families (Debian, Fedora, Arch).
-* ⚙️ **Data-Driven Configuration**: The installer's behavior is defined by `config.json`, not hardcoded. This allows for easy updates to dependencies, API endpoints, and metadata without recompiling the engine.
-* 🚀 **Dynamic Dependency Management**: Automatically detects required tools like , Terraform, and Vault. If they are missing or outdated, it can fetch and install them from their official sources.
-* 📡 **Live API Integration**: Communicates with external APIs (Hub Releases, HashiCorp) to fetch the latest versions and checksums for dependencies, ensuring users always get up-to-date and secure components.
-* 🛡️ **Robust and Secure**: Performs SHA256 checksum verification on all downloaded files to ensure integrity and prevent corruption or tampering.
-* 📦 **Flexible Installation Strategies**: Leverages native package managers (`apt`, `dnf`, `brew`) when available, with a robust fallback to installing from a `.tar.gz` or `.pkg` for maximum compatibility.
+- 🌐 **Cross-Platform by Design**: Unified C++17 codebase with platform-specific modules for **Windows**, **macOS**, and **Linux** families (Debian, Fedora, Arch).  
+- ⚙️ **Data-Driven Configuration**: Behavior defined by `config.json`, not hardcoded. Easily update dependencies or metadata without recompilation.  
+- 🚀 **Dynamic Dependency Management**: Detects required tools (Git, Terraform, Vault, etc.) and installs or updates them automatically.  
+- 📡 **Live API Integration**: Connects to APIs (GitHub Releases, HashiCorp) to fetch latest binaries and secure checksums.  
+- 🛡️ **Robust Security**: SHA256 checksum verification ensures file integrity.  
+- 📦 **Flexible Strategies**: Uses native package managers (`apt`, `dnf`, `brew`) with fallback to official archives (`.tar.gz`, `.pkg`).  
 
 ## 🏛️ Architectural Principles
 
-The installer is built on a modular, object-oriented architecture that separates concerns, making it easy to maintain and extend.
-
 ```mermaid
-graPeitch TD
-  A["Installer Entry Point\n(main.cpp)"] --> B["PlatformDetector"]
-  B --> C["DependencyManager"]
-  A --> D["ConfigManager"]
-  D -- reads --> E["config.json"]
-  D --> C
-  D --> F["ApiManager"]
-  F --> G["Downloader (libcurl)"]
-  G --> H["SHA256 Verifier"]
-  A --> I["Installer Factory"]
-  I -- creates --> J["IPlatformInstaller"]
+graph TD
+    A[Installer Entry Point - main.cpp] --> B{PlatformDetector}
+    B --> |PlatformInfo| C{DependencyManager}
+    A --> D{ConfigManager}
+    D --> E[config.json]
+    D --> C
+    D --> F{ApiManager}
+    F --> G[Downloader - libcurl]
+    G --> H[SHA256 Verifier]
+    A --> I{Installer Factory}
+    I --> J[IPlatformInstaller]
+    
+    subgraph "Platform-Specific Engines"
+        J --> K[LinuxInstaller]
+        J --> L[MacosInstaller]
+        J --> M[WindowsInstaller]
+    end
 
-  subgraPeitch "Platform-Specific Engines"
-    J ---> K["LinuxInstaller"]
-    J ---> L["MacosInstaller"]
-    J ---> M["WindowsInstaller"]
-  end
+    K --> C
+    L --> C
+    M --> C
+    K --> F
+    L --> F
+    M --> F
+````
 
-  K -- uses --> C
-  L -- uses --> C
-  M -- uses --> C
-  K -- uses --> F
-  L -- uses --> F
-  M -- uses --> F
-```
-
-* **`main.cpp`**: The application entry point that orchestrates the entire process.
-* **`ConfigManager`**: Parses `config.json` to load all necessary metadata and settings.
-* **`PlatformDetector`**: Identifies the OS, version, and architecture to guide the installation logic.
-* **`DependencyManager`**: Checks for the presence and version of required external tools.
-* **`ApiManager` & `Downloader`**: Work together to fetch release metadata and download artifacts from the web.
-* **`IPlatformInstaller`**: An interface that defines the contract for platform-specific installation logic, implemented by `WindowsInstaller`, `LinuxInstaller`, and `MacosInstaller`.
+* **`main.cpp`**: Application entry point, orchestrates all steps.
+* **`ConfigManager`**: Loads and parses `config.json`.
+* **`PlatformDetector`**: Identifies OS, architecture, and privilege level.
+* **`DependencyManager`**: Validates required external tools.
+* **`ApiManager` & `Downloader`**: Fetch metadata and binaries securely.
+* **`IPlatformInstaller`**: Contract for platform-specific strategies.
 
 ## ⚙️ How It Works
 
-The installer follows a clear, sequential process:
-
-1. **Load Configuration**: The engine starts by reading `config.json` to understand what it needs to do.
-2. **Detect Platform**: It identifies the host system's OS, architecture, and privilege level.
-3. **Check Dependencies**: It verifies that all required tools (like ) are installed and meet the minimum version requirements specified in the configuration.
-4. **Instantiate Engine**: Based on the detected platform, it creates the appropriate engine (e.g., `LinuxInstaller` on Ubuntu).
-5. **Run Installation**: The platform-specific engine executes its strategy:
-
-   * It may call out to a native package manager (`apt`, `dnf`) to install missing dependencies.
-   * If a dependency is not available in the package manager or if running in standalone mode, it uses the `ApiManager` and `Downloader` to fetch the official release, verifies its checksum, and installs it.
-   * It performs necessary system integration, such as updating the system `PATH`.
+1. **Load Configuration** (`config.json`)
+2. **Detect Platform** (OS, arch, privileges)
+3. **Check Dependencies** (installed tools vs required versions)
+4. **Instantiate Engine** (LinuxInstaller, WindowsInstaller, etc.)
+5. **Run Installation** (native pkg managers or API fetch + checksum + integration)
 
 ## 🚀 Building the Installer
 
-The installer is built with CMake and requires a C++17 compiler.
+Requirements:
 
-### Prerequisites
-
-* A C++17 compliant compiler (GCC, Clang, MSVC)
-* CMake (version 3.16 or newer)
+* C++17 compiler (GCC, Clang, MSVC)
+* CMake ≥ 3.16
 * `libcurl` development headers
-* `spdlog` and `nlohmann/json` (these are fetched automatically by CMake via `FetchContent`)
-
-### Build Steps
-
-The installer is a subproject of the main `Peitch` build. It can be built from the root of the `Peitch` repository.
+* `spdlog` & `nlohmann/json` (via `FetchContent`)
 
 ```bash
-# 1. Configure the project with CMake
-# (from the root Peitch directory)
-cmake -S . -B build -DPeitch_BUILD_INSTALLER=ON
-
-# 2. Build the project
+cmake -S . -B build -DPEITCH_BUILD_INSTALLER=ON
 cmake --build build
-
-# 3. The executable will be available at:
-# build/bin/Peitch-installer
+# Output: build/bin/peitch-installer
 ```
 
 ## 📜 Configuration (`config.json`)
 
-The heart of the installer is the `config.json` file, which defines its behavior.
+Defines behavior via:
 
-* **`package_metadata`**: Contains information like the application name and version, used for registry entries and package metadata.
-* **`dependencies`**: A list of required and optional command-line tools, each with a name and minimum required version.
-* **`api_endpoints`**: Defines the URLs and parameters needed to query release APIs (like Hub and HashiCorp) for dynamic downloads.
-
-This data-driven approach allows the installer to be easily adapted to new versions of `Peitch` or its dependencies without changing a single line of C++ code.
+* **`package_metadata`**: Name, version, metadata.
+* **`dependencies`**: Required and optional tools with minimum versions.
+* **`api_endpoints`**: APIs for dynamic binary resolution.
 
 ## 🤝 Contributing
 
-This installer engine is a core part of the `Peitch` ecosystem. Contributions are welcome! Please see the main [**Contributing Guide**](CONTRIBUTING.md) for details on how to get started.
+Contributions welcome!
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## 📜 License
 
-The `Peitch` Installer Engine is distributed under the terms of the Apache License 2.0.
-
-See [LICENSE](LICENSE) for more information.
+Distributed under the Apache License 2.0.
+See [LICENSE](LICENSE).
