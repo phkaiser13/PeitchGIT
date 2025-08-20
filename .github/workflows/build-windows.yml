@@ -1,0 +1,190 @@
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
+# build-windows.yml
+# This GitHub Actions workflow automates the build, test, and release packaging process for the phgit project on Windows.
+# It uses the MSVC toolchain, manages C++ dependencies with vcpkg, and integrates Rust modules.
+# The workflow ensures that all necessary runtime DLLs are included in the final release package for standalone execution.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Build phgit (Windows)
+
+on:
+  push:
+    branches: [ "main" ]
+    # Added trigger for tags to enable release packaging
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    # Environment variables required for vcpkg and the build process
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      RUSTFLAGS: ""
+
+    steps:
+      # Step 1: Check out the repository's code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # fetch-depth: 0 is important for workflows that need tag/branch history
+          fetch-depth: 0
+
+      # Step 2: Install a specific version of CMake
+      - name: Install CMake
+        uses: jwlawson/actions-setup-cmake@v1
+        with:
+          cmake-version: '3.29.3'
+
+      # Step 3: Install Ninja build system using Chocolatey package manager
+      - name: Install Ninja
+        run: choco install ninja -y
+
+      # Step 4: Install vcpkg and required C++ libraries for the x64-windows (MSVC) triplet.
+      # This is a critical step for dependency management on Windows.
+      - name: Install vcpkg and libraries
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          cd $env:VCPKG_ROOT
+          .\bootstrap-vcpkg.bat
+          .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
+        shell: pwsh
+
+      # Step 5: Set up the Rust toolchain
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      # Step 6: Debugging step to list installed vcpkg files and verify paths
+      - name: Debug vcpkg installed files
+        run: |
+          Write-Host "VCPKG_ROOT = $env:VCPKG_ROOT"
+          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\share" -Recurse -Depth 2 | Select-Object -First 200
+          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\bin" -Recurse -Depth 1 | Select-Object -First 200
+        shell: pwsh
+
+      # Step 7: Configure the project using CMake.
+      # This uses the "Visual Studio 17 2022" generator and points to the vcpkg toolchain file.
+      # The flags explicitly help CMake find the libraries installed by vcpkg.
+      - name: Configure CMake (MSVC, Visual Studio generator)
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" `
+            -DCMAKE_PREFIX_PATH="${{ env.VCPKG_ROOT }}\installed\x64-windows\share" `
+            -DLua_FOUND=TRUE `
+            -DLUA_INCLUDE_DIR="${{ env.VCPKG_ROOT }}\installed\x64-windows\include" `
+            -DLUA_LIBRARY="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
+            -DLUA_LIBRARIES="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
+            -DCMAKE_BUILD_TYPE=Release
+        shell: pwsh
+
+      # Step 8: Build the project using the 'Release' configuration.
+      - name: Build Project
+        run: cmake --build build --config Release --parallel
+        shell: pwsh
+
+      # Step 9: Run tests if they exist, continuing on error.
+      - name: Run tests
+        run: |
+          cd build
+          ctest -C Release --output-on-failure
+        shell: pwsh
+        continue-on-error: true
+
+      # Step 10: Copy runtime DLLs from vcpkg installation to the build output directory.
+      # These DLLs are required for the application to run and must be distributed with the executable.
+      - name: Copy Runtime DLLs
+        run: |
+          $vcpkgBinDir = "${{ env.VCPKG_ROOT }}\installed\x64-windows\bin"
+          $targetBinDir = "build\bin\Release" # Assuming Release build output goes here
+
+          Write-Host "Copying DLLs from $vcpkgBinDir to $targetBinDir"
+
+          # Ensure the target directory exists
+          New-Item -ItemType Directory -Force -Path $targetBinDir
+
+          # List of DLLs to copy, based on vcpkg.json dependencies
+          $dllsToCopy = @(
+              "lua.dll",
+              "libcurl.dll",
+              "libcrypto-3-x64.dll",
+              "libssl-3-x64.dll",
+              "zlib1.dll"
+          )
+
+          foreach ($dll in $dllsToCopy) {
+              $sourcePath = Join-Path $vcpkgBinDir $dll
+              $destinationPath = Join-Path $targetBinDir $dll
+              if (Test-Path $sourcePath) {
+                  Copy-Item -Path $sourcePath -Destination $destinationPath -Force
+                  Write-Host "  Copied $dll"
+              } else {
+                  Write-Warning "  DLL not found: $sourcePath. This might indicate a missing dependency or an issue with vcpkg installation."
+              }
+          }
+        shell: pwsh
+
+      # Step 11: Upload intermediate build artifacts for non-tag builds (CI).
+      # This step now includes the copied DLLs within the build/bin/ directory.
+      - name: Upload CI Build Artifacts (not for tags)
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: phgit-build-artifacts-windows-x64
+          # Paths corrected for executable, modules, plugins, and license
+          path: |
+            build/bin/
+            src/plugins/
+            LICENSE
+
+      # Step 12: Create Release Package (for tag pushes only).
+      # This step bundles the executable, required DLLs, plugins, and license into a single ZIP file.
+      - name: Create Release Package
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          $releaseDir = "phgit-release"
+          $buildBinDir = "build/bin/Release" # Source for executable and copied DLLs
+          $pluginsDir = "src/plugins"
+          $licenseFile = "LICENSE"
+          $tagVersion = "${{ github.ref_name }}" # e.g., v1.0.0
+          $zipFileName = "phgit-windows-x64-$tagVersion.zip"
+
+          Write-Host "Preparing release package for version: $tagVersion"
+          Write-Host "Output ZIP file: $zipFileName"
+
+          # Create the root directory for the release package
+          New-Item -ItemType Directory -Force -Path $releaseDir
+
+          # Copy main executable and all runtime DLLs from the build output directory
+          # The DLLs were copied into build/bin/Release in a previous step
+          Write-Host "Copying executable and DLLs from $buildBinDir to $releaseDir"
+          Copy-Item -Path "$buildBinDir/*" -Destination $releaseDir -Recurse -Force
+
+          # Copy plugins into a 'plugins' subdirectory within the release package
+          Write-Host "Copying plugins from $pluginsDir to $releaseDir/plugins"
+          New-Item -ItemType Directory -Force -Path "$releaseDir/plugins"
+          Copy-Item -Path "$pluginsDir/*" -Destination "$releaseDir/plugins" -Recurse -Force
+
+          # Copy LICENSE file to the root of the release package
+          Write-Host "Copying LICENSE file to $releaseDir"
+          Copy-Item -Path $licenseFile -Destination $releaseDir -Force
+
+          # Create the ZIP archive of the release directory
+          Write-Host "Creating ZIP archive: $zipFileName"
+          Compress-Archive -Path "$releaseDir/*" -DestinationPath $zipFileName -Force
+
+          Write-Host "Release package created successfully."
+        shell: pwsh
+
+      # Step 13: Upload the generated Release Package as a workflow artifact (for tag pushes only).
+      - name: Upload Release Package Artifact
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: phgit-release-windows-x64-${{ github.ref_name }} # Artifact name includes version
+          path: phgit-windows-x64-*.zip # Path to the generated ZIP file

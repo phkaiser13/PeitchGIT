@@ -1,0 +1,91 @@
+name: Build phgit (Arch-like - containerized)
+
+#
+# Triggers for the workflow
+#
+on:
+  # Run on pushes to the main branch
+  push:
+    branches: [ "main" ]
+    # Also run when a tag starting with 'v' (e.g., v1.0, v2.3.4) is pushed
+    tags:
+      - 'v*'
+  # Run on pull requests targeting the main branch
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    # Job name for the UI
+    name: Build and Package (Arch-Like Linux)
+    # Run the job on the latest Ubuntu runner provided by GitHub
+    runs-on: ubuntu-latest
+    # Use a container for the build environment to ensure consistency.
+    # This pulls the latest Arch Linux image to run all subsequent steps inside.
+    container:
+      image: archlinux:latest
+
+    steps:
+      # Step 1: Check out the repository's code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Initialize Pacman keyring.
+      # This is a necessary step for Arch Linux containers in CI environments
+      # to be able to securely download and install packages.
+      - name: Initialize Pacman Keyring
+        run: |
+          pacman-key --init
+          pacman-key --populate archlinux
+
+      # Step 3: Install system dependencies using Pacman.
+      # -Syu updates the system and package database.
+      # --noconfirm skips interactive prompts.
+      # --needed prevents re-installing packages that are already up-to-date.
+      - name: Install system dependencies (Arch)
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel cmake lua curl nlohmann-json go rust git pkgconf
+
+      # Step 5: Set up the Rust toolchain.
+      # This action ensures the stable Rust toolchain is available.
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      
+      # Step 6: Cache Rust dependencies.
+      # This significantly speeds up subsequent builds by caching `target` and cargo directories.
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      # Step 7: Configure the project using CMake.
+      # -S . specifies the source directory is the current directory.
+      # -B build specifies that the build files will be placed in a 'build' directory.
+      # -DCMAKE_BUILD_TYPE=Release enables optimizations for the final build.
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
+      # Step 8: Compile the project.
+      # --build build tells CMake to execute the build process in the 'build' directory.
+      # --parallel uses multiple cores to speed up compilation.
+      - name: Compile Project
+        run: cmake --build build --parallel
+
+
+      # Step 11: Upload intermediate build artifacts for non-tag builds (CI).
+      # This is useful for debugging or for other jobs that might need the raw build output.
+      # The `if` condition ensures this step runs for pushes and pull requests, but NOT for tags.
+      - name: Upload CI Build Artifacts (not for tags)
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          # A different artifact name to avoid confusion with the release package.
+          name: phgit-build-artifacts-arch
+          # Upload the contents of the build directory for inspection.
+          path: |
+            build/
+            src/plugins/
+            LICENSE
+          # Shorter retention for CI artifacts is common.
+          retention-days: 3

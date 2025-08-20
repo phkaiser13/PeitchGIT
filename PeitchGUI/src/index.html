@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PeitchGUI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+      :root {
+        --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+        --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+        --color-bg: #1e293b; /* slate-800 */
+        --color-bg-darker: #0f172a; /* slate-900 */
+        --color-bg-lighter: #334155; /* slate-700 */
+        --color-border: #475569; /* slate-600 */
+        --color-text: #cbd5e1; /* slate-300 */
+        --color-text-dim: #94a3b8; /* slate-400 */
+      }
+      body {
+        font-family: var(--font-sans);
+        background-color: var(--color-bg-darker);
+        color: var(--color-text);
+        overflow: hidden;
+      }
+      .font-mono {
+        font-family: var(--font-mono);
+      }
+      /* For custom scrollbars, optional but adds to the pro feel */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: var(--color-bg-darker);
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--color-bg-lighter);
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--color-border);
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.1.1",
+    "react-dom/": "https://esm.sh/react-dom@^19.1.1/",
+    "react/": "https://esm.sh/react@^19.1.1/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.15.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+    <script>
+      // Lucide icons initialization
+      lucide.createIcons();
+    </script>
+  </body>
+</html>

@@ -2,9 +2,9 @@
 * File: downloader.hpp
 * This header defines the interface for the Downloader utility class. This class provides
 * a high-level, easy-to-use wrapper around a low-level HTTP client library (like libcurl)
-* to handle downloads. It supports downloading to both files (with progress tracking) and
-* directly to memory (for small payloads like API responses), promoting both efficiency
-* and security by avoiding temporary files.
+* to handle file downloads. It includes essential features for a modern installer, such as
+* progress tracking via callbacks, timeout handling, and support for resuming downloads.
+* It also includes a utility function for checksum verification to ensure file integrity.
 * SPDX-License-Identifier: Apache-2.0
 */
 
@@ -14,7 +14,6 @@
 #include <functional>
 #include <cstdint>
 #include <memory>
-#include <optional> // Required for std::optional
 
 namespace phgit_installer::utils {
 
@@ -28,32 +27,12 @@ namespace phgit_installer::utils {
 
     /**
      * @class Downloader
-     * @brief A robust utility for downloading content over HTTP/S.
-     *
-     * This class encapsulates the complexity of an HTTP client library (libcurl)
-     * behind a simple, modern C++ interface. It uses the PIMPL idiom to hide
-     * implementation details, which improves compilation times and isolates dependencies.
+     * @brief A robust file downloader utility.
      */
     class Downloader {
     public:
-        /**
-         * @brief Constructs a Downloader instance.
-         * Initializes the underlying HTTP client resources.
-         */
         Downloader();
-
-        /**
-         * @brief Destroys the Downloader instance.
-         * Cleans up all underlying HTTP client resources.
-         */
         ~Downloader();
-
-        // Rule of Five: Explicitly default or delete special member functions
-        // for clarity and to prevent unintended copies.
-        Downloader(const Downloader&) = delete;
-        Downloader& operator=(const Downloader&) = delete;
-        Downloader(Downloader&&) = default;
-        Downloader& operator=(Downloader&&) = default;
 
         /**
          * @brief Downloads a file from a given URL to a specified output path.
@@ -63,15 +42,6 @@ namespace phgit_installer::utils {
          * @return True if the download was successful, false otherwise.
          */
         bool download_file(const std::string& url, const std::string& output_path, ProgressCallback callback = nullptr);
-
-        /**
-         * @brief Downloads content from a URL directly into a string in memory.
-         * This is highly efficient for small payloads like JSON API responses, as it
-         * avoids disk I/O and the security risks of temporary files.
-         * @param url The HTTP/HTTPS URL of the content to download.
-         * @return An std::optional<std::string> containing the data on success, or std::nullopt on failure.
-         */
-        std::optional<std::string> download_to_string(const std::string& url);
 
         /**
          * @brief Sets the connection and transfer timeout in seconds.
@@ -98,5 +68,26 @@ namespace phgit_installer::utils {
         class DownloaderImpl;
         std::unique_ptr<DownloaderImpl> m_impl;
     };
+
+    /**
+     * @namespace checksum
+     * @brief Provides utility functions for file integrity verification.
+     */
+    namespace checksum {
+        enum class Algorithm {
+            SHA256
+        };
+
+        /**
+         * @brief Verifies the checksum of a file against an expected hash.
+         * @param file_path The path to the local file.
+         * @param expected_hash The expected checksum hash as a hex string.
+         * @param algo The hashing algorithm to use (currently only SHA256).
+         * @return True if the file's hash matches the expected hash, false otherwise.
+         * @note The implementation of this function will require a cryptography library
+         *       like OpenSSL, Crypto++, or a smaller, single-header library.
+         */
+        bool verify_file(const std::string& file_path, const std::string& expected_hash, Algorithm algo = Algorithm::SHA256);
+    }
 
 } // namespace phgit_installer::utils

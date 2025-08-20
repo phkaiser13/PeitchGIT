@@ -1,0 +1,5 @@
+{
+  "name": "PeitchGUI",
+  "description": "A web-based Git GUI client, designed as an open-source replacement for GitKraken and a front-end for the PeitchGIT ecosystem. It provides powerful visualization and management for Git repositories.",
+  "requestFramePermissions": []
+}
