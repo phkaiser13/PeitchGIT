@@ -413,12 +413,12 @@ SectionEnd
 ; Section Descriptions
 ;--------------------------------
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
-    !insertmacro MUI_FUNCTION_DESCRIPTION_TEXT ${SecCore} "Core phgit application and dependencies (required)"
-    !insertmacro MUI_FUNCTION_DESCRIPTION_TEXT ${SecPath} "Add phgit to system PATH for command-line access"
-    !insertmacro MUI_FUNCTION_DESCRIPTION_TEXT ${SecTerraform} "Install Terraform for infrastructure management"
-    !insertmacro MUI_FUNCTION_DESCRIPTION_TEXT ${SecVault} "Install HashiCorp Vault for secrets management"
-    !insertmacro MUI_FUNCTION_DESCRIPTION_TEXT ${SecDesktop} "Create desktop shortcut"
-    !insertmacro MUI_FUNCTION_DESCRIPTION_TEXT ${SecStartMenu} "Create Start Menu shortcuts"
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecCore} "Core phgit application and dependencies (required)"
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecPath} "Add phgit to system PATH for command-line access"
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecTerraform} "Install Terraform for infrastructure management"
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecVault} "Install HashiCorp Vault for secrets management"
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop} "Create desktop shortcut"
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecStartMenu} "Create Start Menu shortcuts"
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 ;--------------------------------
