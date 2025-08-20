@@ -1,0 +1,139 @@
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
+# SPDX-License-Identifier: Apache-2.0
+#
+# Workflow do GitHub Actions para construir a aplicação phgit, suas dependências,
+# e empacotar tudo em um instalador para Windows usando NSIS.
+#
+# Este workflow é projetado para ser verboso, robusto e completo, garantindo que
+# todas as DLLs e artefatos necessários sejam incluídos no instalador final.
+
+name: 'Build Windows Installer'
+
+# Gatilhos do Workflow:
+# Por enquanto, ele é acionado em qualquer push ou pull request para qualquer branch.
+# Para produção, você pode querer restringir isso para a branch 'main' ou para tags.
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+  workflow_dispatch: # Permite acionamento manual
+
+jobs:
+  build-and-package-windows:
+    name: 'Build & Package for Windows (x64)'
+    runs-on: windows-latest
+
+    # Variáveis de ambiente para configurar o processo de build
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+      VCPKG_DEFAULT_TRIPLET: x64-windows-static # Usamos a triplet estática para minimizar dependências externas de C++
+      RUSTFLAGS: "-C target-feature=+crt-static" # Linka a runtime do Rust estaticamente
+
+    steps:
+      # --- PASSO 1: Preparação do Ambiente ---
+      - name: '1. Checkout do código-fonte'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Necessário para workflows que precisam do histórico de tags/branches
+
+      - name: '2. Instalação do vcpkg e dependências C++'
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git ${{ env.VCPKG_ROOT }}
+          cd ${{ env.VCPKG_ROOT }}
+          ./bootstrap-vcpkg.bat
+          # Instala as bibliotecas necessárias. A triplet estática é usada aqui.
+          ./vcpkg.exe install curl lua nlohmann-json --triplet ${{ env.VCPKG_DEFAULT_TRIPLET }}
+        shell: pwsh
+
+      - name: '3. Setup do Toolchain Rust'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: '4. Cache das dependências do Rust (Cargo)'
+        uses: Swatinem/rust-cache@v2
+
+      - name: '5. Instalação do NSIS (Nullsoft Scriptable Install System)'
+        uses: joncloud/setup-nsis@v1
+
+      # --- PASSO 2: Compilação da Aplicação e do Instalador ---
+      - name: '6. Configuração do Projeto com CMake'
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake" `
+            -DPHGIT_BUILD_INSTALLER=ON `
+            -DCMAKE_BUILD_TYPE=Release
+        shell: pwsh
+
+      - name: '7. Compilação do Projeto (Aplicação e Módulos)'
+        run: cmake --build build --config Release --parallel
+        shell: pwsh
+
+      # --- PASSO 3: Coleta de Artefatos para o Instalador ---
+      # Este passo é crucial para garantir que TUDO o que é necessário seja empacotado.
+      - name: '8. Preparação dos Arquivos para o Instalador NSIS'
+        run: |
+          # Cria a estrutura de diretórios que o script NSIS espera
+          New-Item -ItemType Directory -Force -Path "installer_payload"
+          New-Item -ItemType Directory -Force -Path "installer_payload/bin"
+          New-Item -ItemType Directory -Force -Path "installer_payload/modules"
+          New-Item -ItemType Directory -Force -Path "installer_payload/plugins"
+
+          # Copia o executável principal
+          Write-Host "Copiando executável principal..."
+          Copy-Item -Path "build/bin/Release/phgit.exe" -Destination "installer_payload/bin/"
+
+          # Copia todos os módulos Rust e C++ compilados (.dll)
+          Write-Host "Copiando módulos compilados..."
+          Copy-Item -Path "build/bin/Release/modules/*.dll" -Destination "installer_payload/modules/"
+
+          # Copia os plugins Lua
+          Write-Host "Copiando plugins Lua..."
+          Copy-Item -Path "src/plugins/*.lua" -Destination "installer_payload/plugins/"
+
+          # Copia a documentação e licença
+          Write-Host "Copiando arquivos de licença e documentação..."
+          Copy-Item -Path "LICENSE" -Destination "installer_payload/"
+          Copy-Item -Path "README.md" -Destination "installer_payload/"
+
+          # Copia TODAS as DLLs de runtime necessárias. Esta lista deve ser exaustiva.
+          # Como estamos usando a triplet estática do vcpkg e linkando a runtime do Rust estaticamente,
+          # a necessidade de DLLs externas é drasticamente reduzida. No entanto, algumas dependências
+          # (como OpenSSL, que é uma dependência do libcurl) podem ainda requerer DLLs.
+          # Este passo garante que elas sejam incluídas.
+          Write-Host "Copiando DLLs de runtime do vcpkg (se houver)..."
+          $vcpkgBinDir = "${{ env.VCPKG_ROOT }}/installed/${{ env.VCPKG_DEFAULT_TRIPLET }}/bin"
+          if (Test-Path $vcpkgBinDir) {
+              $dlls = Get-ChildItem -Path $vcpkgBinDir -Filter *.dll
+              if ($dlls) {
+                  Copy-Item -Path $dlls.FullName -Destination "installer_payload/bin/"
+                  Write-Host "DLLs de runtime copiadas: $($dlls.Name -join ', ')"
+              } else {
+                  Write-Host "Nenhuma DLL de runtime encontrada em $vcpkgBinDir (esperado com link estático)."
+              }
+          }
+        shell: pwsh
+
+      # --- PASSO 4: Geração do Instalador ---
+      - name: '9. Geração do Instalador com NSIS'
+        run: |
+          # O comando 'makensis' executa o script .nsi.
+          # O script 'phgit.nsi' deve ser projetado para pegar os arquivos da pasta 'installer_payload'.
+          # Vamos criar uma cópia do script e dos arquivos que ele precisa no diretório raiz para facilitar.
+          Copy-Item -Path "installer/packaging/nsis/phgit.nsi" -Destination "."
+          Copy-Item -Path "LICENSE" -Destination "LICENSE.txt" # O script NSIS espera um .txt
+
+          # Executa o makensis. O output será 'phgit-installer.exe' no diretório raiz.
+          makensis phgit.nsi
+        shell: pwsh
+
+      # --- PASSO 5: Armazenamento do Artefato Final ---
+      - name: '10. Upload do Instalador como Artefato de Build'
+        uses: actions/upload-artifact@v4
+        with:
+          name: phgit-windows-installer
+          path: phgit-*.exe # Usa um wildcard para pegar o instalador com a versão no nome
+          retention-days: 7 # Mantém o artefato por 7 dias
