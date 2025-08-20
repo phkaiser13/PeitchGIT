@@ -10,15 +10,14 @@
 */
 
 #include "utils/api_manager.hpp"
-#include "utils/downloader.hpp"
+#include "utils/downloader.hpp" // Assumes downloader.hpp will be updated
 #include "nlohmann/json.hpp"
 #include "spdlog/spdlog.h"
 
 #include <filesystem>
-#include <fstream>
 #include <regex>
 #include <sstream>
-
+#include <utility> // For std::move
 
 namespace phgit_installer::utils {
 
@@ -32,35 +31,34 @@ namespace phgit_installer::utils {
         Downloader downloader;
 
         explicit ApiManagerImpl(std::shared_ptr<ConfigManager> cfg) : config(std::move(cfg)) {
+            // Set downloader options once during initialization.
             downloader.set_user_agent("phgit-installer/1.0");
             downloader.set_timeout(60); // 60-second timeout for API calls
         }
 
-        // Helper to download API response content into a string
+        /**
+         * @brief Downloads the content of a URL directly into a string.
+         *
+         * This method is a secure and efficient replacement for the previous file-based
+         * approach. It fetches the API response and stores it in memory, avoiding
+         * insecure temporary file creation and unnecessary disk I/O.
+         *
+         * @param url The URL to download from.
+         * @return An optional string containing the response body on success, or std::nullopt on failure.
+         */
         std::optional<std::string> download_api_response(const std::string& url) {
-            char temp_path_cstr[L_tmpnam];
-            if (tmpnam(temp_path_cstr) == NULL) {
-                spdlog::error("Could not create a temporary file name for API response.");
-                return std::nullopt;
-            }
-            std::string temp_file_path = temp_path_cstr;
+            // Directly call the new Downloader method that returns a string.
+            // This avoids the security risk (race condition) of tmpnam and the
+            // inefficiency of writing to and reading from a temporary file.
+            auto response_content = downloader.download_to_string(url);
 
-            if (!downloader.download_file(url, temp_file_path)) {
-                spdlog::error("Failed to download API response from {}", url);
-                return std::nullopt;
-            }
-
-            std::ifstream file(temp_file_path);
-            if (!file.is_open()) {
-                spdlog::error("Could not open temporary API response file: {}", temp_file_path);
-                remove(temp_file_path.c_str());
+            if (!response_content) {
+                spdlog::error("Failed to download API response to memory from {}", url);
                 return std::nullopt;
             }
 
-            std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-            file.close();
-            remove(temp_file_path.c_str());
-            return content;
+            // On success, return the downloaded content.
+            return response_content;
         }
     };
 
@@ -105,8 +103,13 @@ namespace phgit_installer::utils {
 
     std::optional<ReleaseAsset> ApiManager::handle_github_api(const ApiEndpoint& endpoint, const platform::PlatformInfo& platform_info) {
         std::string url = resolve_url_template(endpoint.url_template, endpoint);
+        
+        // Fetch API response directly into memory.
         auto response_str = m_impl->download_api_response(url);
-        if (!response_str) return std::nullopt;
+        if (!response_str) {
+            // Error is already logged by download_api_response.
+            return std::nullopt;
+        }
 
         try {
             json data = json::parse(*response_str);
@@ -141,8 +144,12 @@ namespace phgit_installer::utils {
 
     std::optional<ReleaseAsset> ApiManager::handle_hashicorp_api(const ApiEndpoint& endpoint, const platform::PlatformInfo& platform_info) {
         std::string url = resolve_url_template(endpoint.url_template, endpoint);
+        
+        // Fetch API response directly into memory.
         auto response_str = m_impl->download_api_response(url);
-        if (!response_str) return std::nullopt;
+        if (!response_str) {
+            return std::nullopt;
+        }
 
         try {
             json data = json::parse(*response_str);
@@ -164,18 +171,22 @@ namespace phgit_installer::utils {
                     
                     // HashiCorp provides a checksums file, let's find the right hash
                     auto shasums_url = data.value("shasums_url", "");
-                    auto shasums_content = m_impl->download_api_response(shasums_url);
-                    if (shasums_content) {
-                        std::string asset_filename = fs::path(result.download_url).filename().string();
-                        std::stringstream ss(*shasums_content);
-                        std::string line;
-                        while (std::getline(ss, line)) {
-                            if (line.find(asset_filename) != std::string::npos) {
-                                result.checksum = std::regex_replace(line, std::regex("\\s+.*"), "");
-                                break;
+                    if (!shasums_url.empty()) {
+                        auto shasums_content = m_impl->download_api_response(shasums_url);
+                        if (shasums_content) {
+                            std::string asset_filename = fs::path(result.download_url).filename().string();
+                            std::stringstream ss(*shasums_content);
+                            std::string line;
+                            while (std::getline(ss, line)) {
+                                if (line.find(asset_filename) != std::string::npos) {
+                                    // Extract the hash, which is the first word on the line.
+                                    result.checksum = std::regex_replace(line, std::regex("\\s+.*"), "");
+                                    break;
+                                }
                             }
                         }
                     }
+                    
                     result.checksum_type = "sha256";
                     spdlog::info("Found matching HashiCorp build: {}", result.download_url);
                     return result;
