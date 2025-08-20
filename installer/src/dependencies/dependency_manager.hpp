@@ -19,6 +19,7 @@
 #include <optional>
 #include <memory>
 #include <mutex>
+#include "platform/platform_detector.hpp"
 
 namespace phgit_installer {
     namespace platform {

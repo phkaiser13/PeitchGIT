@@ -65,9 +65,9 @@ namespace phgit_installer::platform {
         std::string install_dir;
         char path[MAX_PATH];
         if (for_all_users) {
-            if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_PROGRAM_FILES, NULL, 0, path))) install_dir = fs::path(path) / "phgit";
+            if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_PROGRAM_FILES, NULL, 0, path))) install_dir = (fs::path(path) / "phgit").string();
         } else {
-            if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, path))) install_dir = fs::path(path) / "Programs" / "phgit";
+            if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, path))) install_dir = (fs::path(path) / "Programs" / "phgit").string();
         }
         if (install_dir.empty()) {
             throw std::runtime_error("Could not determine a valid installation directory.");
@@ -80,7 +80,7 @@ namespace phgit_installer::platform {
             throw std::runtime_error("Failed to install required dependency: Git.");
         }
         
-        std::string tools_dir = fs::path(install_dir) / "bin";
+        std::string tools_dir = (fs::path(install_dir) / "bin").string();
         fs::create_directories(tools_dir);
         if (!ensure_optional_dependencies(tools_dir)) {
             spdlog::error("Failed to install one or more optional dependencies. Continuing installation.");
@@ -110,7 +110,7 @@ namespace phgit_installer::platform {
         utils::Downloader downloader;
         char temp_path[MAX_PATH];
         GetTempPathA(MAX_PATH, temp_path);
-        std::string installer_path = fs::path(temp_path) / "Git-Installer.exe";
+        std::string installer_path = (fs::path(temp_path) / "Git-Installer.exe").string();
 
         spdlog::info("Downloading from: {}", asset->download_url);
         if (!downloader.download_file(asset->download_url, installer_path, print_progress)) return false;
@@ -154,7 +154,7 @@ namespace phgit_installer::platform {
             utils::Downloader downloader;
             char temp_path[MAX_PATH];
             GetTempPathA(MAX_PATH, temp_path);
-            std::string archive_path = fs::path(temp_path) / (name + ".zip");
+            std::string archive_path = (fs::path(temp_path) / (std::string(name) + ".zip")).string();
 
             spdlog::info("Downloading from: {}", asset->download_url);
             if (!downloader.download_file(asset->download_url, archive_path, print_progress)) {
@@ -195,7 +195,7 @@ namespace phgit_installer::platform {
 
     void WindowsInstaller::perform_system_integration(const std::string& install_path) {
         spdlog::info("Performing system integration tasks.");
-        update_path_environment_variable(fs::path(install_path) / "bin", m_platform_info.is_privileged);
+        update_path_environment_variable((fs::path(install_path) / "bin").string(), m_platform_info.is_privileged);
         create_registry_entries(install_path, m_platform_info.is_privileged);
         create_start_menu_shortcuts(install_path);
     }

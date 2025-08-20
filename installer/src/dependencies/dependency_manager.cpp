@@ -1,155 +1,156 @@
-// Copyright (C) 2025 Pedro Henrique / phkaiser13
-// File: dependency_manager.cpp
-// SPDX-License-Identifier: Apache-2.0
-//
-// Implementation of DependencyManager
-// - Cross-platform search for executables on PATH
-// - Executes "<exe> --version" (or similar) via ProcessExecutor
-// - Parses semantic version from output and compares to minimum required
-//
-// The file aims to be robust and defensive; it logs useful diagnostics via spdlog.
+/* Copyright (C) 2025 Pedro Henrique / phkaiser13
+* File: dependency_manager.cpp
+* Implementation of DependencyManager. This file is responsible for the concrete
+* logic of finding executables on the system's PATH, executing them to query
+* their version, parsing the output, and comparing it against a required
+* minimum version. The implementation is designed to be cross-platform, robust,
+* and performant, minimizing allocations and leveraging modern C++ features
+* for safety and speed. It uses spdlog for detailed diagnostics.
+* SPDX-License-Identifier: Apache-2.0 */
 
 #include "dependencies/dependency_manager.hpp"
-#include "utils/process_executor.hpp" // expected to provide a result with exit_code, std_out, std_err
+
+// We need the full definition of ConfigManager to call its methods.
+// This was the primary source of the compilation error "incomplete type".
+#include "utils/config_manager.hpp"
+
+// We assume ProcessExecutor provides a simple, static `execute` method.
+#include "utils/process_executor.hpp"
 
 #include <spdlog/spdlog.h>
 
 #include <filesystem>
 #include <regex>
 #include <sstream>
-#include <system_error>
-#include <cstdlib>      // getenv
-#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <memory>
+#include <optional>
 #include <algorithm>
 #include <utility>      // std::move
-#include <charconv>     // std::from_chars
-#include <cctype>       // isspace
+#include <system_error>
+#include <cstdlib>      // std::getenv
+#include <charconv>     // std::from_chars for high-performance parsing
+#include <cctype>       // std::isspace
 #include <mutex>
 
+// Platform-specific includes for executable checks
 #if !defined(_WIN32) && !defined(_WIN64)
     #include <unistd.h>   // access, X_OK
-    #include <sys/stat.h>
-#else
-    #include <windows.h>
 #endif
 
 namespace phgit_installer::dependencies {
 
+// Filesystem alias for brevity
 namespace fs = std::filesystem;
 
 //
-// Helper functions (internal linkage)
+// Anonymous namespace for internal linkage helper functions.
+// These are implementation details not visible outside this translation unit.
 //
-
 namespace {
 
-/** Trim whitespace from both ends of a string (in-place) */
-static inline void trim_inplace(std::string &s) {
-    // left trim
-    size_t start = 0;
-    while (start < s.size() && std::isspace(static_cast<unsigned char>(s[start]))) ++start;
-    if (start != 0) s.erase(0, start);
-
-    // right trim
-    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.pop_back();
+/**
+ * @brief Trim whitespace from both ends of a string_view.
+ * This is a non-mutating, zero-allocation version.
+ * @param sv The string_view to trim.
+ * @return A trimmed string_view.
+ */
+[[nodiscard]] std::string_view trim_view(std::string_view sv) {
+    const auto first = sv.find_first_not_of(" \t\n\r\f\v");
+    if (first == std::string_view::npos) {
+        return {}; // The string is all whitespace
+    }
+    const auto last = sv.find_last_not_of(" \t\n\r\f\v");
+    return sv.substr(first, (last - first + 1));
 }
 
-/** Safely convert string segment to int using from_chars.
- *  Returns std::optional<int> (empty on conversion failure).
+/**
+ * @brief Safely convert a string_view segment to an integer.
+ * Uses std::from_chars for maximum performance (non-allocating, locale-independent).
+ * @param sv The string_view containing the number.
+ * @return An optional containing the integer, or std::nullopt on failure.
  */
-static inline std::optional<int> safe_parse_int(const std::string &seg) {
-    if (seg.empty()) return std::nullopt;
+[[nodiscard]] std::optional<int> safe_parse_int(std::string_view sv) {
+    if (sv.empty()) {
+        return std::nullopt;
+    }
     int value = 0;
-    const char* begin = seg.data();
-    const char* end = seg.data() + seg.size();
-    auto res = std::from_chars(begin, end, value);
-    if (res.ec == std::errc() && res.ptr == end) {
+    auto res = std::from_chars(sv.data(), sv.data() + sv.size(), value);
+    if (res.ec == std::errc() && res.ptr == sv.data() + sv.size()) {
         return value;
     }
     return std::nullopt;
 }
 
-/** Build a command string to query version from an executable path.
- *  We try to avoid unnecessary quoting; if the path contains whitespace we
- *  add quotes around the path. We also append a single argument `--version`.
- *  This string is compatible with ProcessExecutor::execute(const std::string&).
+/**
+ * @brief Build a command string to query the version from an executable path.
+ * Quotes the executable path if it contains spaces to ensure correct execution.
+ * @param exe_path The full path to the executable.
+ * @return A string formatted as "<quoted_path> --version".
  */
-static inline std::string build_version_command(const std::string &exe_path) {
-    // Quote if path contains space or special chars
-    bool need_quotes = exe_path.find_first_of(" \t()[]{}&^%$#@!`'\"") != std::string::npos;
+[[nodiscard]] std::string build_version_command(const std::string& exe_path) {
     std::string cmd;
-#if defined(_WIN32) || defined(_WIN64)
-    if (need_quotes) cmd += '"';
-    cmd += exe_path;
-    if (need_quotes) cmd += '"';
-    cmd += " --version";
-#else
-    // POSIX: avoid double quotes unless necessary
-    if (need_quotes) {
-        // Escape single quotes by wrapping in double quotes and escaping $
-        // Simpler: wrap in single quotes, but that breaks embedded single quotes.
-        // We'll wrap in double quotes and escape embedded double quotes.
-        std::string escaped = exe_path;
-        size_t pos = 0;
-        while ((pos = escaped.find('"', pos)) != std::string::npos) {
-            escaped.insert(pos, "\\");
-            pos += 2;
-        }
-        cmd += '"' + escaped + "\" --version";
+    // Pre-allocate to avoid reallocations for typical paths.
+    cmd.reserve(exe_path.length() + 15);
+
+    // Quote if path contains a space. This is a simple but effective heuristic.
+    if (exe_path.find(' ') != std::string::npos) {
+        cmd += '"';
+        cmd += exe_path;
+        cmd += '"';
     } else {
-        cmd += exe_path + " --version";
+        cmd += exe_path;
     }
-#endif
+    cmd += " --version";
     return cmd;
 }
 
 } // anonymous namespace
 
 //
-// DependencyManager implementation
+// DependencyManager public method implementations
 //
 
 DependencyManager::DependencyManager(platform::PlatformInfo info,
                                      std::shared_ptr<utils::ConfigManager> config) noexcept
     : m_platform_info(std::move(info)), m_config(std::move(config)) {
-    spdlog::debug("[DependencyManager] initialized for OS: {}", m_platform_info.os_family);
+    spdlog::debug("[DependencyManager] Initialized for OS: {}", m_platform_info.os_family);
 }
 
 void DependencyManager::check_all() {
     spdlog::info("[DependencyManager] Starting dependency checks.");
     std::vector<DependencyStatus> local_results;
 
-    // Defensive: ensure config pointer is valid
     if (!m_config) {
-        spdlog::error("[DependencyManager] ConfigManager pointer is null. Aborting checks.");
+        spdlog::error("[DependencyManager] ConfigManager is null. Aborting checks.");
         std::lock_guard lock(m_mutex);
-        m_dependency_statuses = std::move(local_results);
+        m_dependency_statuses.clear(); // Ensure consistent state
         return;
     }
 
-    // Expecting ConfigManager::get_dependencies() to return a vector<DependencyRequirement>
-    auto dependencies_to_check = m_config->get_dependencies();
+    const auto dependencies_to_check = m_config->get_dependencies();
     if (dependencies_to_check.empty()) {
-        spdlog::warn("[DependencyManager] No dependencies declared by the configuration.");
+        spdlog::warn("[DependencyManager] No dependencies were specified in the configuration.");
         std::lock_guard lock(m_mutex);
-        m_dependency_statuses = std::move(local_results);
+        m_dependency_statuses.clear();
         return;
     }
 
-    for (const auto &dep : dependencies_to_check) {
-        DependencyStatus status;
-        status.name = dep.name;
-        status.minimum_version = dep.min_version;
-        status.is_required = dep.is_required;
+    local_results.reserve(dependencies_to_check.size());
 
-        spdlog::debug("[DependencyManager] Checking '{}', required >= {}", status.name, status.minimum_version);
+    for (const auto& req : dependencies_to_check) {
+        DependencyStatus status;
+        status.name = req.name;
+        status.minimum_version = req.min_version;
+        status.is_required = req.is_required;
+
+        spdlog::debug("[DependencyManager] Checking '{}', required version >= {}", status.name, status.minimum_version);
 
         auto exe_path_opt = find_executable_in_path(status.name);
         if (!exe_path_opt) {
-            spdlog::warn("[DependencyManager] '{}' not found on PATH.", status.name);
+            spdlog::warn("[DependencyManager] '{}' not found in system PATH.", status.name);
             status.is_found = false;
             local_results.push_back(std::move(status));
             continue;
@@ -157,145 +158,150 @@ void DependencyManager::check_all() {
 
         status.is_found = true;
         status.found_path = *exe_path_opt;
-        spdlog::debug("[DependencyManager] Found {} at {}", status.name, status.found_path);
+        spdlog::debug("[DependencyManager] Found '{}' at: {}", status.name, status.found_path);
 
-        // Build and execute version command
         std::string command = build_version_command(status.found_path);
-        spdlog::trace("[DependencyManager] Executing: {}", command);
+        spdlog::trace("[DependencyManager] Executing command: {}", command);
 
-        // NOTE: we assume ProcessExecutor::execute(string) exists and returns a struct:
+        // Assumes ProcessExecutor::execute returns a struct like:
         // { int exit_code; std::string std_out; std::string std_err; }
-        // If your ProcessExecutor has a different API (e.g. execute(argv...)) adapt here.
         auto proc_result = utils::ProcessExecutor::execute(command);
 
         if (proc_result.exit_code != 0) {
-            spdlog::warn("[DependencyManager] Version command for '{}' failed (exit {}). Stderr: {}",
-                         status.name, proc_result.exit_code, proc_result.std_err);
+            spdlog::warn("[DependencyManager] Version command for '{}' failed with exit code {}. Stderr: {}",
+                         status.name, proc_result.exit_code, trim_view(proc_result.std_err));
             local_results.push_back(std::move(status));
             continue;
         }
 
+        // Some tools print version to stdout, others to stderr. We check both.
         std::string raw_output = !proc_result.std_out.empty() ? proc_result.std_out : proc_result.std_err;
         status.found_version = parse_version_from_output(raw_output);
 
         if (status.found_version.empty()) {
             spdlog::warn("[DependencyManager] Could not parse version for '{}' from output: {}",
-                         status.name, raw_output);
+                         status.name, trim_view(raw_output));
             local_results.push_back(std::move(status));
             continue;
         }
 
-        spdlog::debug("[DependencyManager] {} -> parsed version {}", status.name, status.found_version);
+        spdlog::debug("[DependencyManager] '{}' -> parsed version '{}'", status.name, status.found_version);
         status.is_version_ok = (compare_versions(status.found_version, status.minimum_version) >= 0);
 
         if (status.is_version_ok) {
-            spdlog::info("[DependencyManager] '{}' OK: {} >= {}", status.name, status.found_version, status.minimum_version);
+            spdlog::info("[DependencyManager] OK: '{}' version {} meets requirement >= {}", status.name, status.found_version, status.minimum_version);
         } else {
-            spdlog::warn("[DependencyManager] '{}' outdated: {} < {}", status.name, status.found_version, status.minimum_version);
+            spdlog::warn("[DependencyManager] OUTDATED: '{}' version {} is below requirement >= {}", status.name, status.found_version, status.minimum_version);
         }
 
         local_results.push_back(std::move(status));
     }
 
-    // Publish results under lock
+    // Atomically update the shared state with the new results.
     {
         std::lock_guard lock(m_mutex);
         m_dependency_statuses = std::move(local_results);
     }
 }
 
-std::optional<DependencyStatus> DependencyManager::get_status(const std::string &name) const {
+std::optional<DependencyStatus> DependencyManager::get_status(const std::string& name) const {
     std::lock_guard lock(m_mutex);
-    for (const auto &s : m_dependency_statuses) {
-        if (s.name == name) return s;
+    auto it = std::find_if(m_dependency_statuses.begin(), m_dependency_statuses.end(),
+                           [&name](const DependencyStatus& s) { return s.name == name; });
+
+    if (it != m_dependency_statuses.end()) {
+        return *it;
     }
     return std::nullopt;
 }
 
 const std::vector<DependencyStatus>& DependencyManager::all_statuses() const noexcept {
-    // Caller should ensure check_all() has been called; we return reference under lock only for atomic swap safety.
+    // This method is noexcept and lock-free because it returns a const reference.
+    // The caller must not hold onto this reference across mutating calls like check_all().
+    // The mutex in other methods ensures that reads from this vector are safe.
     return m_dependency_statuses;
 }
 
 bool DependencyManager::are_core_dependencies_met() const {
     std::lock_guard lock(m_mutex);
-    for (const auto &s : m_dependency_statuses) {
-        if (s.is_required && (!s.is_found || !s.is_version_ok)) return false;
-    }
-    return true;
+    return std::all_of(m_dependency_statuses.begin(), m_dependency_statuses.end(),
+                       [](const DependencyStatus& s) {
+                           // A dependency is met if it's not required, OR if it is found and its version is OK.
+                           return !s.is_required || (s.is_found && s.is_version_ok);
+                       });
 }
 
-std::optional<std::string> DependencyManager::find_executable_in_path(const std::string &name) const {
-    const char *path_env = std::getenv("PATH");
-    if (!path_env) return std::nullopt;
+//
+// DependencyManager private helper implementations
+//
 
-    std::string path_str(path_env);
+std::optional<std::string> DependencyManager::find_executable_in_path(const std::string& name) const {
+    const char* path_env = std::getenv("PATH");
+    if (!path_env) {
+        spdlog::error("[DependencyManager] PATH environment variable not found.");
+        return std::nullopt;
+    }
 
 #if defined(_WIN32) || defined(_WIN64)
-    // On Windows, use PATHEXT to determine executable extensions.
+    const char delimiter = ';';
     std::vector<std::string> exts;
     const char* pathext_env = std::getenv("PATHEXT");
-    if (pathext_env && *pathext_env) {
-        std::string pathext(pathext_env);
-        std::stringstream ss(pathext);
+    if (pathext_env) {
+        std::string pathext_str(pathext_env);
+        std::stringstream ss(pathext_str);
         std::string token;
         while (std::getline(ss, token, ';')) {
-            trim_inplace(token);
             if (!token.empty()) {
-                // Ensure token starts with a dot
-                if (token.front() != '.') token.insert(token.begin(), '.');
-                std::transform(token.begin(), token.end(), token.begin(), [](unsigned char c){ return std::tolower(c); });
+                std::transform(token.begin(), token.end(), token.begin(),
+                               [](unsigned char c){ return std::tolower(c); });
                 exts.push_back(token);
             }
         }
     }
-    if (exts.empty()) {
-        exts = { ".exe", ".cmd", ".bat", ".com" };
+    if (exts.empty()) { // Provide a sensible default
+        exts = {".exe", ".cmd", ".bat", ".com"};
     }
-    const char delimiter = ';';
 #else
-    const std::vector<std::string> exts = { "" };
     const char delimiter = ':';
+    const std::vector<std::string> exts = {""}; // On POSIX, names usually have no extension
 #endif
 
-    std::stringstream ss(path_str);
+    std::stringstream path_stream(path_env);
     std::string path_item;
-    while (std::getline(ss, path_item, delimiter)) {
-        trim_inplace(path_item);
+    while (std::getline(path_stream, path_item, delimiter)) {
         if (path_item.empty()) continue;
 
         fs::path dir(path_item);
-
-        for (const auto &ext : exts) {
+        for (const auto& ext : exts) {
             fs::path candidate = dir / (name + ext);
             std::error_code ec;
-            if (!fs::exists(candidate, ec) || ec) continue;
-            if (fs::is_directory(candidate, ec) || ec) continue;
 
+            if (fs::exists(candidate, ec) && !ec && !fs::is_directory(candidate, ec)) {
 #if defined(_WIN32) || defined(_WIN64)
-            // On Windows we accept the file if it exists (executable status is implicit)
-            return candidate.string();
+                // On Windows, existence is sufficient.
+                return candidate.string();
 #else
-            // POSIX: check execute permission bits
-            auto perms = fs::status(candidate, ec).permissions();
-            if (ec) continue;
-            // Check owner/group/others execute bits
-            if ((perms & (fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec)) == fs::perms::none) {
-                // As a fallback also check access(2) X_OK if available
-                if (access(candidate.c_str(), X_OK) != 0) continue;
-            }
-            return candidate.string();
+                // On POSIX, we must also check for execute permissions.
+                if (::access(candidate.c_str(), X_OK) == 0) {
+                    return candidate.string();
+                }
 #endif
+            }
         }
     }
 
     return std::nullopt;
 }
 
-std::string DependencyManager::parse_version_from_output(const std::string &raw_output) const {
-    // Accept optional 'v' prefix, capture X.Y or X.Y.Z (numeric only)
-    // We return the captured numeric group.
-    static const std::regex version_regex(R"((?:v)?(\d+\.\d+(?:\.\d+)?))", std::regex_constants::ECMAScript | std::regex_constants::icase);
+std::string DependencyManager::parse_version_from_output(const std::string& raw_output) const {
+    // This regex is compiled only once and reused, which is highly efficient.
+    // It looks for a pattern like "v1.2.3" or "1.2.3" and captures the numeric part.
+    // It robustly handles major.minor or major.minor.patch versions.
+    static const std::regex version_regex(
+        R"((?:[^\d]|^)(v?(?:\d+\.\d+)(?:\.\d+)?))",
+        std::regex_constants::ECMAScript | std::regex_constants::icase
+    );
+
     std::smatch match;
     if (std::regex_search(raw_output, match, version_regex) && match.size() > 1) {
         return match[1].str();
@@ -303,32 +309,26 @@ std::string DependencyManager::parse_version_from_output(const std::string &raw_
     return {};
 }
 
-int DependencyManager::compare_versions(const std::string &v1, const std::string &v2) const {
-    // Split by '.' and compare numeric components using safe_parse_int
-    std::vector<int> a, b;
-    std::string seg;
-    std::stringstream ss1(v1);
-    while (std::getline(ss1, seg, '.')) {
-        trim_inplace(seg);
-        auto val = safe_parse_int(seg);
-        a.push_back(val.value_or(0));
-    }
-    std::stringstream ss2(v2);
-    while (std::getline(ss2, seg, '.')) {
-        trim_inplace(seg);
-        auto val = safe_parse_int(seg);
-        b.push_back(val.value_or(0));
+int DependencyManager::compare_versions(const std::string& v1, const std::string& v2) const {
+    std::string_view v1_sv(v1);
+    std::string_view v2_sv(v2);
+
+    while (!v1_sv.empty() || !v2_sv.empty()) {
+        auto parse_component = [](std::string_view& sv) {
+            size_t dot_pos = sv.find('.');
+            std::string_view component_sv = sv.substr(0, dot_pos);
+            sv.remove_prefix(dot_pos == std::string_view::npos ? sv.size() : dot_pos + 1);
+            return safe_parse_int(component_sv).value_or(0);
+        };
+
+        int part1 = v1_sv.empty() ? 0 : parse_component(v1_sv);
+        int part2 = v2_sv.empty() ? 0 : parse_component(v2_sv);
+
+        if (part1 < part2) return -1;
+        if (part1 > part2) return 1;
     }
 
-    size_t max_len = std::max(a.size(), b.size());
-    a.resize(max_len, 0);
-    b.resize(max_len, 0);
-
-    for (size_t i = 0; i < max_len; ++i) {
-        if (a[i] < b[i]) return -1;
-        if (a[i] > b[i]) return 1;
-    }
-    return 0;
+    return 0; // Versions are equal
 }
 
 } // namespace phgit_installer::dependencies
