@@ -1,0 +1,250 @@
+name: Unified Build, Test, and Release Workflow
+
+on:
+  push:
+    branches: [ "main" ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build_and_test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # === Linux Builds ===
+          - name: Ubuntu (x86_64)
+            os: ubuntu-latest
+            distro: ubuntu
+            arch: x86_64
+
+          - name: Ubuntu (aarch64)
+            os: ubuntu-latest
+            distro: ubuntu
+            arch: aarch64
+
+          - name: Fedora (x86_64)
+            os: ubuntu-latest
+            distro: fedora
+            arch: x86_64
+
+          - name: Fedora (aarch64)
+            os: ubuntu-latest
+            distro: fedora
+            arch: aarch64
+
+          - name: Arch Linux (x86_64)
+            os: ubuntu-latest
+            distro: arch
+            arch: x86_64
+
+          - name: Arch Linux (aarch64)
+            os: ubuntu-latest
+            distro: arch
+            arch: aarch64
+
+          # === macOS Builds ===
+          - name: macOS (x86_64)
+            os: macos-13
+            distro: macos
+            arch: x86_64
+          - name: macOS (arm64)
+            os: macos-14
+            distro: macos
+            arch: arm64
+
+          # === Windows Builds ===
+          - name: Windows (x64)
+            os: windows-latest
+            distro: windows
+            arch: x64
+          - name: Windows (arm64)
+            os: windows-latest
+            distro: windows
+            arch: arm64
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up QEMU for multi-architecture builds
+      if: runner.os == 'Linux' && matrix.arch != 'x86_64'
+      uses: docker/setup-qemu-action@v3
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2
+
+    - name: Build on Linux
+      if: runner.os == 'Linux'
+      env:
+        CC: clang
+        CXX: clang++
+      shell: bash
+      run: |
+        echo "Starting build for ${{ matrix.distro }} on ${{ matrix.arch }}"
+
+        PLATFORM="linux/amd64"
+        if [ "${{ matrix.arch }}" == "aarch64" ]; then
+          PLATFORM="linux/arm64"
+        fi
+
+        DOCKER_IMAGE="${{ matrix.distro }}:latest"
+        if [ "${{ matrix.distro }}" == "arch" ]; then
+          DOCKER_IMAGE="archlinux:latest"
+        fi
+
+        docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace \
+          -e CC=${CC} -e CXX=${CXX} \
+          --platform $PLATFORM $DOCKER_IMAGE \
+          /bin/bash -c "
+            set -ex
+
+            echo '--- Installing Dependencies ---'
+            if [ '${{ matrix.distro }}' == 'ubuntu' ]; then
+              apt-get update
+              apt-get install -y build-essential clang cmake pkg-config liblua5.4-dev libcurl4-openssl-dev nlohmann-json3-dev
+            elif [ '${{ matrix.distro }}' == 'fedora' ]; then
+              dnf -y update && dnf -y install clang cmake make lua-devel libcurl-devel openssl-devel nlohmann-json-devel git
+            elif [ '${{ matrix.distro }}' == 'arch' ]; then
+              pacman-key --init && pacman-key --populate archlinux
+              pacman -Syu --noconfirm base-devel clang cmake lua curl nlohmann-json git
+            fi
+
+            echo '--- Configuring and Building ---'
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+            cmake --build build --parallel
+          "
+
+    - name: Build on macOS
+      if: runner.os == 'macOS'
+      env:
+        CC: clang
+        CXX: clang++
+      shell: bash
+      run: |
+        set -ex
+        brew install cmake pkg-config lua curl nlohmann-json
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        cmake --build build --parallel
+
+    - name: Build on Windows
+      if: runner.os == 'Windows'
+      env:
+        VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+        VCPKG_DEFAULT_TRIPLET: ${{ matrix.arch }}-windows
+      shell: pwsh
+      run: |
+        set -ex
+        if ("${{ matrix.arch }}" -eq "arm64") {
+          Write-Host "Warning: ARM64 builds on Windows are not supported on standard GitHub-hosted runners."
+        }
+        choco install llvm ninja -y
+        git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+        cd $env:VCPKG_ROOT
+        .\bootstrap-vcpkg.bat
+        .\vcpkg.exe install curl lua nlohmann-json --triplet $env:VCPKG_DEFAULT_TRIPLET
+        cd ${{ github.workspace }}
+        cmake -S . -B build -G "Ninja" `
+          -DCMAKE_C_COMPILER=clang-cl `
+          -DCMAKE_CXX_COMPILER=clang-cl `
+          -DCMAKE_TOOLCHAIN_FILE="$($env:VCPKG_ROOT)/scripts/buildsystems/vcpkg.cmake" `
+          -DCMAKE_BUILD_TYPE=Release
+        cmake --build build --config Release --parallel
+
+    - name: Copy Runtime DLLs (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $vcpkgBinDir = "${{ env.VCPKG_ROOT }}/installed/${{ matrix.arch }}-windows/bin"
+        $targetBinDir = "build/bin"
+        New-Item -ItemType Directory -Force -Path $targetBinDir
+        $dllsToCopy = @(
+            "lua.dll",
+            "libcurl.dll",
+            "libcrypto-3.dll",
+            "libssl-3.dll",
+            "zlib1.dll"
+        )
+        foreach ($dll in $dllsToCopy) {
+            $sourcePath = Join-Path $vcpkgBinDir $dll
+            if (Test-Path $sourcePath) {
+                Copy-Item -Path $sourcePath -Destination $targetBinDir -Force
+                Write-Host "Copied $dll"
+            } else {
+                Write-Warning "DLL not found: $sourcePath"
+            }
+        }
+
+    - name: Create Release Package (Windows)
+      if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/')
+      shell: pwsh
+      run: |
+        $releaseDir = "phgit-release"
+        $buildBinDir = "build/bin"
+        $pluginsDir = "src/plugins"
+        $licenseFile = "LICENSE"
+        $tagVersion = "${{ github.ref_name }}"
+        $zipFileName = "phgit-windows-${{ matrix.arch }}-$tagVersion.zip"
+        New-Item -ItemType Directory -Force -Path $releaseDir
+        Copy-Item -Path "$buildBinDir/*" -Destination $releaseDir -Recurse -Force
+        New-Item -ItemType Directory -Force -Path "$releaseDir/plugins"
+        Copy-Item -Path "$pluginsDir/*" -Destination "$releaseDir/plugins" -Recurse -Force
+        Copy-Item -Path $licenseFile -Destination $releaseDir -Force
+        Compress-Archive -Path "$releaseDir/*" -DestinationPath $zipFileName -Force
+
+    - name: Upload Release Package Artifact (Windows)
+      if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/')
+      uses: actions/upload-artifact@v4
+      with:
+        name: phgit-release-windows-${{ matrix.arch }}-${{ github.ref_name }}
+        path: phgit-windows-*.zip
+
+    - name: Run C/C++ Unit Tests
+      if: runner.os != 'Windows' # ctest is run differently on windows
+      run: |
+        cd build
+        ctest --output-on-failure
+
+    - name: Run Tests (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        cd build
+        ctest -C Release --output-on-failure
+
+    - name: Run Rust Unit Tests
+      if: runner.os == 'Linux' # Only run on one platform to save time
+      run: |
+        # Loop through each module directory containing a Cargo.toml and run tests
+        for d in src/modules/*/ ; do
+          if [ -f "${d}Cargo.toml" ]; then
+            echo "--- Running tests in ${d} ---"
+            (cd "$d" && cargo test)
+          fi
+        done
+
+    - name: Run Integration Tests
+      if: runner.os == 'Linux' # Only run on one platform to save time
+      run: |
+        chmod +x tests/integration_test.sh
+        ./tests/integration_test.sh
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: phgit-build-${{ matrix.os }}-${{ matrix.arch }}
+        path: |
+          build/bin/
+          src/plugins/
+          LICENSE
+        retention-days: 3
