@@ -1,9 +1,15 @@
 use serde::{Serialize, Deserialize};
-use git2::{Repository, ObjectType, Signature, DiffOptions};
+use git2::{Repository, ObjectType, Signature, DiffOptions, BranchType, build::CheckoutBuilder};
 use std::path::Path;
 use tauri::command;
 use chrono::prelude::*;
 
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct BranchInfo {
+    name: String,
+    is_head: bool,
+}
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum DiffLineType { Context, Addition, Deletion, }
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -135,4 +141,48 @@ pub fn get_file_diff(repo_path: &str, file_path: &str) -> Result<FileDiff, Strin
         }),
     ).map_err(|e| format!("Falha ao processar as linhas do diff: {}", e))?;
     Ok(file_diff)
+}
+
+#[command]
+pub fn get_branches(repo_path: &str) -> Result<Vec<BranchInfo>, String> {
+    let repo = Repository::open(repo_path)
+        .map_err(|e| format!("Falha ao abrir o repositório: {}", e))?;
+
+    let branches = repo.branches(Some(BranchType::Local))
+        .map_err(|e| format!("Falha ao listar branches: {}", e))?;
+
+    let mut branch_list = Vec::new();
+
+    for branch_result in branches {
+        let branch = branch_result.map_err(|e| format!("Erro em uma branch: {}", e))?.0; // .0 para pegar a Branch
+        let name = branch.name()
+            .map_err(|e| format!("Erro ao ler nome da branch: {}", e))?
+            .unwrap_or("")
+            .to_string();
+
+        branch_list.push(BranchInfo {
+            name,
+            is_head: branch.is_head(),
+        });
+    }
+
+    Ok(branch_list)
+}
+
+#[command]
+pub fn checkout_branch(repo_path: &str, branch_name: &str) -> Result<(), String> {
+    let repo = Repository::open(repo_path)
+        .map_err(|e| format!("Falha ao abrir o repositório: {}", e))?;
+
+    repo.set_head(&format!("refs/heads/{}", branch_name))
+        .map_err(|e| format!("Falha ao mudar o HEAD para '{}': {}", branch_name, e))?;
+
+   
+    let mut checkout_opts = CheckoutBuilder::new();
+    checkout_opts.force();
+
+    repo.checkout_head(Some(&mut checkout_opts))
+        .map_err(|e| format!("Falha ao fazer checkout dos arquivos: {}", e))?;
+
+    Ok(())
 }

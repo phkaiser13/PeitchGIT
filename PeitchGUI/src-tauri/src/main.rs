@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter}; // <-- CORREÇÃO: Adicionamos Emitter aqui
+use tauri::{AppHandle, Emitter};
 use notify_debouncer_full::{new_debouncer, DebounceEventResult, notify::{RecursiveMode, Watcher}};
 
 mod git_commands;
@@ -44,7 +44,9 @@ fn main() {
             git_commands::unstage_file,
             git_commands::commit_files,
             git_commands::get_commit_history,
-            git_commands::get_file_diff
+            git_commands::get_file_diff,
+            git_commands::get_branches,
+            git_commands::checkout_branch
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

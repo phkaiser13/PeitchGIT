@@ -64,7 +64,7 @@ jobs:
       # -B build specifies that the build files will be placed in a 'build' directory.
       # -DCMAKE_BUILD_TYPE=Release enables optimizations for the final build.
       - name: Configure CMake
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
       # Step 8: Compile the project.
       # --build build tells CMake to execute the build process in the 'build' directory.

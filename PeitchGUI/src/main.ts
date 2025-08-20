@@ -29,6 +29,10 @@ interface CommitInfo {
     parents: string[];
 }
 
+interface BranchInfo {
+    name: string;
+    is_head: boolean;
+}
 // --- Variável Global ---
 const REPO_PATH = "C:/Users/vitor.lemes/Downloads/PeitchGIT";
 
@@ -147,21 +151,58 @@ async function handleCommit() {
 
 async function fetchAllData() {
   try {
-    const [status, history] = await Promise.all([
+    // Agora busca status, histórico E branches de uma só vez
+    const [status, history, branches] = await Promise.all([
         invoke<RepoStatus>("get_git_status", { repoPath: REPO_PATH }),
-        invoke<CommitInfo[]>("get_commit_history", { repoPath: REPO_PATH })
+        invoke<CommitInfo[]>("get_commit_history", { repoPath: REPO_PATH }),
+        invoke<BranchInfo[]>("get_branches", { repoPath: REPO_PATH })
     ]);
-    // Apenas renderiza o status se a view de status estiver ativa
+
     if(document.querySelector("#staged-files-list")) {
         renderStatus(status);
     }
     renderHistory(history);
+    renderBranches(branches); // Chama a nova função de renderização
+
   } catch (error) {
     console.error("Erro ao buscar dados do repositório:", error);
     document.querySelector<HTMLDivElement>("#app")!.innerHTML = `<h1>Erro</h1><p>${error}</p>`;
   }
 }
 
+function renderBranches(branches: BranchInfo[]) {
+    const branchList = document.querySelector<HTMLUListElement>("#branch-list")!;
+    branchList.innerHTML = branches.map(branch => `
+        <li class="branch-item ${branch.is_head ? 'active' : ''}" data-branch-name="${branch.name}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v12"/><path d="M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M18 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M6 15a6 6 0 0 0 5.57 5.95"/><path d="M12 3.55A6 6 0 0 1 17.84 9"/></svg>
+            <span>${branch.name}</span>
+        </li>
+    `).join("");
+}
+
+async function handleSidePanelClick(event: Event) {
+    const target = event.target as HTMLElement;
+    const branchItem = target.closest('.branch-item');
+
+    if (branchItem && branchItem.classList.contains('active')) {
+        return; // Não faz nada se clicar na branch que já está ativa
+    }
+
+    if (branchItem) {
+        const branchName = branchItem.getAttribute('data-branch-name');
+        if (branchName) {
+            try {
+                console.log(`Trocando para a branch: ${branchName}...`);
+                await invoke("checkout_branch", { repoPath: REPO_PATH, branchName });
+                console.log("Troca de branch bem-sucedida!");
+                fetchAllData(); // Atualiza toda a UI após o checkout
+            } catch (error) {
+                console.error(`Falha ao trocar para a branch ${branchName}:`, error);
+                alert(`Falha ao trocar para a branch: ${error}`);
+            }
+        }
+    }
+}
 // --- Inicialização da Aplicação ---
 document.addEventListener("DOMContentLoaded", async () => {
   const appDiv = document.querySelector<HTMLDivElement>("#app")!;
@@ -169,6 +210,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     <div class="container">
         <div class="main-panel"></div>
         <div class="side-panel">
+            <h2>Branches</h2>
+            <ul id="branch-list"></ul>
             <h2>Histórico</h2>
             <ul id="history-list"></ul>
         </div>
@@ -184,6 +227,9 @@ document.addEventListener("DOMContentLoaded", async () => {
           handleMainPanelClick(event);
       }
   });
+
+
+    document.querySelector('.side-panel')?.addEventListener('click', handleSidePanelClick); // Novo listener para o painel lateral
 
   // Listener para o vigia de arquivos
   await listen('file-changed', () => {
