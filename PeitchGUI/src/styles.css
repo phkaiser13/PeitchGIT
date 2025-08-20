@@ -1,0 +1,259 @@
+/* PeitchGUI/src/styles.css - Nova Versão com Estilo Profissional */
+
+/* 1. SISTEMA DE DESIGN: Variáveis Globais */
+:root {
+  font-family: 'Segoe UI', Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.6;
+  font-weight: 400;
+
+  /* Paleta de Cores */
+  --color-background: #1e1e1e;
+  --color-panel: #252526;
+  --color-panel-light: #2d2d30;
+  --color-border: #3f3f41;
+  --color-text: #cccccc;
+  --color-text-muted: #8c8c8c;
+  --color-primary: #007acc;
+  --color-primary-hover: #009bff;
+  --color-accent-green: #2a9d8f;
+  --color-accent-yellow: #e9c46a;
+  --color-accent-red: #e76f51;
+
+  color-scheme: dark;
+  color: var(--color-text);
+  background-color: var(--color-background);
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+}
+
+/* 2. LAYOUT PRINCIPAL */
+#app {
+  padding: 1rem;
+  height: 100vh;
+  box-sizing: border-box;
+}
+
+.container {
+  display: flex;
+  gap: 1.5rem;
+  height: 100%;
+}
+
+.main-panel {
+  flex: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.side-panel {
+  flex: 1;
+  background-color: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto; /* Permite scroll se o histórico for longo */
+}
+
+section {
+  background-color: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 1rem 1.5rem;
+}
+
+h1, h2 {
+  margin-top: 0;
+  font-weight: 300;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.75rem;
+}
+
+/* 3. COMPONENTES ESTILIZADOS */
+
+/* Listas de Arquivos */
+.file-list {
+  list-style-type: none;
+  padding: 0;
+  max-height: 200px; /* Limita a altura para permitir scroll */
+  overflow-y: auto;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  padding: 0.6rem 0.5rem;
+  border-radius: 5px;
+  margin-bottom: 0.25rem;
+  background-color: var(--color-panel-light);
+  border-left: 3px solid transparent; /* Destaque lateral */
+  
+  /* ANIMAÇÃO: Transição suave */
+  transition: background-color 0.2s ease, border-left-color 0.2s ease;
+}
+
+.file-item:hover {
+  background-color: #3c3c3c;
+}
+
+.file-path {
+  flex-grow: 1;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 0.9rem;
+}
+
+.status-badge {
+  color: white;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-weight: bold;
+  margin-right: 1rem;
+  font-size: 0.8rem;
+  text-align: center;
+  min-width: 1em;
+}
+
+.status-new { border-left-color: var(--color-accent-green); }
+.status-modified { border-left-color: var(--color-accent-yellow); }
+.status-deleted { border-left-color: var(--color-accent-red); }
+.status-staged { background-color: var(--color-accent-green); }
+
+/* Botões de Ação */
+.action-button {
+  background-color: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  border-radius: 5px;
+  cursor: pointer;
+  padding: 0.2rem 0.6rem;
+  margin-left: 1rem;
+  font-size: 1.2rem;
+  line-height: 1;
+  
+  /* ANIMAÇÃO: Transição suave */
+  transition: all 0.2s ease;
+}
+
+.action-button:hover {
+  background-color: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+/* Seção de Commit */
+#commit-section textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background-color: var(--color-panel-light);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  border-radius: 5px;
+  padding: 0.75rem;
+  resize: vertical;
+  margin-bottom: 0.5rem;
+}
+
+#commit-btn {
+  width: 100%;
+  padding: 0.8rem;
+  font-size: 1rem;
+  font-weight: bold;
+  background-color: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  
+  /* ANIMAÇÃO: Transição suave */
+  transition: background-color 0.2s ease;
+}
+
+#commit-btn:hover:not(:disabled) {
+  background-color: var(--color-primary-hover);
+}
+
+#commit-btn:disabled {
+  background-color: #333;
+  color: #666;
+  cursor: not-allowed;
+}
+
+/* Painel de Histórico */
+#history-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.commit-item {
+  padding: 0.75rem 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+  
+  /* ANIMAÇÃO: Transição suave */
+  transition: background-color 0.2s ease;
+}
+
+.commit-item:hover {
+    background-color: var(--color-panel-light);
+}
+
+.commit-item:last-child { border-bottom: none; }
+.commit-message { font-weight: 500; margin-bottom: 0.25rem; }
+.commit-details { font-size: 0.8rem; color: var(--color-text-muted); margin-bottom: 0.25rem; }
+.commit-id { font-family: monospace; font-size: 0.8rem; color: #777; }
+
+.diff-panel {
+    flex: 3; /* Ocupa o espaço do painel principal */
+    background-color: var(--color-panel);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 0;
+    font-family: 'Consolas', 'Courier New', monospace;
+    overflow-y: auto;
+}
+
+.diff-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--color-border);
+    background-color: var(--color-panel-light);
+}
+
+.diff-content {
+    padding: 1rem 1.5rem;
+}
+
+.diff-line {
+    white-space: pre;
+    padding-left: 1rem;
+}
+
+.diff-line.addition {
+    background-color: rgba(42, 157, 143, 0.2);
+}
+.diff-line.addition::before {
+    content: '+';
+    display: inline-block;
+    width: 1rem;
+    text-align: center;
+    color: var(--color-accent-green);
+}
+
+.diff-line.deletion {
+    background-color: rgba(231, 111, 81, 0.2);
+}
+.diff-line.deletion::before {
+    content: '-';
+    display: inline-block;
+    width: 1rem;
+    text-align: center;
+    color: var(--color-accent-red);
+}
