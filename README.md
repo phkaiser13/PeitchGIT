@@ -31,7 +31,7 @@
 </div>
 
 
-## Table of Contents
+## Table of Contents !
 
   - [Documentation](docs/introduction.md)
   - [What is `phgit`?](https://www.google.com/search?q=%23what-is-phgit)
