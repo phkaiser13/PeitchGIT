@@ -1,4 +1,6 @@
-import { invoke, listen } from "@tauri-apps/api/core";
+// CORREÇÃO: 'invoke' e 'listen' agora são importados de pacotes diferentes.
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import "./styles.css";
 
 // --- Nossos Tipos (Interfaces) ---
@@ -10,33 +12,28 @@ interface DiffLine {
 interface FileDiff {
     lines: DiffLine[];
 }
-
 type FileStatusType = "New" | "Modified" | "Deleted" | "Renamed" | "Typechange" | "Staged";
-
 interface FileStatus {
   path: string;
   status: FileStatusType;
 }
-
 interface RepoStatus {
   working_dir_files: FileStatus[];
   staged_files: FileStatus[];
 }
-
 interface CommitInfo {
     id: string;
     message: string;
     author: string;
     date: string;
+    parents: string[];
 }
 
 // --- Variável Global ---
-// IMPORTANTE: Certifique-se de que este caminho aponta para um repositório Git válido no seu PC.
-const REPO_PATH = "C:/Users/vitor/Downloads/MeuRepoDeTeste";
+const REPO_PATH = "C:/Users/vitor.lemes/Downloads/PeitchGIT";
 
 // --- Funções de Renderização ---
 
-// Função principal que decide qual painel mostrar: status ou diff
 function showStatusView() {
     const mainPanel = document.querySelector<HTMLDivElement>(".main-panel")!;
     mainPanel.innerHTML = `
@@ -55,7 +52,7 @@ function showStatusView() {
           <ul id="modified-files-list" class="file-list"></ul>
         </section>
     `;
-    fetchAllData(); // Busca dados de status e histórico para preencher a nova view
+    fetchAllData();
 }
 
 function showDiffView(filePath: string, diff: FileDiff) {
@@ -65,7 +62,6 @@ function showDiffView(filePath: string, diff: FileDiff) {
         const escapedContent = line.content.replace(/</g, "&lt;").replace(/>/g, "&gt;");
         return `<div class="diff-line ${lineClass}">${escapedContent}</div>`;
     }).join("");
-
     mainPanel.innerHTML = `
         <div class="diff-panel">
             <div class="diff-header">
@@ -82,8 +78,6 @@ function createFileItemHTML(file: FileStatus, isStaged: boolean): string {
   const actionButton = isStaged
     ? `<button class="action-button unstage-btn" data-file="${file.path}">Unstage (-)</button>`
     : `<button class="action-button stage-btn" data-file="${file.path}">Stage (+)</button>`;
-
-  // Adicionamos o data-file no span do caminho para o clique do diff
   return `
     <li class="file-item">
       <span class="status-badge ${statusClass}">${file.status.charAt(0)}</span>
@@ -97,39 +91,26 @@ function renderStatus(status: RepoStatus) {
   const stagedFilesList = document.querySelector<HTMLUListElement>("#staged-files-list")!;
   const modifiedFilesList = document.querySelector<HTMLUListElement>("#modified-files-list")!;
   const commitButton = document.querySelector<HTMLButtonElement>("#commit-btn")!;
-
-  stagedFilesList.innerHTML = status.staged_files.length
-    ? status.staged_files.map(file => createFileItemHTML(file, true)).join("")
-    : "<li>Nenhum arquivo preparado.</li>";
-
-  modifiedFilesList.innerHTML = status.working_dir_files.length
-    ? status.working_dir_files.map(file => createFileItemHTML(file, false)).join("")
-    : "<li>Nenhuma alteração no diretório.</li>";
-    
+  stagedFilesList.innerHTML = status.staged_files.length ? status.staged_files.map(file => createFileItemHTML(file, true)).join("") : "<li>Nenhum arquivo preparado.</li>";
+  modifiedFilesList.innerHTML = status.working_dir_files.length ? status.working_dir_files.map(file => createFileItemHTML(file, false)).join("") : "<li>Nenhuma alteração no diretório.</li>";
   commitButton.disabled = status.staged_files.length === 0;
 }
 
 function renderHistory(history: CommitInfo[]) {
     const historyList = document.querySelector<HTMLUListElement>("#history-list")!;
-    historyList.innerHTML = history.length ? history.map(commit => `
-        <li class="commit-item">
-            <div class="commit-message">${commit.message}</div>
-            <div class="commit-details">
-                <strong>${commit.author}</strong> em <em>${commit.date}</em>
-            </div>
-            <div class="commit-id">${commit.id.substring(0, 7)}</div>
-        </li>
-    `).join("") : "<li>Nenhum commit encontrado.</li>";
+    historyList.innerHTML = history.length ? history.map(commit => `<li class="commit-item"><div class="commit-message">${commit.message}</div><div class="commit-details"><strong>${commit.author}</strong> em <em>${commit.date}</em></div><div class="commit-id">${commit.id.substring(0, 7)}</div></li>`).join("") : "<li>Nenhum commit encontrado.</li>";
 }
 
 // --- Funções de Lógica e Eventos ---
 
 async function handleMainPanelClick(event: Event) {
     const target = event.target as HTMLElement;
+    if (target.matches('#back-to-status-btn')) {
+        showStatusView();
+        return;
+    }
     const filePath = target.dataset.file;
-
-    if (!filePath) return; // Se não clicou em algo com data-file, ignora
-
+    if (!filePath) return;
     if (target.matches('.stage-btn')) {
         await invoke("stage_file", { repoPath: REPO_PATH, filePath });
         fetchAllData();
@@ -143,20 +124,16 @@ async function handleMainPanelClick(event: Event) {
         } catch (error) {
             console.error(`Erro ao buscar diff para ${filePath}:`, error);
         }
-    } else if (target.matches('#back-to-status-btn')) {
-        showStatusView();
     }
 }
 
 async function handleCommit() {
     const commitMessageInput = document.querySelector<HTMLTextAreaElement>("#commit-message")!;
     const message = commitMessageInput.value.trim();
-    
     if (!message) {
         alert("Por favor, insira uma mensagem de commit.");
         return;
     }
-
     try {
         await invoke("commit_files", { repoPath: REPO_PATH, message });
         alert("Commit criado com sucesso!");
@@ -174,7 +151,10 @@ async function fetchAllData() {
         invoke<RepoStatus>("get_git_status", { repoPath: REPO_PATH }),
         invoke<CommitInfo[]>("get_commit_history", { repoPath: REPO_PATH })
     ]);
-    renderStatus(status);
+    // Apenas renderiza o status se a view de status estiver ativa
+    if(document.querySelector("#staged-files-list")) {
+        renderStatus(status);
+    }
     renderHistory(history);
   } catch (error) {
     console.error("Erro ao buscar dados do repositório:", error);
@@ -195,20 +175,24 @@ document.addEventListener("DOMContentLoaded", async () => {
     </div>
   `;
   
-  // Adiciona os "gerentes" de eventos
-  document.querySelector('.main-panel')?.addEventListener('click', handleMainPanelClick);
-  document.querySelector('#app')?.addEventListener('click', (event) => {
-      // O botão de commit está fora do .main-panel após a renderização do diff
-      if ((event.target as HTMLElement).matches('#commit-btn')) {
+  // Delegação de eventos principal
+  document.querySelector('.container')?.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement;
+      if (target.matches('#commit-btn')) {
           handleCommit();
+      } else if (target.closest('.main-panel')) {
+          handleMainPanelClick(event);
       }
   });
 
-  // Reativa o "vigia" de arquivos
+  // Listener para o vigia de arquivos
   await listen('file-changed', () => {
       console.log('Evento "file-changed" recebido do Rust!');
-      fetchAllData();
+      // Apenas busca os dados se a view de status estiver visível
+      if(document.querySelector("#staged-files-list")) {
+        fetchAllData();
+      }
   });
 
-  showStatusView(); // Mostra a tela de status como padrão
+  showStatusView()
 });
