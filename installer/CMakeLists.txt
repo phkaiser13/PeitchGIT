@@ -157,3 +157,10 @@ else()
 endif()
 
 include(CPack)
+
+add_custom_command(TARGET installer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+    "${CMAKE_CURRENT_SOURCE_DIR}/config.json"
+    "$<TARGET_FILE_DIR:installer>/config.json"
+    COMMENT "Copiando config.json para o diretório de saída do build"
+)
