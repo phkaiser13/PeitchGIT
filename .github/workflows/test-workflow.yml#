@@ -1,6 +1,5 @@
- .github/workflows/test-workflow.yml
 
- name: 'Test Workflow'
+name: 'Test Workflow'
 
 on:
   push:
