@@ -1,69 +1,51 @@
-warning: unused import: `Manager`
- --> src\main.rs:7:13
-  |
-7 | use tauri::{Manager, AppHandle};
-  |             ^^^^^^^
-  |
-  = note: `#[warn(unused_imports)]` on by default
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-warning: unused import: `Debouncer`
- --> src\main.rs:8:65
-  |
-8 | use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, notify::RecursiveMode};
-  |                                                                 ^^^^^^^^^
+use std::path::PathBuf;
+use std::time::Duration;
+use tauri::{AppHandle, Emitter}; // <-- CORREÇÃO: Adicionamos Emitter aqui
+use notify_debouncer_full::{new_debouncer, DebounceEventResult, notify::{RecursiveMode, Watcher}};
 
-warning: unused import: `Diff`
- --> src\git_commands.rs:2:60
-  |
-2 | use git2::{Repository, ObjectType, Signature, DiffOptions, Diff};
-  |                                                            ^^^^
+mod git_commands;
 
-error[E0599]: no method named `emit_all` found for struct `AppHandle` in the current scope
-  --> src\main.rs:23:32
-   |
-23 |                     app_handle.emit_all("file-changed", ()).unwrap();
-   |                                ^^^^^^^^
-   |
-help: there is a method `emit` with a similar name
-   |
-23 -                     app_handle.emit_all("file-changed", ()).unwrap();
-23 +                     app_handle.emit("file-changed", ()).unwrap();
-   |
+fn start_file_watcher(app_handle: AppHandle, repo_path: PathBuf) {
+    std::thread::spawn(move || {
+        let mut debouncer = new_debouncer(Duration::from_secs(2), None, move |res: DebounceEventResult| {
+            match res {
+                Ok(_) => {
+                    println!("Mudança detectada no sistema de arquivos, emitindo evento.");
+                    // Agora que Emitter está no escopo, este comando funcionará.
+                    app_handle.emit("file-changed", ()).unwrap();
+                }
+                Err(e) => println!("Erro no watcher: {:?}", e),
+            }
+        }).unwrap();
 
-error[E0599]: no method named `watch` found for mutable reference `&mut notify_debouncer_full::notify::ReadDirectoryChangesWatcher` in the current scope
-   --> src\main.rs:30:29
-    |
-30  |         debouncer.watcher().watch(&repo_path, RecursiveMode::Recursive).unwrap();
-    |                             ^^^^^
-    |
-    = help: items from traits can only be used if the trait is in scope
-help: there is a method `unwatch` with a similar name, but with different arguments
-   --> C:\Users\vitor\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-6.1.1\src\lib.rs:348:5
-    |
-348 |     fn unwatch(&mut self, path: &Path) -> Result<()>;
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-help: trait `Watcher` which provides `watch` is implemented but not in scope; perhaps you want to import it
-    |
-5   + use notify_debouncer_full::notify::Watcher;
-    |
+        debouncer.watcher().watch(&repo_path, RecursiveMode::Recursive).unwrap();
+        
+        let git_dir = repo_path.join(".git");
+        debouncer.watcher().watch(&git_dir, RecursiveMode::Recursive).unwrap();
 
-error[E0599]: no method named `watch` found for mutable reference `&mut notify_debouncer_full::notify::ReadDirectoryChangesWatcher` in the current scope
-   --> src\main.rs:34:29
-    |
-34  |         debouncer.watcher().watch(&git_dir, RecursiveMode::Recursive).unwrap();
-    |                             ^^^^^
-    |
-    = help: items from traits can only be used if the trait is in scope
-help: there is a method `unwatch` with a similar name, but with different arguments
-   --> C:\Users\vitor\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\notify-6.1.1\src\lib.rs:348:5
-    |
-348 |     fn unwatch(&mut self, path: &Path) -> Result<()>;
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-help: trait `Watcher` which provides `watch` is implemented but not in scope; perhaps you want to import it
-    |
-5   + use notify_debouncer_full::notify::Watcher;
-    |
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    });
+}
 
-For more information about this error, try `rustc --explain E0599`.
-warning: `peitch-gui` (bin "peitch-gui") generated 3 warnings
-error: could not compile `peitch-gui` (bin "peitch-gui") due to 3 previous errors; 3 warnings emitted
+fn main() {
+    tauri::Builder::default()
+        .setup(|app| {
+            let repo_path_str = "C:/Users/vitor/Downloads/MeuRepoDeTeste"; 
+            start_file_watcher(app.handle().clone(), PathBuf::from(repo_path_str));
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            git_commands::get_git_status,
+            git_commands::stage_file,
+            git_commands::unstage_file,
+            git_commands::commit_files,
+            git_commands::get_commit_history,
+            git_commands::get_file_diff
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
