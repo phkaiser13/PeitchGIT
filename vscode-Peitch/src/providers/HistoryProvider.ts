@@ -9,7 +9,7 @@ export class HistoryProvider implements vscode.TreeDataProvider<HistoryItem> {
     readonly onDidChangeTreeData: vscode.Event<HistoryItem | undefined | null> = this._onDidChangeTreeData.event;
 
     refresh(): void {
-        this._onDidChangeTreeData.fire();
+        this._onDidChangeTreeData.fire(undefined);
     }
 
     getTreeItem(element: HistoryItem): vscode.TreeItem {

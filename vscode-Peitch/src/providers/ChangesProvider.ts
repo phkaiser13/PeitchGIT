@@ -9,7 +9,7 @@ export class ChangesProvider implements vscode.TreeDataProvider<ChangeItem> {
     readonly onDidChangeTreeData: vscode.Event<ChangeItem | undefined | null> = this._onDidChangeTreeData.event;
 
     refresh(): void {
-        this._onDidChangeTreeData.fire();
+        this._onDidChangeTreeData.fire(undefined);
     }
 
     getTreeItem(element: ChangeItem): vscode.TreeItem {

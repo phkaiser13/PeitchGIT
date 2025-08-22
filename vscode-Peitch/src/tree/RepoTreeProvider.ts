@@ -60,7 +60,7 @@ export class RepoTreeProvider implements vscode.TreeDataProvider<TreeItem> {
     }
 
     refresh(): void {
-        this._onDidChangeTreeData.fire();
+        this._onDidChangeTreeData.fire(undefined);
     }
 
     private getWorkspacePath(): string | undefined {
