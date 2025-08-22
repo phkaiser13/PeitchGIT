@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    background-color: var(--vscode-sideBar-background);
+    color: var(--vscode-editor-foreground);
+    font-family: var(--vscode-font-family);
+}
