@@ -1,14 +1,14 @@
 {
-  "name": "peitch",
+  "name": "PeitchLens",
   "displayName": "Peitch",
   "description": "A powerful and user-friendly Git client, deeply integrated into VS Code.",
   "version": "0.0.1",
-  "publisher": "peitch",
+  "publisher": "PeitchLens",
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Source Control"
+    "SCM Providers"
   ],
   "activationEvents": [
     "onStartup"
