@@ -1,4 +1,4 @@
-<!-- Enhanced README header for phgit -->
+ <!-- Enhanced README header for phgit -->
 <div align="center" style="font-family:Segoe UI, Roboto, sans-serif;">
   <a href="https://github.com/phkaiser13/peitchgit">
     <!-- Optional: Insert project logo here -->
@@ -22,7 +22,7 @@
       <img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=for-the-badge" alt="License" />
     </a>
     <a href="https://github.com/phkaiser13/peitchgit/actions">
-      <img src="https://img.shields.io/github/actions/workflow/status/phkaiser13/peitchgit/build-ubuntu.yml?branch=main&logo=github&style=for-the-badge" alt="Build Status" />
+      <img src="https://img.shields.io/github/actions/workflow/status/phkaiser13/peitchgit/build-phgit.yml?branch=main&logo=github&style=for-the-badge" alt="Build Status" />
     </a>
     <a href="https://github.com/phkaiser13/peitchgit/graphs/contributors">
       <img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=for-the-badge" alt="Contributions Welcome" />
