@@ -1,39 +1,20 @@
 /* Copyright (C) 2025 Pedro Henrique / phkaiser13
-* File: windows_installer.cpp
-* This file implements the WindowsInstaller class, which acts as a post-installation
-* assistant. Its primary role is to check for external dependencies like Git, Terraform,
-* and Vault, and interactively guide the user to install them if they are missing.
-* It does *not* perform any file installation or system modification itself, as that
-* is the responsibility of the primary installer (e.g., NSIS).
-* SPDX-License-Identifier: Apache-2.0
-*/
+ * File: windows_installer.cpp
+ * Refactored to be an interactive post-installation assistant.
+ * Removed silent downloads, registry edits, PATH modifications, and archive extraction.
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include "platform/windows/windows_installer.hpp"
 #include "spdlog/spdlog.h"
-
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <shellapi.h> // Required for ShellExecuteA to open URLs
+#include <filesystem>
 #include <iostream>
-#include <string>
-#include <algorithm>
-#include <cctype>
+#include <windows.h>
+#include <shlobj.h>
 
 namespace phgit_installer::platform {
 
-    // Anonymous namespace for internal helper functions
-    namespace {
-        /**
-         * @brief Converts a string to lowercase.
-         * @param s The string to convert.
-         * @return The lowercased string.
-         */
-        std::string to_lower(std::string s) {
-            std::transform(s.begin(), s.end(), s.begin(),
-                           [](unsigned char c){ return std::tolower(c); });
-            return s;
-        }
-    }
+    namespace fs = std::filesystem;
 
     WindowsInstaller::WindowsInstaller(
         platform::PlatformInfo info,
@@ -44,112 +25,133 @@ namespace phgit_installer::platform {
           m_dep_manager(dep_manager),
           m_api_manager(std::move(api_manager)),
           m_config(std::move(config)) {
-        spdlog::debug("Windows Post-Installation Assistant initialized.");
+        spdlog::debug("WindowsInstaller engine initialized (interactive assistant mode).");
     }
 
     void WindowsInstaller::run_installation() {
-        spdlog::info("Starting post-installation dependency check for Windows.");
-        std::cout << "--- Post-Installation Dependency Assistant ---\n" << std::endl;
+        spdlog::info("Iniciando tarefas de pós-instalação para Windows.");
 
-        // Check for Git (required dependency)
-        if (!m_dep_manager.get_status("git").value_or(dependencies::DependencyStatus{}).is_version_ok) {
+        // Check Git
+        auto git_status = m_dep_manager.get_status("git").value_or(dependencies::DependencyStatus{});
+        if (!git_status.is_version_ok) {
             prompt_user_to_install_git();
         } else {
-            spdlog::info("Git dependency is satisfied.");
-            std::cout << "[OK] Git is installed and meets the version requirements." << std::endl;
+            spdlog::info("Git presente e versão compatível.");
         }
 
-        // Check for Terraform (optional dependency)
-        if (!m_dep_manager.get_status("terraform").value_or(dependencies::DependencyStatus{}).is_version_ok) {
-            prompt_user_to_install_optional("Terraform");
+        // Optional deps: Terraform and Vault
+        for (const auto& name : {"terraform", "vault"}) {
+            auto status = m_dep_manager.get_status(name).value_or(dependencies::DependencyStatus{});
+            if (!status.is_version_ok) {
+                prompt_user_to_install_optional(name);
+            } else {
+                spdlog::info("Dependência opcional '{}' presente e versão compatível.", name);
+            }
+        }
+
+        spdlog::info("Verificação de dependências concluída. Prosseguindo com verificações locais.");
+        perform_installation();
+    }
+
+    void WindowsInstaller::perform_installation() {
+        // Determine install directory (same logic as before, but do not modify system)
+        bool for_all_users = m_platform_info.is_privileged;
+        std::string install_dir;
+        char path[MAX_PATH];
+        if (for_all_users) {
+            if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_PROGRAM_FILES, NULL, 0, path)))
+                install_dir = (fs::path(path) / "phgit").string();
         } else {
-            spdlog::info("Terraform dependency is satisfied.");
-            std::cout << "[OK] Terraform is installed and meets the version requirements." << std::endl;
+            if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, path)))
+                install_dir = (fs::path(path) / "Programs" / "phgit").string();
         }
 
-        // Check for Vault (optional dependency)
-        if (!m_dep_manager.get_status("vault").value_or(dependencies::DependencyStatus{}).is_version_ok) {
-            prompt_user_to_install_optional("Vault");
-        } else {
-            spdlog::info("Vault dependency is satisfied.");
-            std::cout << "[OK] Vault is installed and meets the version requirements." << std::endl;
+        if (install_dir.empty()) {
+            spdlog::error("Não foi possível determinar o diretório de instalação. Abortando.");
+            return;
         }
 
-        spdlog::info("Dependency check completed.");
-        std::cout << "\nDependency check finished. The application is now ready." << std::endl;
-        std::cout << "Press Enter to exit." << std::endl;
-        std::cin.get(); // Wait for user confirmation before closing the console
+        spdlog::info("Target installation directory: {}", install_dir);
+        fs::create_directories(install_dir);
+
+        // Confirm application files (NSIS is expected to have already copied them)
+        install_application_files(install_dir);
+
+        // Do NOT perform system integration here — NSIS/WiX must handle PATH/registry/shortcuts.
+        spdlog::info("System integration (PATH/registry/shortcuts) is handled by the package installer (NSIS/WiX).");
+        spdlog::info("Windows post-installation assistant completed.");
+    }
+
+    bool WindowsInstaller::install_application_files(const std::string& install_path) {
+        spdlog::info("Verificando arquivos do aplicativo em {}", install_path);
+        bool ok = true;
+        if (!fs::exists(fs::path(install_path) / "bin" / "phgit.exe")) {
+             spdlog::warn("Main application executable 'phgit.exe' not found where expected.");
+             ok = false;
+        }
+        if (!fs::exists(fs::path(install_path) / "config.json")) {
+             spdlog::warn("Core 'config.json' not found where expected.");
+             ok = false;
+        }
+        if (ok) spdlog::info("Arquivos principais verificados.");
+        else spdlog::warn("Alguns arquivos esperados não foram encontrados. Confirme o pacote NSIS.");
+        return ok;
     }
 
     void WindowsInstaller::prompt_user_to_install_git() {
-        spdlog::warn("Required dependency 'Git' is missing or outdated.");
-        std::cout << "\n[REQUIRED] Git was not found on your system or the version is too old." << std::endl;
-        std::cout << "Git is essential for the core functionality of this application." << std::endl;
+        // Prompt the user and, if agreed, open the official Git for Windows download page.
+        // This function intentionally does not download or install anything.
+        std::cout << std::endl;
+        std::cout << "Git for Windows não foi encontrado ou não atende à versão mínima." << std::endl;
+        std::cout << "Recomendamos instalar o Git manualmente para garantir controle e segurança." << std::endl;
+        std::cout << "Deseja abrir a página oficial de download do Git for Windows agora? (s/N): ";
+        std::string response;
+        std::getline(std::cin, response);
 
-        char user_choice;
-        while (true) {
-            std::cout << "Would you like to open the official Git for Windows download page in your browser? (y/n): ";
-            std::cin >> user_choice;
-            user_choice = std::tolower(user_choice);
-            if (user_choice == 'y' || user_choice == 'n') {
-                // Clear the input buffer for the final 'cin.get()' in run_installation
-                std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-                break;
+        if (!response.empty() && (response[0] == 's' || response[0] == 'S' || response[0] == 'y' || response[0] == 'Y')) {
+            const char* url = "https://git-scm.com/download/win";
+            spdlog::info("Abrindo navegador para: {}", url);
+            HINSTANCE result = ShellExecuteA(NULL, "open", url, NULL, NULL, SW_SHOWNORMAL);
+            if ((intptr_t)result <= 32) {
+                spdlog::warn("Falha ao abrir o navegador automaticamente. Forneça manualmente: {}", url);
+                std::cout << "Por favor, visite: " << url << std::endl;
+            } else {
+                spdlog::info("Navegador aberto com sucesso (se suportado pelo sistema).");
             }
-            std::cout << "Invalid input. Please enter 'y' for yes or 'n' for no." << std::endl;
-            std::cin.clear();
-            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-        }
-
-        if (user_choice == 'y') {
-            // Fetch the URL from a reliable source (config or API)
-            std::string url = m_api_manager->get_download_page_url("git_for_windows").value_or("https://git-scm.com/download/win");
-            spdlog::info("User chose to open the Git download page: {}", url);
-            std::cout << "Opening " << url << " in your default browser..." << std::endl;
-
-            // Use ShellExecuteA for maximum compatibility to open the URL
-            ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
-
-            std::cout << "Please download and run the installer. After installation, you may need to restart this application." << std::endl;
         } else {
-            spdlog::info("User declined to install Git at this time.");
-            std::cout << "You can install Git later, but some features may not work correctly." << std::endl;
+            spdlog::info("Usuário optou por não abrir a página de download do Git neste momento.");
         }
     }
 
     void WindowsInstaller::prompt_user_to_install_optional(const std::string& dependency_name) {
-        spdlog::warn("Optional dependency '{}' is missing or outdated.", dependency_name);
-        std::cout << "\n[OPTIONAL] " << dependency_name << " was not found on your system." << std::endl;
-        std::cout << "This tool is recommended for extended features but is not required for basic operation." << std::endl;
+        // Prompt the user and, if agreed, open the official download/documentation page for the dependency.
+        std::cout << std::endl;
+        std::cout << "Dependência opcional '" << dependency_name << "' não encontrada ou desatualizada." << std::endl;
+        std::cout << "Deseja abrir a página oficial de download/documentação para '" << dependency_name << "'? (s/N): ";
+        std::string response;
+        std::getline(std::cin, response);
 
-        char user_choice;
-        while (true) {
-            std::cout << "Would you like to open the official " << dependency_name << " download page? (y/n): ";
-            std::cin >> user_choice;
-            user_choice = std::tolower(user_choice);
-            if (user_choice == 'y' || user_choice == 'n') {
-                std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-                break;
+        if (!response.empty() && (response[0] == 's' || response[0] == 'S' || response[0] == 'y' || response[0] == 'Y')) {
+            const char* url = nullptr;
+            if (dependency_name == "terraform") {
+                url = "https://developer.hashicorp.com/terraform/downloads";
+            } else if (dependency_name == "vault") {
+                url = "https://developer.hashicorp.com/vault/downloads";
+            } else {
+                // Fallback to a search page for unknown dependencies
+                url = "https://www.google.com/search?q=";
             }
-            std::cout << "Invalid input. Please enter 'y' for yes or 'n' for no." << std::endl;
-            std::cin.clear();
-            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-        }
 
-        if (user_choice == 'y') {
-            std::string api_key = to_lower(dependency_name);
-            std::string default_url = "https://www.google.com/search?q=download+" + dependency_name;
-            std::string url = m_api_manager->get_download_page_url(api_key).value_or(default_url);
-
-            spdlog::info("User chose to open the {} download page: {}", dependency_name, url);
-            std::cout << "Opening " << url << " in your default browser..." << std::endl;
-
-            ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
-
-            std::cout << "Please follow the instructions on the website to install " << dependency_name << "." << std::endl;
+            spdlog::info("Abrindo navegador para: {}", url);
+            HINSTANCE result = ShellExecuteA(NULL, "open", url, NULL, NULL, SW_SHOWNORMAL);
+            if ((intptr_t)result <= 32) {
+                spdlog::warn("Falha ao abrir o navegador automaticamente. Forneça manualmente: {}", url);
+                std::cout << "Por favor, visite: " << url << std::endl;
+            } else {
+                spdlog::info("Navegador aberto com sucesso (se suportado pelo sistema).");
+            }
         } else {
-            spdlog::info("User declined to install optional dependency '{}'.", dependency_name);
-            std::cout << "You can install " << dependency_name << " at any time to enable its related features." << std::endl;
+            spdlog::info("Usuário optou por não abrir a página de '{}' neste momento.", dependency_name);
         }
     }
 

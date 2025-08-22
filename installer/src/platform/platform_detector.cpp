@@ -171,27 +171,27 @@ namespace phgit_installer::platform {
         info.os_version = "11.0+"; // Placeholder, matches minimum requirement.
     }
 
-    bool PlatformDetector::check_privileges() {
+    bool PlatformDetector::check_privileges()
+    {
         spdlog::debug("Checking for administrator/root privileges.");
-        #if defined(_WIN32) || defined(_WIN64)
-            BOOL is_admin = FALSE;
-            HANDLE token = NULL;
-            if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
-                TOKEN_ELEVATION elevation;
-                DWORD size = sizeof(TOKEN_ELEVATION);
-                if (GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size)) {
-                    is_admin = elevation.TokenIsElevated;
-                }
+#if defined(_WIN32) || defined(_WIN64)
+        BOOL is_admin = FALSE;
+        HANDLE token = NULL;
+        if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+            TOKEN_ELEVATION elevation;
+            DWORD size = sizeof(TOKEN_ELEVATION);
+            if (GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size)) {
+                is_admin = elevation.TokenIsElevated;
             }
-            if (token) {
-                CloseHandle(token);
-            }
-            return static_cast<bool>(is_admin);
-        #elif defined(__linux__) || (defined(__APPLE__) && defined(__MACH__))
-            return (getuid() == 0);
-        #else
-            return false; // Unsupported platform, assume no privileges.
-        #endif
-
-
+        }
+        if (token) {
+            CloseHandle(token);
+        }
+        return static_cast<bool>(is_admin);
+#elif defined(__linux__) || (defined(__APPLE__) && defined(__MACH__))
+        return (getuid() == 0);
+#else
+        return false; // Unsupported platform, assume no privileges.
+#endif
+    }
 } // namespace phgit_installer::platform
