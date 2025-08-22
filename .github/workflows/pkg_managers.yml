@@ -1,107 +1,319 @@
-name: 'Mirror Package Manager Repositories'
+name: Release -> Render & Publish Packaging
 
+# Trigger on published releases
 on:
-  push:
-    branches: [ "main" ]
-  workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
-  contents: write
+  contents: write   # allow commits/pushes (for the repo where this workflow lives)
+  # note: cross-repo pushes may require personal access tokens in secrets
 
 env:
-  GH_PAT: ${{ secrets.GH_PAT }}
+  # Target repositories (change to your actual repositories if different)
+  HOME_TAP_REPO: "phkaiser13/homebrew-tap"
+  VCPKG_REPO: "phkaiser13/vcpkg-registry"
+  AUR_PACKAGES_REPO: "phkaiser13/aur-packages"
+
+  # Template locations inside THIS repository (adjust paths if your layout differs)
+  # - templates that will be copied into separate repos should live here
+  TEMPLATE_HOMEBREW: "./templates/homebrew/phgit.rb.template"
+  TEMPLATE_VCPKG_PORTFILE: "./templates/vcpkg/portfile.cmake.template"
+  TEMPLATE_VCPKG_JSON: "./templates/vcpkg/vcpkg.json.template"
+  TEMPLATE_AUR_PKGBUILD: "./templates/aur/PKGBUILD.template"
+
+  # Templates that go into /shared/template -> these will be rendered and written into packaging/* in THIS repo
+  SHARED_TEMPLATES_DIR: "./shared/template"
 
 jobs:
-  mirror:
-    name: Mirror repositories
+  render-and-push:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - name: homebrew-tap
-            src_dir: homebrew-tap
-            repo: phkaiser13/homebrew-tap
-            dest_path: homebrew-tap-mirror
-          - name: vcpkg-registry
-            src_dir: vcpkg-registry
-            repo: phkaiser13/vcpkg-registry
-            dest_path: vcpkg-registry-mirror
-          - name: aur-packages
-            src_dir: aur-packages
-            repo: phkaiser13/aur-packages
-            dest_path: aur-packages-mirror
-
+    env:
+      # Allow user to override PAT secrets names; if not set we'll fallback to GITHUB_TOKEN where possible.
+      HOME_TAP_PAT_SECRET_NAME: HOME_TAP_PAT
+      VCPKG_PAT_SECRET_NAME: VCPKG_PAT
+      AUR_PACKAGES_PAT_SECRET_NAME: AUR_PACKAGES_PAT
     steps:
-      - name: Checkout main repository (source)
+
+      - name: Checkout current repository (templates & workspace)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Ensure rsync & git are available
-        run: sudo apt-get update && sudo apt-get install -y rsync git
-
-      - name: "Mirror repo: ${{ matrix.name }}"
-        env:
-          TARGET_REPO: ${{ matrix.repo }}
-          TARGET_PATH: ${{ matrix.dest_path }}
-          SRC_DIR: ${{ matrix.src_dir }}
-          TARGET_URL: https://${{ secrets.GH_PAT }}@github.com/${{ matrix.repo }}.git
+      - name: Determine release version (strip leading 'v')
+        id: version
         run: |
           set -euo pipefail
-          echo "---- Mirror: $TARGET_REPO ----"
-          echo "Source dir: $SRC_DIR"
-          echo "Target path: $TARGET_PATH"
-
-          # If source directory doesn't exist or is empty -> nothing to sync
-          if [ ! -d "$SRC_DIR" ] || [ -z "$(ls -A "$SRC_DIR" 2>/dev/null || true)" ]; then
-            echo "Source directory '$SRC_DIR' is missing or empty. Skipping mirror for $TARGET_REPO."
-            exit 0
+          echo "GITHUB_REF_NAME = ${{ github.ref_name }}"
+          RAW="${{ github.ref_name }}"
+          if [[ -z "$RAW" ]]; then
+            echo "ERROR: workflow must run from a release tag (GITHUB_REF_NAME empty)."
+            exit 1
           fi
+          VERSION="${RAW#v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
-          # Check remote refs (if empty -> remote likely has no commits)
-          REMOTE_REFS="$(git ls-remote "$TARGET_URL" || true)"
-          if [ -n "$REMOTE_REFS" ]; then
-            echo "Remote has refs — cloning into $TARGET_PATH"
-            rm -rf "$TARGET_PATH"
-            git clone --depth 1 "$TARGET_URL" "$TARGET_PATH"
-            cd "$TARGET_PATH"
-            # try to checkout main (or create it)
-            git checkout main 2>/dev/null || git checkout -b main || true
+      - name: Download source tarball and compute checksums
+        id: checksums
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          TAR_URL="https://github.com/phkaiser13/peitchgit/archive/refs/tags/v${VERSION}.tar.gz"
+          echo "Tarball URL: ${TAR_URL}"
+          TMP="$(mktemp)"
+          curl -L --fail -sS "${TAR_URL}" -o "${TMP}"
+          # SHA256
+          if command -v sha256sum >/dev/null 2>&1; then
+            TARBALL_SHA256="$(sha256sum "${TMP}" | awk '{print $1}')"
+            TARBALL_SHA512="$(sha512sum "${TMP}" | awk '{print $1}')"
           else
-            echo "Remote appears empty — initializing local repo at $TARGET_PATH and adding origin"
-            rm -rf "$TARGET_PATH"
-            mkdir -p "$TARGET_PATH"
-            cd "$TARGET_PATH"
-            git init
-            git checkout -b main || true
-            git remote add origin "$TARGET_URL"
+            TARBALL_SHA256="$(shasum -a 256 "${TMP}" | awk '{print $1}')"
+            TARBALL_SHA512="$(shasum -a 512 "${TMP}" | awk '{print $1}')"
+          fi
+          echo "Computed tarball SHA256: ${TARBALL_SHA256}"
+          echo "Computed tarball SHA512: ${TARBALL_SHA512}"
+          # export
+          echo "phgit_tarb_sha256=${TARBALL_SHA256}" >> $GITHUB_OUTPUT
+          echo "phgit_tarb_sha512=${TARBALL_SHA512}" >> $GITHUB_OUTPUT
+          # keep tmp path in env in case other steps want to reuse
+          echo "TARBALL_PATH=${TMP}" >> $GITHUB_ENV
+
+      - name: Try to download Windows installer asset and compute installer sha256 (optional)
+        id: installer
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          INSTALLER_NAME="phgit-${VERSION}-installer.exe"
+          INSTALLER_URL="https://github.com/phkaiser13/peitchgit/releases/download/v${VERSION}/${INSTALLER_NAME}"
+          echo "Attempting to download installer: ${INSTALLER_URL}"
+          TMP_INSTALLER="$(mktemp)"
+          if curl -L --fail -sS "${INSTALLER_URL}" -o "${TMP_INSTALLER}"; then
+            if command -v sha256sum >/dev/null 2>&1; then
+              INSTALLER_SHA256="$(sha256sum "${TMP_INSTALLER}" | awk '{print $1}')"
+            else
+              INSTALLER_SHA256="$(shasum -a 256 "${TMP_INSTALLER}" | awk '{print $1}')"
+            fi
+            echo "Installer found. SHA256: ${INSTALLER_SHA256}"
+            echo "installer_sha256=${INSTALLER_SHA256}" >> $GITHUB_OUTPUT
+            echo "INSTALLER_PATH=${TMP_INSTALLER}" >> $GITHUB_ENV
+          else
+            echo "Installer not found at ${INSTALLER_URL} -- skipping installer checksum."
+            echo "installer_sha256=" >> $GITHUB_OUTPUT
           fi
 
-          # Sync files from source into target (exclude .git)
-          echo "Syncing files..."
-          rsync -av --delete --exclude='.git' "../${SRC_DIR}/" .
+      - name: Prepare rendered files locally (shared templates -> repository packaging/)
+        id: render-local
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          TARBALL_SHA256="${{ steps.checksums.outputs.phgit_tarb_sha256 }}"
+          TARBALL_SHA512="${{ steps.checksums.outputs.phgit_tarb_sha512 }}"
+          INSTALLER_SHA256="${{ steps.installer.outputs.installer_sha256 }}"
 
-          # Configure git author
+          echo "Rendering shared templates into packaging/ ..."
+
+          mkdir -p packaging/chocolatey
+          mkdir -p packaging/rpm
+
+          # Example: render Chocolatey nuspec and chocolateyinstall.ps1 from shared templates
+          # Expecting shared templates: shared/template/phgit.nuspec.template, shared/template/chocolateyinstall.ps1.template
+          if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/phgit.nuspec.template" ]]; then
+            sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
+                "${{ env.SHARED_TEMPLATES_DIR }}/phgit.nuspec.template" > packaging/chocolatey/phgit.nuspec
+            echo "Rendered packaging/chocolatey/phgit.nuspec"
+          fi
+
+          if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/chocolateyinstall.ps1.template" ]]; then
+            sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
+                -e "s/@PHGIT_INSTALLER_SHA256@/${INSTALLER_SHA256}/g" \
+                "${{ env.SHARED_TEMPLATES_DIR }}/chocolateyinstall.ps1.template" > packaging/chocolatey/chocolateyinstall.ps1
+            echo "Rendered packaging/chocolatey/chocolateyinstall.ps1"
+          fi
+
+          # render RPM spec if template exists in shared templates
+          if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/phgit.spec.template" ]]; then
+            TAR_URL="https://github.com/phkaiser13/peitchgit/archive/refs/tags/v${VERSION}.tar.gz"
+            TODAY="$(date -R)"
+            sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
+                -e "s,@PHGIT_TARBALL_URL@,${TAR_URL},g" \
+                -e "s/@PHGIT_RELEASE_DATE@/${TODAY}/g" \
+                "${{ env.SHARED_TEMPLATES_DIR }}/phgit.spec.template" > packaging/rpm/phgit.spec
+            echo "Rendered packaging/rpm/phgit.spec"
+          fi
+
+          # Add other shared template renders here as needed (msi templates, snap, etc.)
+
+      - name: Commit shared-template renders to this repository (packaging/)
+        id: commit-local
+        run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # If repo has no commits yet, create an initial commit
-          if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
-            echo "No commits found in target; creating initial commit."
-            git add -A
-            git commit -m "chore: initial mirror from main repository"
-            git push --set-upstream origin main
-            echo "Pushed initial commit to origin/main"
-            exit 0
+          git add packaging || true
+          if git diff --staged --quiet; then
+            echo "No changes to commit in packaging/"
+          else
+            git commit -m "chore(release): render packaging templates for phgit ${{ steps.version.outputs.version }}"
+            git push origin HEAD
           fi
 
-          # Only commit & push if there are changes
-          if git status --porcelain | grep -q .; then
-            echo "Changes detected — committing and pushing."
-            git add -A
-            git commit -m "chore: Sync updates from main repository"
-            git push origin HEAD:main
-            echo "Pushed changes to origin/main"
+      # ---------------------------
+      # Update homebrew-tap repository
+      # ---------------------------
+      - name: Checkout homebrew-tap repository
+        id: checkout-homebrew
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.HOME_TAP_REPO }}
+          # prefer a PAT secret if provided (for cross-repo pushes), fallback to GITHUB_TOKEN
+          token: ${{ secrets.HOME_TAP_PAT || github.token }}
+          path: homebrew-tap
+          fetch-depth: 0
+
+      - name: Render and place Homebrew formula in homebrew-tap
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          TARBALL_SHA256="${{ steps.checksums.outputs.phgit_tarb_sha256 }}"
+          # Template path in THIS repo (adjust if different)
+          TEMPLATE="${{ env.TEMPLATE_HOMEBREW }}"
+          if [[ ! -f "${TEMPLATE}" ]]; then
+            echo "Homebrew template not found at ${TEMPLATE} — aborting this step."
+            exit 1
+          fi
+          mkdir -p homebrew-tap/Formula
+          sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
+              -e "s/@PHGIT_SHA256@/${TARBALL_SHA256}/g" \
+              "${TEMPLATE}" > homebrew-tap/Formula/phgit.rb
+          echo "Rendered homebrew-tap/Formula/phgit.rb"
+
+      - name: Commit & push Homebrew formula
+        run: |
+          set -euo pipefail
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/phgit.rb
+          if git diff --staged --quiet; then
+            echo "No changes to commit in homebrew-tap."
           else
-            echo "No changes to sync."
+            git commit -m "chore(release): update phgit formula to ${{ steps.version.outputs.version }}"
+            git push origin HEAD
+          fi
+
+      # ---------------------------
+      # Update vcpkg-registry repository
+      # ---------------------------
+      - name: Checkout vcpkg-registry repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.VCPKG_REPO }}
+          token: ${{ secrets.VCPKG_PAT || github.token }}
+          path: vcpkg-registry
+          fetch-depth: 0
+
+      - name: Render and place vcpkg port files
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          TARBALL_SHA512="${{ steps.checksums.outputs.phgit_tarb_sha512 }}"
+          # Render portfile.cmake and vcpkg.json from templates (paths inside THIS repo)
+          if [[ ! -f "${{ env.TEMPLATE_VCPKG_PORTFILE }}" ]]; then
+            echo "vcpkg portfile template missing: ${{ env.TEMPLATE_VCPKG_PORTFILE }}"
+            exit 1
+          fi
+          mkdir -p vcpkg-registry/ports/phgit
+          sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
+              -e "s/@PHGIT_SHA512@/${TARBALL_SHA512}/g" \
+              "${{ env.TEMPLATE_VCPKG_PORTFILE }}" > vcpkg-registry/ports/phgit/portfile.cmake
+
+          if [[ -f "${{ env.TEMPLATE_VCPKG_JSON }}" ]]; then
+            sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
+                "${{ env.TEMPLATE_VCPKG_JSON }}" > vcpkg-registry/ports/phgit/vcpkg.json
+          fi
+          echo "Rendered vcpkg-registry/ports/phgit/*"
+
+      - name: Commit & push vcpkg-registry
+        run: |
+          set -euo pipefail
+          cd vcpkg-registry
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ports/phgit || true
+          if git diff --staged --quiet; then
+            echo "No changes to commit in vcpkg-registry."
+          else
+            git commit -m "chore(release): update vcpkg port for phgit ${{ steps.version.outputs.version }}"
+            git push origin HEAD
+          fi
+
+      # ---------------------------
+      # Update aur-packages repository
+      # ---------------------------
+      - name: Checkout aur-packages repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.AUR_PACKAGES_REPO }}
+          token: ${{ secrets.AUR_PACKAGES_PAT || github.token }}
+          path: aur-packages
+          fetch-depth: 0
+
+      - name: Render and place PKGBUILD in aur-packages
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          TARBALL_SHA256="${{ steps.checksums.outputs.phgit_tarb_sha256 }}"
+          TEMPLATE="${{ env.TEMPLATE_AUR_PKGBUILD }}"
+          if [[ ! -f "${TEMPLATE}" ]]; then
+            echo "AUR PKGBUILD template not found at ${TEMPLATE}"
+            exit 1
+          fi
+          mkdir -p aur-packages/phgit
+          sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
+              -e "s/@PHGIT_SHA256@/${TARBALL_SHA256}/g" \
+              "${TEMPLATE}" > aur-packages/phgit/PKGBUILD
+          echo "Rendered aur-packages/phgit/PKGBUILD"
+
+      - name: (Optional) Generate .SRCINFO for PKGBUILD using archlinux docker (if docker available)
+        run: |
+          set -euo pipefail
+          if command -v docker >/dev/null 2>&1; then
+            echo "Docker present — generating .SRCINFO"
+            cp aur-packages/phgit/PKGBUILD /tmp/pkgb
+            mkdir -p /tmp/pkgbdir
+            cp aur-packages/phgit/PKGBUILD /tmp/pkgbdir/PKGBUILD
+            docker run --rm -v /tmp/pkgbdir:/work -w /work archlinux:latest bash -lc "
+              pacman -Sy --noconfirm --needed base-devel >/dev/null 2>&1 || true
+              makepkg --printsrcinfo > .SRCINFO
+            "
+            mv /tmp/pkgbdir/.SRCINFO aur-packages/phgit/.SRCINFO
+            echo ".SRCINFO generated and placed at aur-packages/phgit/.SRCINFO"
+          else
+            echo "Docker not available — skipping .SRCINFO generation (optional)"
+          fi
+
+      - name: Commit & push aur-packages
+        run: |
+          set -euo pipefail
+          cd aur-packages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add phgit || true
+          if git diff --staged --quiet; then
+            echo "No changes to commit in aur-packages."
+          else
+            git commit -m "chore(release): update PKGBUILD for phgit ${{ steps.version.outputs.version }}"
+            git push origin HEAD
+          fi
+
+      - name: Summary / finished
+        run: |
+          set -euo pipefail
+          echo "Release packaging render completed for phgit ${{ steps.version.outputs.version }}"
+          echo "Tarball SHA256: ${{ steps.checksums.outputs.phgit_tarb_sha256 }}"
+          echo "Tarball SHA512: ${{ steps.checksums.outputs.phgit_tarb_sha512 }}"
+          if [[ -n "${{ steps.installer.outputs.installer_sha256 }}" ]]; then
+            echo "Installer SHA256: ${{ steps.installer.outputs.installer_sha256 }}"
+          else
+            echo "Installer asset not found; skipped."
           fi
