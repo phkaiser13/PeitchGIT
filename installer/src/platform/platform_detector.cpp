@@ -192,6 +192,6 @@ namespace phgit_installer::platform {
         #else
             return false; // Unsupported platform, assume no privileges.
         #endif
-    }
+
 
 } // namespace phgit_installer::platform

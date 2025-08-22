@@ -1,8 +1,9 @@
 /* Copyright (C) 2025 Pedro Henrique / phkaiser13
 * File: windows_installer.hpp
-* This header defines the fully integrated WindowsInstaller class. It now depends on the
-* ConfigManager for metadata and the ApiManager for dynamic release fetching, making it
-* a truly data-driven installation engine.
+* This header defines the WindowsInstaller class, which serves as a post-installation
+* dependency checker. It is designed to be run by a primary installer like NSIS after
+* file extraction. Its role is to interactively guide the user in installing required
+* or optional third-party tools, not to perform system modifications itself.
 * SPDX-License-Identifier: Apache-2.0
 */
 
@@ -11,24 +12,31 @@
 #include "platform/iplatform_installer.hpp"
 #include "platform/platform_detector.hpp"
 #include "dependencies/dependency_manager.hpp"
-#include "utils/api_manager.hpp" // Added ApiManager dependency
-#include "utils/config_manager.hpp" // Added ConfigManager dependency
+#include "utils/api_manager.hpp"
+#include "utils/config_manager.hpp"
 
 #include <memory>
 #include <string>
-#include <vector>
-
 
 namespace phgit_installer::platform {
 
+    /**
+     * @class WindowsInstaller
+     * @brief A post-installation assistant for the Windows platform.
+     *
+     * This class checks for necessary and optional third-party dependencies after the
+     * main application files have been installed by a package manager (e.g., NSIS, WiX).
+     * It provides interactive prompts to help the user download and install any
+     * missing components, but does not perform these actions automatically.
+     */
     class WindowsInstaller : public IPlatformInstaller {
     public:
         /**
-         * @brief Constructs the WindowsInstaller engine.
+         * @brief Constructs the Windows post-installation assistant.
          * @param info The detailed platform information for the Windows system.
-         * @param dep_manager A reference to the dependency manager.
-         * @param api_manager A shared pointer to the API manager for dynamic downloads.
-         * @param config A shared pointer to the configuration manager for metadata.
+         * @param dep_manager A reference to the dependency manager for status checks.
+         * @param api_manager A shared pointer to the API manager for fetching download page URLs.
+         * @param config A shared pointer to the configuration manager.
          */
         explicit WindowsInstaller(
             platform::PlatformInfo info,
@@ -37,26 +45,27 @@ namespace phgit_installer::platform {
             std::shared_ptr<utils::ConfigManager> config
         );
 
+        /**
+         * @brief Runs the interactive dependency check process.
+         * This is the main entry point for the assistant.
+         */
         void run_installation() override;
 
     private:
-        void perform_installation();
-        bool ensure_git_is_installed();
-        bool ensure_optional_dependencies(const std::string& target_dir);
-        bool install_application_files(const std::string& install_path);
-        void perform_system_integration(const std::string& install_path);
-        void update_path_environment_variable(const std::string& directory_to_add, bool for_all_users);
-        void create_registry_entries(const std::string& install_path, bool for_all_users);
-        void create_start_menu_shortcuts(const std::string& install_path);
+        /**
+         * @brief Informs the user that Git is a required dependency and asks if they
+         * want to open the official download page.
+         */
+        void prompt_user_to_install_git();
 
         /**
-         * @brief Unzips a zip archive to a specified destination directory.
-         * @param zip_path The full path to the .zip file.
-         * @param dest_dir The directory to extract the contents into.
-         * @return True on success, false on failure.
+         * @brief Informs the user that a dependency is optional and asks if they
+         * want to open its official download page.
+         * @param dependency_name The display name of the optional dependency (e.g., "Terraform").
          */
-        bool unzip_archive(const std::string& zip_path, const std::string& dest_dir);
+        void prompt_user_to_install_optional(const std::string& dependency_name);
 
+        // Member variables holding the state and tools needed for checks.
         platform::PlatformInfo m_platform_info;
         const dependencies::DependencyManager& m_dep_manager;
         std::shared_ptr<utils::ApiManager> m_api_manager;

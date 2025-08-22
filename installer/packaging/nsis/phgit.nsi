@@ -2,18 +2,20 @@
 *
 * File: phgit.nsi
 *
-* This NSIS script acts as a lightweight bootstrapper for the phgit application.
-* Its primary responsibility is to extract the core application files, including
-* the C++ installation engine (phgit-installer.exe), to the user's chosen
-* directory.
+* This NSIS script is the primary installer for the phgit application. It is the
+* single source of truth for all system integration tasks. Its responsibilities include:
 *
-* Once the core files are in place, this script executes the C++ engine. The
-* engine is then responsible for all dynamic tasks, such as detecting system
-* state, downloading the latest versions of dependencies (e.g., Git, Terraform,
-* Vault), and performing the necessary configuration. This design decouples the
-* static installer from the dynamic installation logic, ensuring the installer
-* remains small and the dependency management is always up-to-date, as handled
-* by the C++ core.
+* 1.  Extracting all application files, including the main executable (phgit.exe)
+*     and the C++ post-installation assistant (phgit-installer.exe).
+* 2.  Creating the uninstaller and the necessary registry entries for a clean
+*     "Add/Remove Programs" experience.
+* 3.  Optionally adding the application's binary directory to the system PATH.
+* 4.  Optionally creating Start Menu and Desktop shortcuts.
+*
+* As a final step, it executes the C++ assistant. The assistant's sole purpose is
+* to check for external dependencies (like Git) and interactively guide the user
+* to install them if they are missing. This script handles all direct system
+* modifications, while the C++ engine handles user guidance.
 *
 * SPDX-License-Identifier: Apache-2.0
 */
@@ -34,7 +36,6 @@ Unicode true
 !define PRODUCT_WEBSITE "https://github.com/phkaiser13/phgit"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
 !define USER_CONFIG_DIR "$APPDATA\${PRODUCT_NAME}"
-!define USER_CONFIG_FILE "phgit_sync_state.json"
 
 ;--------------------------------
 ; Installer Metadata
@@ -61,12 +62,6 @@ BrandingText " "
 ;--------------------------------
 !define MUI_ABORTWARNING
 !define MUI_UNABORTWARNING
-
-; Installer Icons (provide your own icon files)
-;!define MUI_ICON "installer_icon.ico"
-;!define MUI_UNICON "uninstaller_icon.ico"
-;!define MUI_HEADERIMAGE
-;!define MUI_HEADERIMAGE_BITMAP "header_image.bmp"
 
 ; Finish page configuration
 !define MUI_FINISHPAGE_RUN "$INSTDIR\bin\phgit.exe"
@@ -112,25 +107,20 @@ Var /GLOBAL PathAdded
 
 ; Writes a message to the log file with a timestamp.
 Function WriteLog
-    Exch $0 ; Message string from stack
-    Push $1 ; Temp register for file handle
-    Push $2 ; Temp register for time values
+    Exch $0
+    Push $1
+    Push $2
     Push $3
     Push $4
     Push $5
     Push $6
     Push $7
-
-    ; Get current local time
     ${GetTime} "" "L" $1 $2 $3 $4 $5 $6 $7
-
-    ; Open log file for appending
     FileOpen $1 "$LogFile" a
     ${If} $1 != ""
         FileWrite $1 "[$4-$3-$2 $5:$6:$7] $0$\r$\n"
         FileClose $1
     ${EndIf}
-
     Pop $7
     Pop $6
     Pop $5
@@ -143,30 +133,20 @@ FunctionEnd
 
 ; Adds a directory to the system PATH environment variable if it's not already present.
 Function AddToPath
-    Exch $0 ; Directory to add
-    Push $1 ; Current PATH value
-    Push $2 ; New PATH value
-    Push $3 ; Temp for string search result
-
-    ; Read the current system PATH
+    Exch $0
+    Push $1
+    Push $2
+    Push $3
     ReadRegStr $1 HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "PATH"
-
-    ; Check if the directory is already in the PATH (case-insensitive search)
     ${StrStr} $3 "$1" "$0"
     ${If} $3 == ""
-        ; Not found, so append it.
         ${If} $1 == ""
             StrCpy $2 "$0"
         ${Else}
             StrCpy $2 "$1;$0"
         ${EndIf}
-
-        ; Write the new PATH back to the registry
         WriteRegExpandStr HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "PATH" $2
-
-        ; Broadcast a message to all windows that the environment has changed
         SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=5000
-
         StrCpy $PathAdded "1"
         Push "Added '$0' to system PATH."
         Call WriteLog
@@ -174,7 +154,6 @@ Function AddToPath
         Push "'$0' already exists in system PATH. No changes made."
         Call WriteLog
     ${EndIf}
-
     Pop $3
     Pop $2
     Pop $1
@@ -183,41 +162,29 @@ FunctionEnd
 
 ; Removes a directory from the system PATH environment variable.
 Function un.RemoveFromPath
-    Exch $0 ; Directory to remove
-    Push $1 ; Current PATH value
-    Push $2 ; New PATH value
-    Push $3 ; Temp string
-    Push $4 ; Temp string
-    Push $5 ; Temp int
-
-    ; Read the current system PATH
+    Exch $0
+    Push $1
+    Push $2
+    Push $3
+    Push $4
+    Push $5
     ReadRegStr $1 HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "PATH"
-
-    ; Replace all occurrences of the path string, handling various positions
     StrCpy $2 $1
-    ${StrRep} $2 $2 ";$0;" ";"  ; Middle of the PATH
-    ${StrRep} $2 $2 "$0;" ""    ; Beginning of the PATH
-    ${StrRep} $2 $2 ";$0" ""    ; End of the PATH
-    ${StrRep} $2 $2 "$0" ""     ; The only entry in the PATH
-
-    ; Clean up any resulting double semicolons
+    ${StrRep} $2 $2 ";$0;" ";"
+    ${StrRep} $2 $2 "$0;" ""
+    ${StrRep} $2 $2 ";$0" ""
+    ${StrRep} $2 $2 "$0" ""
     ${StrRep} $2 $2 ";;" ";"
-
-    ; Remove leading semicolon if present
     StrCpy $3 $2 1
     ${If} $3 == ";"
         StrCpy $2 $2 "" 1
     ${EndIf}
-
-    ; Remove trailing semicolon if present
     StrLen $4 $2
     IntOp $5 $4 - 1
     StrCpy $3 $2 1 $5
     ${If} $3 == ";"
         StrCpy $2 $2 $5
     ${EndIf}
-
-    ; Write the updated PATH back if it has changed
     ${If} $2 != $1
         WriteRegExpandStr HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "PATH" $2
         SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=5000
@@ -227,7 +194,6 @@ Function un.RemoveFromPath
         Push "'$0' not found in system PATH or no changes needed."
         Call un.WriteLog
     ${EndIf}
-
     Pop $5
     Pop $4
     Pop $3
@@ -240,25 +206,17 @@ FunctionEnd
 ; Installer Initialization
 ;--------------------------------
 Function .onInit
-    ; Initialize global variables
     StrCpy $LogFile "$TEMP\phgit_installer.log"
     StrCpy $RemoveUserData "0"
     StrCpy $PathAdded "0"
-
-    ; Create a new log file for this session
     FileOpen $0 "$LogFile" w
     ${If} $0 != ""
         FileWrite $0 "phgit Installer Log - Session Started$\r$\n"
         FileClose $0
     ${EndIf}
-
     Push "Installer initialization completed."
     Call WriteLog
-
-    ; Set up language selection dialog
     !insertmacro MUI_LANGDLL_DISPLAY
-
-    ; Check if the application is already installed
     ReadRegStr $0 HKLM "${PRODUCT_UNINST_KEY}" "InstallLocation"
     ${If} $0 != ""
         MessageBox MB_YESNO|MB_ICONQUESTION \
@@ -274,35 +232,19 @@ FunctionEnd
 ; Installation Sections
 ;--------------------------------
 
-; Core application section (mandatory)
 Section "phgit Core" SecCore
-    SectionIn RO ; This section is read-only and cannot be deselected by the user.
-
+    SectionIn RO
     SetOutPath "$INSTDIR"
-
     Push "Starting installation of core phgit application."
     Call WriteLog
-
-    ; Create required directories
     CreateDirectory "$INSTDIR\bin"
     CreateDirectory "$INSTDIR\config"
-
-    ; Copy main application executable and the C++ installer engine
-    ; Ensure 'phgit.exe' and 'phgit-installer.exe' are in the same directory as the NSIS script
     File /oname=bin\phgit.exe "phgit.exe"
     File /oname=bin\phgit-installer.exe "phgit-installer.exe"
-
-    ; Copy configuration files needed by the C++ engine
     File /oname=config\config.json "config.json"
-
-    ; Copy documentation and license files
     File /oname=LICENSE.txt "LICENSE"
     File /oname=README.md "README.md"
-
-    ; Create the uninstaller executable
     WriteUninstaller "$INSTDIR\uninstall.exe"
-
-    ; Write registry keys for Add/Remove Programs
     WriteRegStr HKLM "${PRODUCT_UNINST_KEY}" "DisplayName" "${PRODUCT_NAME}"
     WriteRegStr HKLM "${PRODUCT_UNINST_KEY}" "DisplayVersion" "${PRODUCT_VERSION}"
     WriteRegStr HKLM "${PRODUCT_UNINST_KEY}" "Publisher" "${PRODUCT_PUBLISHER}"
@@ -311,65 +253,51 @@ Section "phgit Core" SecCore
     WriteRegStr HKLM "${PRODUCT_UNINST_KEY}" "UninstallString" '"$INSTDIR\uninstall.exe"'
     WriteRegDWORD HKLM "${PRODUCT_UNINST_KEY}" "NoModify" 1
     WriteRegDWORD HKLM "${PRODUCT_UNINST_KEY}" "NoRepair" 1
-
-    ; Estimate and write the installed size (in KB)
     ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
     WriteRegDWORD HKLM "${PRODUCT_UNINST_KEY}" "EstimatedSize" "$0"
-
     Push "Core files extracted successfully."
     Call WriteLog
 
-    ; --- CRITICAL STEP: Execute the C++ post-install engine ---
-    ; The C++ engine will handle dynamic dependency downloads (Git, Terraform, etc.)
-    ; and any other complex setup tasks.
-    DetailPrint "Executing C++ installation engine to configure dependencies..."
-    Push "Executing C++ engine: $INSTDIR\bin\phgit-installer.exe"
+    ; --- CRITICAL STEP: Execute the C++ post-install assistant ---
+    ; The C++ assistant will now run to check for external dependencies like Git.
+    ; It will not install anything silently; it will guide the user if action is needed.
+    DetailPrint "Running post-installation assistant to check for required dependencies..."
+    DetailPrint "A console window will open to guide you through the process."
+    Push "Executing C++ assistant: $INSTDIR\bin\phgit-installer.exe"
     Call WriteLog
 
     ExecWait '"$INSTDIR\bin\phgit-installer.exe"' $0
-    ; $0 will contain the exit code of the process.
     ${If} $0 != 0
-        Push "C++ installation engine failed with exit code: $0"
+        Push "C++ assistant reported an issue or was closed with exit code: $0"
         Call WriteLog
-        MessageBox MB_OK|MB_ICONEXCLAMATION "The dependency installer failed. Please check the log for details. The core application is installed, but may not function correctly."
-        ; Decide if you want to abort or continue. Continuing is often better for cleanup.
+        MessageBox MB_OK|MB_ICONINFORMATION "The dependency check finished. The core application is installed, but may require manual setup of its dependencies to function correctly."
     ${Else}
-        Push "C++ installation engine completed successfully."
+        Push "C++ assistant completed successfully."
         Call WriteLog
-        DetailPrint "Dependency configuration complete."
+        DetailPrint "Dependency check complete."
     ${EndIf}
-
 SectionEnd
 
-; Optional: Add application directory to the system PATH
 Section "Add to System PATH" SecPath
     Push "Adding phgit to system PATH."
     Call WriteLog
-
     Push "$INSTDIR\bin"
     Call AddToPath
-
-    ; Store a flag in the registry so the uninstaller knows to remove it.
     WriteRegStr HKLM "${PRODUCT_UNINST_KEY}" "PathAdded" "1"
-
     DetailPrint "Added '$INSTDIR\bin' to system PATH."
 SectionEnd
 
-; Optional: Create a desktop shortcut
 Section /o "Create Desktop Shortcut" SecDesktop
     CreateShortCut "$DESKTOP\phgit.lnk" "$INSTDIR\bin\phgit.exe" "" "$INSTDIR\bin\phgit.exe" 0
-
     Push "Desktop shortcut created."
     Call WriteLog
 SectionEnd
 
-; Optional: Create Start Menu shortcuts
 Section "Create Start Menu Shortcuts" SecStartMenu
     CreateDirectory "$SMPROGRAMS\${PRODUCT_NAME}"
     CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\phgit.lnk" "$INSTDIR\bin\phgit.exe"
     CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\Uninstall ${PRODUCT_NAME}.lnk" "$INSTDIR\uninstall.exe"
     CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\Documentation.lnk" "$INSTDIR\README.md"
-
     Push "Start Menu shortcuts created."
     Call WriteLog
 SectionEnd
@@ -378,7 +306,7 @@ SectionEnd
 ; Section Descriptions
 ;--------------------------------
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
-    !insertmacro MUI_DESCRIPTION_TEXT ${SecCore} "Installs the core phgit application. (Required)"
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecCore} "Installs the core phgit application and runs the dependency checker. (Required)"
     !insertmacro MUI_DESCRIPTION_TEXT ${SecPath} "Adds the application directory to the system PATH for easy command-line access."
     !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop} "Creates a shortcut to phgit on your desktop."
     !insertmacro MUI_DESCRIPTION_TEXT ${SecStartMenu} "Creates shortcuts in the Start Menu."
@@ -390,10 +318,7 @@ SectionEnd
 Function .onInstSuccess
     Push "Installation process finished successfully."
     Call WriteLog
-
-    ; Copy the installer log to the installation directory for future reference.
     CopyFiles /SILENT "$LogFile" "$INSTDIR\installer_log.txt"
-
     DetailPrint "Installation completed."
     DetailPrint "Log file saved to: $INSTDIR\installer_log.txt"
 FunctionEnd
@@ -401,7 +326,6 @@ FunctionEnd
 Function .onInstFailed
     Push "Installation process failed."
     Call WriteLog
-
     MessageBox MB_OK|MB_ICONEXCLAMATION \
         "The installation failed. Please check the log file for details:$\n$LogFile"
 FunctionEnd
@@ -415,24 +339,19 @@ Var UninstCheckbox
 Function un.CustomUninstallPage
     nsDialogs::Create 1018
     Pop $UninstDialog
-
     ${If} $UninstDialog == error
         Abort
     ${EndIf}
-
     ${NSD_CreateLabel} 0 0 100% 30u \
         "The following phgit components will be removed:$\n$\n\
         • Application files and binaries$\n\
         • Registry entries and Start Menu shortcuts$\n\
         • System PATH entry (if added by installer)"
-
     ${NSD_CreateCheckBox} 0 120u 100% 15u \
         "&Remove all user configuration and data files"
     Pop $UninstCheckbox
-
     ${NSD_CreateLabel} 20u 140u 80% 20u \
         "Warning: This is irreversible and will delete all settings from:$\n${USER_CONFIG_DIR}"
-
     nsDialogs::Show
 FunctionEnd
 
@@ -444,59 +363,36 @@ FunctionEnd
 ; Uninstaller Section
 ;--------------------------------
 Function un.onInit
-    ; Initialize the uninstaller log
     StrCpy $LogFile "$TEMP\phgit_uninstaller.log"
     FileOpen $0 "$LogFile" w
     ${If} $0 != ""
         FileWrite $0 "phgit Uninstaller Log - Session Started$\r$\n"
         FileClose $0
     ${EndIf}
-
-    ; Set up language selection
     !insertmacro MUI_UNGETLANGUAGE
 FunctionEnd
 
 Section "Uninstall"
-    ; It's good practice to stop any running processes of the application.
-    ; This would require a plugin like FindProc, but for a simple case, we'll skip it.
-    ; Example: nsProcess::FindProcess "phgit.exe"
-    ; ${If} $R0 == 0
-    ;   nsProcess::KillProcess "phgit.exe"
-    ; ${EndIf}
-
-    ; Remove from system PATH if the installer added it.
     ReadRegStr $0 HKLM "${PRODUCT_UNINST_KEY}" "PathAdded"
     ${If} $0 == "1"
         Push "$INSTDIR\bin"
         Call un.RemoveFromPath
         DetailPrint "Removed from system PATH."
     ${EndIf}
-
-    ; Remove Start Menu shortcuts
     RMDir /r "$SMPROGRAMS\${PRODUCT_NAME}"
-
-    ; Remove desktop shortcut
     Delete "$DESKTOP\phgit.lnk"
-
-    ; Remove main application files
     DetailPrint "Removing application files..."
     RMDir /r "$INSTDIR"
-
-    ; Remove user data if the user checked the box.
     ${If} $RemoveUserData == ${BST_CHECKED}
         DetailPrint "Removing user configuration files..."
         RMDir /r "${USER_CONFIG_DIR}"
     ${EndIf}
-
-    ; Remove registry keys
     DeleteRegKey HKLM "${PRODUCT_UNINST_KEY}"
-
     DetailPrint "Uninstallation completed."
 SectionEnd
 
 Function un.onUninstSuccess
     MessageBox MB_OK "phgit has been successfully removed from your system."
-
     MessageBox MB_YESNO "Would you like to view the uninstall log?" IDNO cleanup
         ExecShell "open" "$LogFile"
     cleanup:

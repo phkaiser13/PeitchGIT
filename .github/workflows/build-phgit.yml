@@ -1,73 +1,79 @@
-name: Build phgit (Multi-Platform)
+name: Build phgit (Universal Multi-Platform)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
     tags:
       - 'v*'
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
 
+env:
+  PROJECT_NAME: phgit
+  CMAKE_BUILD_TYPE: Release
+  CMAKE_POLICY_VERSION: 3.5
+
 jobs:
-  build-linux:
-    name: Build Linux (${{ matrix.distro }})
+  # ==============================================================================
+  # LINUX BUILDS - Multiple Distributions and Architectures
+  # ==============================================================================
+  Build-Linux-x64:
+    name: Build-Linux-x64 (${{ matrix.distro }})
     runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
       matrix:
         include:
-          - distro: ubuntu
+          - distro: ubuntu-latest
             container: ubuntu:latest
             package_manager: apt
             deps_command: |
               apt-get update && apt-get install -y \
-                build-essential \
-                cmake \
-                pkg-config \
-                liblua5.4-dev \
-                libcurl4-openssl-dev \
-                nlohmann-json3-dev \
-                git \
-                curl
-          - distro: fedora
+                build-essential cmake pkg-config \
+                liblua5.4-dev libcurl4-openssl-dev \
+                nlohmann-json3-dev git curl
+          - distro: ubuntu-20.04
+            container: ubuntu:20.04
+            package_manager: apt
+            deps_command: |
+              apt-get update && apt-get install -y \
+                build-essential cmake pkg-config \
+                liblua5.3-dev libcurl4-openssl-dev \
+                nlohmann-json3-dev git curl
+          - distro: fedora-latest
             container: fedora:latest
             package_manager: dnf
             deps_command: |
-              dnf -y update
-              dnf install -y \
-                gcc-c++ \
-                make \
-                cmake \
-                pkgconf-pkg-config \
-                lua-devel \
-                libcurl-devel \
-                openssl-devel \
-                nlohmann-json-devel \
-                binutils \
-                git \
-                tar \
-                gzip \
-                which \
-                curl
+              dnf -y update && dnf install -y \
+                gcc-c++ make cmake pkgconf-pkg-config \
+                lua-devel libcurl-devel openssl-devel \
+                nlohmann-json-devel binutils git tar gzip which curl && \
               dnf clean all
-          - distro: arch
+          - distro: centos-stream9
+            container: quay.io/centos/centos:stream9
+            package_manager: dnf
+            deps_command: |
+              dnf -y update && dnf install -y epel-release && \
+              dnf install -y gcc-c++ make cmake pkgconf-pkg-config \
+                lua-devel libcurl-devel openssl-devel \
+                nlohmann-json-devel binutils git tar gzip which curl && \
+              dnf clean all
+          - distro: archlinux
             container: archlinux:latest
             package_manager: pacman
             deps_command: |
-              pacman-key --init
-              pacman-key --populate archlinux
+              pacman-key --init && pacman-key --populate archlinux && \
               pacman -Syu --noconfirm --needed \
-                base-devel \
-                cmake \
-                lua \
-                curl \
-                nlohmann-json \
-                go \
-                rust \
-                git \
-                pkgconf
+                base-devel cmake lua curl nlohmann-json git pkgconf
+          - distro: alpine-latest
+            container: alpine:latest
+            package_manager: apk
+            deps_command: |
+              apk update && apk add --no-cache \
+                build-base cmake pkgconfig lua5.4-dev \
+                curl-dev nlohmann-json git
 
     container:
       image: ${{ matrix.container }}
@@ -86,52 +92,132 @@ jobs:
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-x64-${{ matrix.distro }}
 
       - name: Configure CMake
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DCMAKE_POLICY_VERSION_MINIMUM=${{ env.CMAKE_POLICY_VERSION }}
 
       - name: Compile Project
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel $(nproc)
 
-      - name: Run unit tests (Fedora only)
-        if: matrix.distro == 'fedora' && always()
+      - name: Run Tests
+        if: matrix.distro == 'fedora-latest' || matrix.distro == 'ubuntu-latest'
         run: |
           if [ -f build/CTestTestfile.cmake ]; then
-            (cd build && ctest --output-on-failure)
+            (cd build && ctest --output-on-failure --parallel $(nproc))
           else
-            echo "No tests configured (CTestTestfile.cmake not found)."
+            echo "No tests configured"
           fi
 
-      - name: Upload CI Build Artifacts (not for tags)
+      - name: Upload BuildArtifacts-Linux-x64 (Push Events)
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-build-artifacts-${{ matrix.distro }}
+          name: BuildArtifacts-Linux-x64-${{ matrix.distro }}
           path: |
-            build/
+            build/bin/
             src/plugins/
             LICENSE
-          retention-days: 3
+          retention-days: 7
 
-  build-macos:
-    name: Build macOS (${{ matrix.arch }})
+      - name: Create Release Package (Tag Events)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          mkdir -p release/${{ env.PROJECT_NAME }}-linux-x64-${{ matrix.distro }}
+          cp -r build/bin/* release/${{ env.PROJECT_NAME }}-linux-x64-${{ matrix.distro }}/
+          cp -r src/plugins release/${{ env.PROJECT_NAME }}-linux-x64-${{ matrix.distro }}/
+          cp LICENSE release/${{ env.PROJECT_NAME }}-linux-x64-${{ matrix.distro }}/
+          cd release
+          tar -czf ${{ env.PROJECT_NAME }}-linux-x64-${{ matrix.distro }}-${{ github.ref_name }}.tar.gz \
+            ${{ env.PROJECT_NAME }}-linux-x64-${{ matrix.distro }}
+
+      - name: Upload Release Artifacts
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: Release-Linux-x64-${{ matrix.distro }}-${{ github.ref_name }}
+          path: release/*.tar.gz
+
+  # ==============================================================================
+  # LINUX ARM64 BUILDS
+  # ==============================================================================
+  Build-Linux-ARM64:
+    name: Build-Linux-ARM64 (${{ matrix.distro }})
+    runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-13
-            arch: x86_64
-          - os: macos-14
-            arch: arm64
-
-    runs-on: ${{ matrix.os }}
+          - distro: ubuntu-latest
+            arch: aarch64
+          - distro: alpine-latest
+            arch: aarch64
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install dependencies (Homebrew)
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build for ARM64
+        run: |
+          if [ "${{ matrix.distro }}" = "ubuntu-latest" ]; then
+            docker run --rm --platform linux/arm64 \
+              -v ${{ github.workspace }}:/workspace \
+              -w /workspace \
+              ubuntu:latest bash -c "
+                apt-get update && apt-get install -y \
+                  build-essential cmake pkg-config \
+                  liblua5.4-dev libcurl4-openssl-dev \
+                  nlohmann-json3-dev git curl && \
+                cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} && \
+                cmake --build build --parallel
+              "
+          elif [ "${{ matrix.distro }}" = "alpine-latest" ]; then
+            docker run --rm --platform linux/arm64 \
+              -v ${{ github.workspace }}:/workspace \
+              -w /workspace \
+              alpine:latest sh -c "
+                apk update && apk add --no-cache \
+                  build-base cmake pkgconfig lua5.4-dev \
+                  curl-dev nlohmann-json git && \
+                cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} && \
+                cmake --build build --parallel
+              "
+          fi
+
+      - name: Upload BuildArtifacts-Linux-ARM64 (Push Events)
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: BuildArtifacts-Linux-ARM64-${{ matrix.distro }}
+          path: |
+            build/bin/
+            src/plugins/
+            LICENSE
+          retention-days: 7
+
+  # ==============================================================================
+  # MACOS BUILDS - Multiple Architectures
+  # ==============================================================================
+  Build-Darwin-x64:
+    name: Build-Darwin-x64
+    runs-on: macos-13
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
         run: brew install cmake pkg-config lua curl nlohmann-json
 
       - name: Setup Rust
@@ -141,32 +227,128 @@ jobs:
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          key: darwin-x64
 
       - name: Configure CMake
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DCMAKE_POLICY_VERSION_MINIMUM=${{ env.CMAKE_POLICY_VERSION }}
 
       - name: Compile Project
         run: cmake --build build --parallel
 
-      - name: Upload CI Build Artifacts (not for tags)
+      - name: Run Tests
+        run: |
+          if [ -f build/CTestTestfile.cmake ]; then
+            (cd build && ctest --output-on-failure --parallel)
+          fi
+
+      - name: Upload BuildArtifacts-Darwin-x64 (Push Events)
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-build-artifacts-macos-${{ matrix.arch }}
+          name: BuildArtifacts-Darwin-x64
           path: |
             build/bin/
             src/plugins/
             LICENSE
-          retention-days: 3
+          retention-days: 7
 
-  build-windows:
-    name: Build Windows (x64)
+      - name: Create Release Package (Tag Events)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          mkdir -p release/${{ env.PROJECT_NAME }}-darwin-x64
+          cp -r build/bin/* release/${{ env.PROJECT_NAME }}-darwin-x64/
+          cp -r src/plugins release/${{ env.PROJECT_NAME }}-darwin-x64/
+          cp LICENSE release/${{ env.PROJECT_NAME }}-darwin-x64/
+          cd release
+          tar -czf ${{ env.PROJECT_NAME }}-darwin-x64-${{ github.ref_name }}.tar.gz \
+            ${{ env.PROJECT_NAME }}-darwin-x64
+
+      - name: Upload Release Artifacts
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: Release-Darwin-x64-${{ github.ref_name }}
+          path: release/*.tar.gz
+
+  Build-Darwin-ARM64:
+    name: Build-Darwin-ARM64
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install cmake pkg-config lua curl nlohmann-json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: darwin-arm64
+
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DCMAKE_POLICY_VERSION_MINIMUM=${{ env.CMAKE_POLICY_VERSION }}
+
+      - name: Compile Project
+        run: cmake --build build --parallel
+
+      - name: Run Tests
+        run: |
+          if [ -f build/CTestTestfile.cmake ]; then
+            (cd build && ctest --output-on-failure --parallel)
+          fi
+
+      - name: Upload BuildArtifacts-Darwin-ARM64 (Push Events)
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: BuildArtifacts-Darwin-ARM64
+          path: |
+            build/bin/
+            src/plugins/
+            LICENSE
+          retention-days: 7
+
+      - name: Create Release Package (Tag Events)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          mkdir -p release/${{ env.PROJECT_NAME }}-darwin-arm64
+          cp -r build/bin/* release/${{ env.PROJECT_NAME }}-darwin-arm64/
+          cp -r src/plugins release/${{ env.PROJECT_NAME }}-darwin-arm64/
+          cp LICENSE release/${{ env.PROJECT_NAME }}-darwin-arm64/
+          cd release
+          tar -czf ${{ env.PROJECT_NAME }}-darwin-arm64-${{ github.ref_name }}.tar.gz \
+            ${{ env.PROJECT_NAME }}-darwin-arm64
+
+      - name: Upload Release Artifacts
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: Release-Darwin-ARM64-${{ github.ref_name }}
+          path: release/*.tar.gz
+
+  # ==============================================================================
+  # WINDOWS BUILDS - Multiple Architectures
+  # ==============================================================================
+  Build-Windows-x64:
+    name: Build-Windows-x64
     runs-on: windows-latest
 
     env:
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
       VCPKG_DEFAULT_TRIPLET: x64-windows
-      RUSTFLAGS: ""
 
     steps:
       - name: Checkout repository
@@ -174,33 +356,39 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install CMake
-        uses: jwlawson/actions-setup-cmake@v1
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
         with:
-          cmake-version: '3.29.3'
+          cmake-version: 'latest'
 
       - name: Install Ninja
         run: choco install ninja -y
 
+      - name: Setup vcpkg cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VCPKG_ROOT }}
+          key: vcpkg-x64-windows-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+
       - name: Install vcpkg and libraries
         run: |
-          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          if (-not (Test-Path $env:VCPKG_ROOT)) {
+            git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          }
           cd $env:VCPKG_ROOT
           .\bootstrap-vcpkg.bat
           .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
         shell: pwsh
 
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          toolchain: stable-x86_64-pc-windows-msvc
 
-      - name: Debug vcpkg installed files
-        run: |
-          Write-Host "VCPKG_ROOT = $env:VCPKG_ROOT"
-          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\share" -Recurse -Depth 2 | Select-Object -First 200
-          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\bin" -Recurse -Depth 1 | Select-Object -First 200
-        shell: pwsh
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-x64
 
       - name: Configure CMake (MSVC, Visual Studio generator)
         run: |
@@ -215,89 +403,234 @@ jobs:
         shell: pwsh
 
       - name: Build Project
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build --config ${{ env.CMAKE_BUILD_TYPE }} --parallel
         shell: pwsh
 
-      - name: Run tests
+      - name: Run Tests
         run: |
           cd build
-          ctest -C Release --output-on-failure
+          ctest -C ${{ env.CMAKE_BUILD_TYPE }} --output-on-failure --parallel
         shell: pwsh
         continue-on-error: true
 
       - name: Copy Runtime DLLs
         run: |
           $vcpkgBinDir = "${{ env.VCPKG_ROOT }}\installed\x64-windows\bin"
-          $targetBinDir = "build\bin\Release"
-
-          Write-Host "Copying DLLs from $vcpkgBinDir to $targetBinDir"
-
+          $targetBinDir = "build\bin\${{ env.CMAKE_BUILD_TYPE }}"
+          
           New-Item -ItemType Directory -Force -Path $targetBinDir
-
-          $dllsToCopy = @(
-              "lua.dll",
-              "libcurl.dll",
-              "libcrypto-3-x64.dll",
-              "libssl-3-x64.dll",
-              "zlib1.dll"
-          )
-
+          
+          $dllsToCopy = @("lua.dll", "libcurl.dll", "libcrypto-3-x64.dll", "libssl-3-x64.dll", "zlib1.dll")
+          
           foreach ($dll in $dllsToCopy) {
               $sourcePath = Join-Path $vcpkgBinDir $dll
-              $destinationPath = Join-Path $targetBinDir $dll
               if (Test-Path $sourcePath) {
-                  Copy-Item -Path $sourcePath -Destination $destinationPath -Force
-                  Write-Host "  Copied $dll"
-              } else {
-                  Write-Warning "  DLL not found: $sourcePath. This might indicate a missing dependency or an issue with vcpkg installation."
+                  Copy-Item -Path $sourcePath -Destination $targetBinDir -Force
               }
           }
         shell: pwsh
 
-      - name: Upload CI Build Artifacts (not for tags)
+      - name: Upload BuildArtifacts-Windows-x64 (Push Events)
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-build-artifacts-windows-x64
+          name: BuildArtifacts-Windows-x64
           path: |
             build/bin/
             src/plugins/
             LICENSE
+          retention-days: 7
 
-      - name: Create Release Package
+      - name: Create Release Package (Tag Events)
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          $releaseDir = "phgit-release"
-          $buildBinDir = "build/bin/Release"
-          $pluginsDir = "src/plugins"
-          $licenseFile = "LICENSE"
-          $tagVersion = "${{ github.ref_name }}"
-          $zipFileName = "phgit-windows-x64-$tagVersion.zip"
-
-          Write-Host "Preparing release package for version: $tagVersion"
-          Write-Host "Output ZIP file: $zipFileName"
-
+          $releaseDir = "${{ env.PROJECT_NAME }}-windows-x64"
+          $buildBinDir = "build/bin/${{ env.CMAKE_BUILD_TYPE }}"
+          $zipFileName = "${{ env.PROJECT_NAME }}-windows-x64-${{ github.ref_name }}.zip"
+          
           New-Item -ItemType Directory -Force -Path $releaseDir
-
-          Write-Host "Copying executable and DLLs from $buildBinDir to $releaseDir"
           Copy-Item -Path "$buildBinDir/*" -Destination $releaseDir -Recurse -Force
-
-          Write-Host "Copying plugins from $pluginsDir to $releaseDir/plugins"
           New-Item -ItemType Directory -Force -Path "$releaseDir/plugins"
-          Copy-Item -Path "$pluginsDir/*" -Destination "$releaseDir/plugins" -Recurse -Force
-
-          Write-Host "Copying LICENSE file to $releaseDir"
-          Copy-Item -Path $licenseFile -Destination $releaseDir -Force
-
-          Write-Host "Creating ZIP archive: $zipFileName"
+          Copy-Item -Path "src/plugins/*" -Destination "$releaseDir/plugins" -Recurse -Force
+          Copy-Item -Path "LICENSE" -Destination $releaseDir -Force
+          
           Compress-Archive -Path "$releaseDir/*" -DestinationPath $zipFileName -Force
-
-          Write-Host "Release package created successfully."
         shell: pwsh
 
-      - name: Upload Release Package Artifact
+      - name: Upload Release Artifacts
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-release-windows-x64-${{ github.ref_name }}
-          path: phgit-windows-x64-*.zip
+          name: Release-Windows-x64-${{ github.ref_name }}
+          path: "*.zip"
+
+  Build-Windows-x86:
+    name: Build-Windows-x86
+    runs-on: windows-latest
+
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+      VCPKG_DEFAULT_TRIPLET: x86-windows
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: 'latest'
+
+      - name: Setup vcpkg cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VCPKG_ROOT }}
+          key: vcpkg-x86-windows-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}
+
+      - name: Install vcpkg and libraries
+        run: |
+          if (-not (Test-Path $env:VCPKG_ROOT)) {
+            git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          }
+          cd $env:VCPKG_ROOT
+          .\bootstrap-vcpkg.bat
+          .\vcpkg.exe install curl lua nlohmann-json --triplet x86-windows
+        shell: pwsh
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-i686-pc-windows-msvc
+
+      - name: Configure CMake (MSVC, Visual Studio generator)
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A Win32 `
+            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" `
+            -DCMAKE_PREFIX_PATH="${{ env.VCPKG_ROOT }}\installed\x64-windows\share" `
+            -DLua_FOUND=TRUE `
+            -DLUA_INCLUDE_DIR="${{ env.VCPKG_ROOT }}\installed\x64-windows\include" `
+            -DLUA_LIBRARY="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
+            -DLUA_LIBRARIES="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
+            -DCMAKE_BUILD_TYPE=Release
+        shell: pwsh
+
+      - name: Build Project
+        run: cmake --build build --config ${{ env.CMAKE_BUILD_TYPE }} --parallel
+        shell: pwsh
+
+      - name: Upload BuildArtifacts-Windows-x86 (Push Events)
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: BuildArtifacts-Windows-x86
+          path: |
+            build/bin/
+            src/plugins/
+            LICENSE
+          retention-days: 7
+
+  # ==============================================================================
+  # FREEBSD BUILD
+  # ==============================================================================
+  Build-FreeBSD-x64:
+    name: Build-FreeBSD-x64
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build in FreeBSD VM
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          mem: 2048
+          prepare: |
+            pkg install -y cmake pkgconf lua54 curl nlohmann-json git rust
+          run: |
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
+            cmake --build build --parallel
+
+      - name: Upload BuildArtifacts-FreeBSD-x64 (Push Events)
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: BuildArtifacts-FreeBSD-x64
+          path: |
+            build/bin/
+            src/plugins/
+            LICENSE
+          retention-days: 7
+
+  # ==============================================================================
+  # BUILD STATUS SUMMARY
+  # ==============================================================================
+  Build-Status-Summary:
+    name: Build Status Summary
+    runs-on: ubuntu-latest
+    needs: [
+      Build-Linux-x64,
+      Build-Linux-ARM64,
+      Build-Darwin-x64,
+      Build-Darwin-ARM64,
+      Build-Windows-x64,
+      Build-Windows-x86,
+      Build-FreeBSD-x64
+    ]
+    if: always()
+
+    steps:
+      - name: Generate Build Report
+        run: |
+          echo "# ${{ env.PROJECT_NAME }} Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Platform Build Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Architecture | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux | x64 | ${{ needs.Build-Linux-x64.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux | ARM64 | ${{ needs.Build-Linux-ARM64.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Darwin (macOS) | x64 | ${{ needs.Build-Darwin-x64.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Darwin (macOS) | ARM64 | ${{ needs.Build-Darwin-ARM64.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Windows | x64 | ${{ needs.Build-Windows-x64.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Windows | x86 | ${{ needs.Build-Windows-x86.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| FreeBSD | x64 | ${{ needs.Build-FreeBSD-x64.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Ref:** ${{ github.ref }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
+  # ==============================================================================
+  # RELEASE CREATION (Tag Events Only)
+  # ==============================================================================
+  Create-Release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [
+      Build-Linux-x64,
+      Build-Darwin-x64,
+      Build-Darwin-ARM64,
+      Build-Windows-x64,
+      Build-Windows-x86
+    ]
+    if: startsWith(github.ref, 'refs/tags/') && !cancelled()
+
+    steps:
+      - name: Download all release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Release-*
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "${{ env.PROJECT_NAME }} ${{ github.ref_name }}"
+          files: release-artifacts/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

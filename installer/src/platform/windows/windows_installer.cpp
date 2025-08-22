@@ -1,43 +1,39 @@
 /* Copyright (C) 2025 Pedro Henrique / phkaiser13
 * File: windows_installer.cpp
-* This file provides the final, fully functional implementation of the WindowsInstaller.
-* It uses ApiManager to dynamically fetch download URLs for dependencies, Downloader to
-* retrieve them with progress, SHA256 to verify integrity, ProcessExecutor to run silent
-* installations, and a zip utility to extract archives. All stubs have been removed.
+* This file implements the WindowsInstaller class, which acts as a post-installation
+* assistant. Its primary role is to check for external dependencies like Git, Terraform,
+* and Vault, and interactively guide the user to install them if they are missing.
+* It does *not* perform any file installation or system modification itself, as that
+* is the responsibility of the primary installer (e.g., NSIS).
 * SPDX-License-Identifier: Apache-2.0
 */
 
 #include "platform/windows/windows_installer.hpp"
-#include "utils/downloader.hpp"
-#include "utils/process_executor.hpp"
-#include "utils/sha256.hpp"
 #include "spdlog/spdlog.h"
-
-// For unzipping. Add miniz.c and miniz.h to the project or use FetchContent.
-#include "miniz.h" 
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <winreg.h>
-#include <shlobj.h>
-#include <filesystem>
+#include <shellapi.h> // Required for ShellExecuteA to open URLs
 #include <iostream>
-
-#pragma comment(lib, "advapi32.lib")
+#include <string>
+#include <algorithm>
+#include <cctype>
 
 namespace phgit_installer::platform {
 
-    namespace fs = std::filesystem;
-
-    // Helper for progress bar
-    static void print_progress(uint64_t total, uint64_t downloaded) {
-        if (total == 0) return;
-        int percentage = static_cast<int>((static_cast<double>(downloaded) / total) * 100.0);
-        std::cout << "\rDownloading... " << percentage << "% [" << downloaded << " / " << total << " bytes]" << std::flush;
-        if (downloaded == total) {
-            std::cout << std::endl;
+    // Anonymous namespace for internal helper functions
+    namespace {
+        /**
+         * @brief Converts a string to lowercase.
+         * @param s The string to convert.
+         * @return The lowercased string.
+         */
+        std::string to_lower(std::string s) {
+            std::transform(s.begin(), s.end(), s.begin(),
+                           [](unsigned char c){ return std::tolower(c); });
+            return s;
         }
-    };
+    }
 
     WindowsInstaller::WindowsInstaller(
         platform::PlatformInfo info,
@@ -48,214 +44,113 @@ namespace phgit_installer::platform {
           m_dep_manager(dep_manager),
           m_api_manager(std::move(api_manager)),
           m_config(std::move(config)) {
-        spdlog::debug("WindowsInstaller engine fully initialized.");
+        spdlog::debug("Windows Post-Installation Assistant initialized.");
     }
 
     void WindowsInstaller::run_installation() {
-        spdlog::info("Starting Windows installation process.");
-        if (!m_platform_info.is_privileged) {
-            spdlog::warn("Installer is not running with Administrator privileges. System-wide features will be unavailable.");
-        }
-        perform_installation();
-    }
+        spdlog::info("Starting post-installation dependency check for Windows.");
+        std::cout << "--- Post-Installation Dependency Assistant ---\n" << std::endl;
 
-    void WindowsInstaller::perform_installation() {
-        // Determine install directory
-        bool for_all_users = m_platform_info.is_privileged;
-        std::string install_dir;
-        char path[MAX_PATH];
-        if (for_all_users) {
-            if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_PROGRAM_FILES, NULL, 0, path))) install_dir = (fs::path(path) / "phgit").string();
+        // Check for Git (required dependency)
+        if (!m_dep_manager.get_status("git").value_or(dependencies::DependencyStatus{}).is_version_ok) {
+            prompt_user_to_install_git();
         } else {
-            if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, path))) install_dir = (fs::path(path) / "Programs" / "phgit").string();
-        }
-        if (install_dir.empty()) {
-            throw std::runtime_error("Could not determine a valid installation directory.");
-        }
-        spdlog::info("Installation target directory: {}", install_dir);
-        fs::create_directories(install_dir);
-
-        // Ensure dependencies are met
-        if (!ensure_git_is_installed()) {
-            throw std::runtime_error("Failed to install required dependency: Git.");
-        }
-        
-        std::string tools_dir = (fs::path(install_dir) / "bin").string();
-        fs::create_directories(tools_dir);
-        if (!ensure_optional_dependencies(tools_dir)) {
-            spdlog::error("Failed to install one or more optional dependencies. Continuing installation.");
+            spdlog::info("Git dependency is satisfied.");
+            std::cout << "[OK] Git is installed and meets the version requirements." << std::endl;
         }
 
-        // "Install" application files (assume they are extracted by the package)
-        install_application_files(install_dir);
+        // Check for Terraform (optional dependency)
+        if (!m_dep_manager.get_status("terraform").value_or(dependencies::DependencyStatus{}).is_version_ok) {
+            prompt_user_to_install_optional("Terraform");
+        } else {
+            spdlog::info("Terraform dependency is satisfied.");
+            std::cout << "[OK] Terraform is installed and meets the version requirements." << std::endl;
+        }
 
-        // Integrate with the system
-        perform_system_integration(install_dir);
-        spdlog::info("Windows installation process completed successfully.");
+        // Check for Vault (optional dependency)
+        if (!m_dep_manager.get_status("vault").value_or(dependencies::DependencyStatus{}).is_version_ok) {
+            prompt_user_to_install_optional("Vault");
+        } else {
+            spdlog::info("Vault dependency is satisfied.");
+            std::cout << "[OK] Vault is installed and meets the version requirements." << std::endl;
+        }
+
+        spdlog::info("Dependency check completed.");
+        std::cout << "\nDependency check finished. The application is now ready." << std::endl;
+        std::cout << "Press Enter to exit." << std::endl;
+        std::cin.get(); // Wait for user confirmation before closing the console
     }
 
-    bool WindowsInstaller::ensure_git_is_installed() {
-        if (m_dep_manager.get_status("git").value_or(dependencies::DependencyStatus{}).is_version_ok) {
-            spdlog::info("Git is already installed and up-to-date.");
-            return true;
-        }
-        
-        spdlog::info("Git not found or outdated. Attempting to download and install...");
-        auto asset = m_api_manager->fetch_latest_asset("git_for_windows", m_platform_info);
-        if (!asset) {
-            spdlog::critical("Could not resolve Git for Windows download URL from API.");
-            return false;
-        }
+    void WindowsInstaller::prompt_user_to_install_git() {
+        spdlog::warn("Required dependency 'Git' is missing or outdated.");
+        std::cout << "\n[REQUIRED] Git was not found on your system or the version is too old." << std::endl;
+        std::cout << "Git is essential for the core functionality of this application." << std::endl;
 
-        utils::Downloader downloader;
-        char temp_path[MAX_PATH];
-        GetTempPathA(MAX_PATH, temp_path);
-        std::string installer_path = (fs::path(temp_path) / "Git-Installer.exe").string();
-
-        spdlog::info("Downloading from: {}", asset->download_url);
-        if (!downloader.download_file(asset->download_url, installer_path, print_progress)) return false;
-
-        std::string actual_hash = utils::crypto::SHA256::from_file(installer_path);
-        if (actual_hash != asset->checksum && !asset->checksum.empty()) {
-            spdlog::critical("Checksum mismatch for Git installer! Expected {}, got {}.", asset->checksum, actual_hash);
-            remove(installer_path.c_str());
-            return false;
-        }
-        spdlog::info("Download verified. Starting silent installation...");
-
-        std::string command = "\"" + installer_path + "\" /VERYSILENT /NORESTART /NOCANCEL";
-        auto result = utils::ProcessExecutor::execute(command);
-        remove(installer_path.c_str());
-
-        if (result.exit_code != 0) {
-            spdlog::critical("Git installer failed with exit code {}. Stderr: {}", result.exit_code, result.std_err);
-            return false;
-        }
-        spdlog::info("Git for Windows installed successfully.");
-        return true;
-    }
-
-    bool WindowsInstaller::ensure_optional_dependencies(const std::string& target_dir) {
-        bool all_ok = true;
-        for (const auto& name : {"terraform", "vault"}) {
-            if (m_dep_manager.get_status(name).value_or(dependencies::DependencyStatus{}).is_version_ok) {
-                spdlog::info("Optional dependency '{}' is already installed and up-to-date.", name);
-                continue;
+        char user_choice;
+        while (true) {
+            std::cout << "Would you like to open the official Git for Windows download page in your browser? (y/n): ";
+            std::cin >> user_choice;
+            user_choice = std::tolower(user_choice);
+            if (user_choice == 'y' || user_choice == 'n') {
+                // Clear the input buffer for the final 'cin.get()' in run_installation
+                std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+                break;
             }
-            
-            spdlog::info("Optional dependency '{}' not found or outdated. Attempting to download...", name);
-            auto asset = m_api_manager->fetch_latest_asset(name, m_platform_info);
-            if (!asset) {
-                spdlog::error("Could not resolve download URL for '{}'. Skipping.", name);
-                all_ok = false;
-                continue;
-            }
-
-            utils::Downloader downloader;
-            char temp_path[MAX_PATH];
-            GetTempPathA(MAX_PATH, temp_path);
-            std::string archive_path = (fs::path(temp_path) / (std::string(name) + ".zip")).string();
-
-            spdlog::info("Downloading from: {}", asset->download_url);
-            if (!downloader.download_file(asset->download_url, archive_path, print_progress)) {
-                all_ok = false;
-                continue;
-            }
-
-            std::string actual_hash = utils::crypto::SHA256::from_file(archive_path);
-            if (actual_hash != asset->checksum) {
-                spdlog::critical("Checksum mismatch for {}! Expected {}, got {}.", name, asset->checksum, actual_hash);
-                remove(archive_path.c_str());
-                all_ok = false;
-                continue;
-            }
-
-            spdlog::info("Download verified. Extracting archive to {}", target_dir);
-            if (!unzip_archive(archive_path, target_dir)) {
-                spdlog::error("Failed to extract archive for {}.", name);
-                all_ok = false;
-            }
-            remove(archive_path.c_str());
-        }
-        return all_ok;
-    }
-
-    bool WindowsInstaller::install_application_files(const std::string& install_path) {
-        spdlog::info("Verifying application files in {}", install_path);
-        // In a real scenario, the MSI/NSIS package extracts the files.
-        // This function's role is to confirm they exist.
-        if (!fs::exists(fs::path(install_path) / "bin" / "phgit.exe")) {
-             spdlog::warn("Main application executable 'phgit.exe' not found where expected.");
-        }
-        if (!fs::exists(fs::path(install_path) / "config.json")) {
-             spdlog::warn("Core 'config.json' not found where expected.");
-        }
-        return true;
-    }
-
-    void WindowsInstaller::perform_system_integration(const std::string& install_path) {
-        spdlog::info("Performing system integration tasks.");
-        update_path_environment_variable((fs::path(install_path) / "bin").string(), m_platform_info.is_privileged);
-        create_registry_entries(install_path, m_platform_info.is_privileged);
-        create_start_menu_shortcuts(install_path);
-    }
-
-    void WindowsInstaller::update_path_environment_variable(const std::string& directory_to_add, bool for_all_users) {
-        // Implementation is unchanged, it was already robust.
-        // ... (code from previous version)
-    }
-
-    void WindowsInstaller::create_registry_entries(const std::string& install_path, bool for_all_users) {
-        spdlog::info("Creating registry entries for Add/Remove Programs.");
-        auto meta = m_config->get_package_metadata().value_or(utils::PackageMetadata{});
-
-        HKEY root_key = for_all_users ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
-        std::string uninstall_key_path = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + meta.name;
-        
-        HKEY h_key;
-        RegCreateKeyExA(root_key, uninstall_key_path.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &h_key, NULL);
-        
-        std::string uninstaller_path = "\"" + install_path + "\\uninstall.exe\"";
-        RegSetValueExA(h_key, "DisplayName", 0, REG_SZ, (const BYTE*)meta.name.c_str(), meta.name.length() + 1);
-        RegSetValueExA(h_key, "DisplayVersion", 0, REG_SZ, (const BYTE*)meta.version.c_str(), meta.version.length() + 1);
-        RegSetValueExA(h_key, "Publisher", 0, REG_SZ, (const BYTE*)meta.maintainer.c_str(), meta.maintainer.length() + 1);
-        RegSetValueExA(h_key, "UninstallString", 0, REG_SZ, (const BYTE*)uninstaller_path.c_str(), uninstaller_path.length() + 1);
-        RegSetValueExA(h_key, "InstallLocation", 0, REG_SZ, (const BYTE*)install_path.c_str(), install_path.length() + 1);
-        RegCloseKey(h_key);
-    }
-
-    void WindowsInstaller::create_start_menu_shortcuts(const std::string& install_path) {
-        // Implementation remains a stub as it's best handled by NSIS/WiX.
-        spdlog::info("Shortcut creation is delegated to the package installer (NSIS/WiX).");
-    }
-
-    bool WindowsInstaller::unzip_archive(const std::string& zip_path, const std::string& dest_dir) {
-        mz_zip_archive zip_archive = {0};
-        if (!mz_zip_reader_init_file(&zip_archive, zip_path.c_str(), 0)) {
-            spdlog::error("Failed to initialize zip reader for '{}'", zip_path);
-            return false;
+            std::cout << "Invalid input. Please enter 'y' for yes or 'n' for no." << std::endl;
+            std::cin.clear();
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
         }
 
-        mz_uint num_files = mz_zip_reader_get_num_files(&zip_archive);
-        for (mz_uint i = 0; i < num_files; i++) {
-            mz_zip_archive_file_stat file_stat;
-            if (!mz_zip_reader_file_stat(&zip_archive, i, &file_stat)) continue;
+        if (user_choice == 'y') {
+            // Fetch the URL from a reliable source (config or API)
+            std::string url = m_api_manager->get_download_page_url("git_for_windows").value_or("https://git-scm.com/download/win");
+            spdlog::info("User chose to open the Git download page: {}", url);
+            std::cout << "Opening " << url << " in your default browser..." << std::endl;
 
-            fs::path dest_path = fs::path(dest_dir) / file_stat.m_filename;
-            if (mz_zip_reader_is_file_a_directory(&zip_archive, i)) {
-                fs::create_directories(dest_path);
-            } else {
-                fs::create_directories(dest_path.parent_path());
-                if (!mz_zip_reader_extract_to_file(&zip_archive, i, dest_path.string().c_str(), 0)) {
-                    spdlog::error("Failed to extract file: {}", file_stat.m_filename);
-                    mz_zip_reader_end(&zip_archive);
-                    return false;
-                }
-            }
+            // Use ShellExecuteA for maximum compatibility to open the URL
+            ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
+
+            std::cout << "Please download and run the installer. After installation, you may need to restart this application." << std::endl;
+        } else {
+            spdlog::info("User declined to install Git at this time.");
+            std::cout << "You can install Git later, but some features may not work correctly." << std::endl;
         }
-        mz_zip_reader_end(&zip_archive);
-        spdlog::info("Successfully extracted archive '{}' to '{}'", zip_path, dest_dir);
-        return true;
+    }
+
+    void WindowsInstaller::prompt_user_to_install_optional(const std::string& dependency_name) {
+        spdlog::warn("Optional dependency '{}' is missing or outdated.", dependency_name);
+        std::cout << "\n[OPTIONAL] " << dependency_name << " was not found on your system." << std::endl;
+        std::cout << "This tool is recommended for extended features but is not required for basic operation." << std::endl;
+
+        char user_choice;
+        while (true) {
+            std::cout << "Would you like to open the official " << dependency_name << " download page? (y/n): ";
+            std::cin >> user_choice;
+            user_choice = std::tolower(user_choice);
+            if (user_choice == 'y' || user_choice == 'n') {
+                std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+                break;
+            }
+            std::cout << "Invalid input. Please enter 'y' for yes or 'n' for no." << std::endl;
+            std::cin.clear();
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        }
+
+        if (user_choice == 'y') {
+            std::string api_key = to_lower(dependency_name);
+            std::string default_url = "https://www.google.com/search?q=download+" + dependency_name;
+            std::string url = m_api_manager->get_download_page_url(api_key).value_or(default_url);
+
+            spdlog::info("User chose to open the {} download page: {}", dependency_name, url);
+            std::cout << "Opening " << url << " in your default browser..." << std::endl;
+
+            ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
+
+            std::cout << "Please follow the instructions on the website to install " << dependency_name << "." << std::endl;
+        } else {
+            spdlog::info("User declined to install optional dependency '{}'.", dependency_name);
+            std::cout << "You can install " << dependency_name << " at any time to enable its related features." << std::endl;
+        }
     }
 
 } // namespace phgit_installer::platform
