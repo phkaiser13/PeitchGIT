@@ -1,5 +1,5 @@
 <div align="center" style="font-family:Segoe UI, Roboto, sans-serif;">
-  <a href="https://github.com/phkaiser13/peitchgit">
+  <a href="https://github.com/phdev13/peitchgit">
   </a>
 
   <h1 style="font-size:2.5em; margin-bottom:0.2em;">Peitch Git for VS Code</h1>
@@ -12,14 +12,14 @@
   </p>
 
   <p>
-    <a href="https://marketplace.visualstudio.com/items?itemName=phkaiser13.peitch-git">
-      <img src="https://img.shields.io/visual-studio-marketplace/v/phkaiser13.peitch-git?style=for-the-badge&label=VS%20Marketplace" alt="VS Marketplace Version" />
+    <a href="https://marketplace.visualstudio.com/items?itemName=phdev13.peitch-git">
+      <img src="https://img.shields.io/visual-studio-marketplace/v/phdev13.peitch-git?style=for-the-badge&label=VS%20Marketplace" alt="VS Marketplace Version" />
     </a>
-    <a href="https://github.com/phkaiser13/peitchgit/blob/main/LICENSE">
+    <a href="https://github.com/phdev13/peitchgit/blob/main/LICENSE">
       <img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=for-the-badge" alt="License" />
     </a>
-    <a href="https://github.com/phkaiser13/peitchgit/actions">
-      <img src="https://img.shields.io/github/actions/workflow/status/phkaiser13/peitchgit/build-phgit.yml?branch=main&logo=github&style=for-the-badge" alt="Build Status" />
+    <a href="https://github.com/phdev13/peitchgit/actions">
+      <img src="https://img.shields.io/github/actions/workflow/status/phdev13/peitchgit/build-phgit.yml?branch=main&logo=github&style=for-the-badge" alt="Build Status" />
     </a>
   </p>
 </div>
@@ -115,7 +115,7 @@ Interested in contributing? Here’s how to get the extension running locally.
 
 1.  **Clone the repository**:
     ```bash
-    git clone https://github.com/phkaiser13/peitchgit.git
+    git clone https://github.com/phdev13/peitchgit.git
     cd peitchgit/vscode-extension # Navigate to the extension directory
     ```
 2.  **Install dependencies**:
@@ -137,4 +137,4 @@ Interested in contributing? Here’s how to get the extension running locally.
 
 This extension is distributed under the terms of the **Apache License 2.0**.
 
-See the [LICENSE](https://github.com/phkaiser13/peitchgit/blob/main/LICENSE) file for more information.
+See the [LICENSE](https://github.com/phdev13/peitchgit/blob/main/LICENSE) file for more information.

@@ -35,7 +35,7 @@ function redactSensitiveInfo(text: string): string {
     return text.replace(/(api_key|token|secret)\s*=\s*['"]?[^'"]+['"]?/gi, '$1="[REDACTED]"');
 }
 
-export function registerAICommands(context: vscode.extensionContext, gitAdapter: IGitAdapter): vscode.Disposable[] {
+export function registerAICommands(context: vscode.ExtensionContext, gitAdapter: IGitAdapter): vscode.Disposable[] {
     const subscriptions: vscode.Disposable[] = [];
 
     subscriptions.push(vscode.commands.registerCommand('peitch.addAIProvider', async () => {

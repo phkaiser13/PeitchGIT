@@ -9,7 +9,7 @@ export class BranchesProvider implements vscode.TreeDataProvider<BranchItem> {
     readonly onDidChangeTreeData: vscode.Event<BranchItem | undefined | null> = this._onDidChangeTreeData.event;
 
     refresh(): void {
-        this._onDidChangeTreeData.fire();
+        this._onDidChangeTreeData.fire(undefined);
     }
 
     getTreeItem(element: BranchItem): vscode.TreeItem {
