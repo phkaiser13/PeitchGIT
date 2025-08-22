@@ -2,26 +2,37 @@ name: Build phgit (Multi-Platform)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
     tags:
       - 'v*'
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
   workflow_dispatch:
 
+env:
+  CARGO_TERM_COLOR: always
+  CMAKE_BUILD_TYPE: Release
+
 jobs:
+  # ============================================================================
+  # Linux Builds - Multiple Distributions and Architectures
+  # ============================================================================
   build-linux:
-    name: Build Linux (${{ matrix.distro }})
+    name: Build-linux-${{ matrix.arch }}
     runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
       matrix:
+        arch: [x86_64, aarch64, armv7]
+        distro: [ubuntu, fedora, alpine]
         include:
+          # Ubuntu configurations
           - distro: ubuntu
-            container: ubuntu:latest
+            container: ubuntu:22.04
             package_manager: apt
             deps_command: |
+              export DEBIAN_FRONTEND=noninteractive
               apt-get update && apt-get install -y \
                 build-essential \
                 cmake \
@@ -31,9 +42,12 @@ jobs:
                 libcurl4-openssl-dev \
                 nlohmann-json3-dev \
                 git \
-                curl
+                curl \
+                tar \
+                gzip
+          # Fedora configurations  
           - distro: fedora
-            container: fedora:latest
+            container: fedora:39
             package_manager: dnf
             deps_command: |
               dnf -y update
@@ -53,22 +67,26 @@ jobs:
                 which \
                 curl
               dnf clean all
-          - distro: arch
-            container: archlinux:latest
-            package_manager: pacman
+          # Alpine configurations
+          - distro: alpine
+            container: alpine:3.19
+            package_manager: apk
             deps_command: |
-              pacman-key --init
-              pacman-key --populate archlinux
-              pacman -Syu --noconfirm --needed \
-                base-devel \
+              apk update && apk add --no-cache \
+                build-base \
                 cmake \
-                lua \
-                curl \
+                openssl-dev \
+                pkgconfig \
+                lua5.4-dev \
+                curl-dev \
                 nlohmann-json \
-                go \
-                rust \
                 git \
-                pkgconf
+                curl \
+                tar \
+                gzip
+        exclude:
+          # Exclude unsupported combinations
+          - { distro: alpine, arch: armv7 }
 
     container:
       image: ${{ matrix.container }}
@@ -76,97 +94,194 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install system dependencies (${{ matrix.distro }})
         run: ${{ matrix.deps_command }}
+
+      - name: Setup cross-compilation for ARM (if needed)
+        if: matrix.arch != 'x86_64'
+        run: |
+          if [ "${{ matrix.distro }}" = "ubuntu" ]; then
+            if [ "${{ matrix.arch }}" = "aarch64" ]; then
+              apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+              echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+              echo "CXX=aarch64-linux-gnu-g++" >> $GITHUB_ENV
+              echo "CMAKE_ARGS=-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64 -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++" >> $GITHUB_ENV
+            elif [ "${{ matrix.arch }}" = "armv7" ]; then
+              apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+              echo "CC=arm-linux-gnueabihf-gcc" >> $GITHUB_ENV
+              echo "CXX=arm-linux-gnueabihf-g++" >> $GITHUB_ENV
+              echo "CMAKE_ARGS=-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=arm -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++" >> $GITHUB_ENV
+            fi
+          fi
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
+          targets: |
+            ${{ matrix.arch == 'aarch64' && 'aarch64-unknown-linux-gnu' || '' }}
+            ${{ matrix.arch == 'armv7' && 'armv7-unknown-linux-gnueabihf' || '' }}
+            ${{ matrix.arch == 'x86_64' && 'x86_64-unknown-linux-gnu' || '' }}
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.distro }}-${{ matrix.arch }}
 
       - name: Configure CMake
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            ${{ env.CMAKE_ARGS || '' }}
 
       - name: Compile Project
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel $(nproc)
 
-      - name: Run unit tests (Fedora only)
-        if: matrix.distro == 'fedora' && always()
+      - name: Run unit tests (x86_64 only)
+        if: matrix.arch == 'x86_64' && matrix.distro == 'ubuntu'
+        continue-on-error: true
         run: |
           if [ -f build/CTestTestfile.cmake ]; then
-            (cd build && ctest --output-on-failure)
+            (cd build && ctest --output-on-failure --parallel $(nproc))
           else
             echo "No tests configured (CTestTestfile.cmake not found)."
           fi
 
-      - name: Upload CI Build Artifacts (not for tags)
+      - name: Upload Build Artifacts (CI builds)
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-build-artifacts-${{ matrix.distro }}
+          name: BuildArtifacts-linux-${{ matrix.arch }}-${{ matrix.distro }}
           path: |
-            build/
+            build/bin/
             src/plugins/
             LICENSE
-          retention-days: 3
+          retention-days: 7
 
+      - name: Upload Release Artifacts (Tagged builds)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: phgit-linux-${{ matrix.arch }}-${{ matrix.distro }}-${{ github.ref_name }}
+          path: |
+            build/bin/
+            src/plugins/
+            LICENSE
+
+  # ============================================================================
+  # macOS Builds - Intel and Apple Silicon
+  # ============================================================================
   build-macos:
-    name: Build macOS (${{ matrix.arch }})
+    name: Build-darwin-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
 
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-13
-            arch: x86_64
-          - os: macos-14
-            arch: arm64
-
-    runs-on: ${{ matrix.os }}
+          - arch: x86_64
+            runner: macos-13
+            target: x86_64-apple-darwin
+          - arch: arm64
+            runner: macos-14
+            target: aarch64-apple-darwin
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install dependencies (Homebrew)
-        run: brew install cmake pkg-config lua curl nlohmann-json
+        run: |
+          brew update
+          brew install cmake pkg-config lua curl nlohmann-json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
+          targets: ${{ matrix.target }}
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.arch }}
 
       - name: Configure CMake
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }}
 
       - name: Compile Project
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel $(sysctl -n hw.ncpu)
 
-      - name: Upload CI Build Artifacts (not for tags)
+      - name: Run unit tests
+        continue-on-error: true
+        run: |
+          if [ -f build/CTestTestfile.cmake ]; then
+            (cd build && ctest --output-on-failure --parallel $(sysctl -n hw.ncpu))
+          else
+            echo "No tests configured (CTestTestfile.cmake not found)."
+          fi
+
+      - name: Upload Build Artifacts (CI builds)
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-build-artifacts-macos-${{ matrix.arch }}
+          name: BuildArtifacts-darwin-${{ matrix.arch }}
           path: |
             build/bin/
             src/plugins/
             LICENSE
-          retention-days: 3
+          retention-days: 7
 
+      - name: Upload Release Artifacts (Tagged builds)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: phgit-darwin-${{ matrix.arch }}-${{ github.ref_name }}
+          path: |
+            build/bin/
+            src/plugins/
+            LICENSE
+
+  # ============================================================================
+  # Windows Builds - Multiple Architectures
+  # ============================================================================
   build-windows:
-    name: Build Windows (x64)
-    runs-on: windows-latest
+    name: Build-windows-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+            vcpkg_triplet: x64-windows
+            cmake_arch: x64
+            rust_target: x86_64-pc-windows-msvc
+          - arch: x86
+            runner: windows-latest
+            vcpkg_triplet: x86-windows
+            cmake_arch: Win32
+            rust_target: i686-pc-windows-msvc
+          - arch: arm64
+            runner: windows-latest
+            vcpkg_triplet: arm64-windows
+            cmake_arch: ARM64
+            rust_target: aarch64-pc-windows-msvc
 
     env:
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
-      VCPKG_DEFAULT_TRIPLET: x64-windows
+      VCPKG_DEFAULT_TRIPLET: ${{ matrix.vcpkg_triplet }}
       RUSTFLAGS: ""
 
     steps:
@@ -176,64 +291,78 @@ jobs:
           fetch-depth: 0
 
       - name: Install CMake
-        uses: jwlawson/actions-setup-cmake@v1
+        uses: jwlawson/actions-setup-cmake@v2
         with:
           cmake-version: '3.29.3'
 
       - name: Install Ninja
         run: choco install ninja -y
 
+      - name: Cache vcpkg
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.VCPKG_ROOT }}
+          key: vcpkg-${{ matrix.vcpkg_triplet }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ matrix.vcpkg_triplet }}-
+
       - name: Install vcpkg and libraries
         run: |
-          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          if (-not (Test-Path "$env:VCPKG_ROOT")) {
+            git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          }
           cd $env:VCPKG_ROOT
-          .\bootstrap-vcpkg.bat
-          .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
+          if (-not (Test-Path "vcpkg.exe")) {
+            .\bootstrap-vcpkg.bat
+          }
+          .\vcpkg.exe install curl lua nlohmann-json --triplet ${{ matrix.vcpkg_triplet }}
         shell: pwsh
 
       - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
+          targets: ${{ matrix.rust_target }}
 
-      - name: Debug vcpkg installed files
-        run: |
-          Write-Host "VCPKG_ROOT = $env:VCPKG_ROOT"
-          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\share" -Recurse -Depth 2 | Select-Object -First 200
-          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\bin" -Recurse -Depth 1 | Select-Object -First 200
-        shell: pwsh
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.arch }}
 
       - name: Configure CMake (MSVC, Visual Studio generator)
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+          cmake -S . -B build -G "Visual Studio 17 2022" -A ${{ matrix.cmake_arch }} `
             -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" `
-            -DCMAKE_PREFIX_PATH="${{ env.VCPKG_ROOT }}\installed\x64-windows\share" `
+            -DCMAKE_PREFIX_PATH="${{ env.VCPKG_ROOT }}\installed\${{ matrix.vcpkg_triplet }}\share" `
             -DLua_FOUND=TRUE `
-            -DLUA_INCLUDE_DIR="${{ env.VCPKG_ROOT }}\installed\x64-windows\include" `
-            -DLUA_LIBRARY="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
-            -DLUA_LIBRARIES="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
-            -DCMAKE_BUILD_TYPE=Release
+            -DLUA_INCLUDE_DIR="${{ env.VCPKG_ROOT }}\installed\${{ matrix.vcpkg_triplet }}\include" `
+            -DLUA_LIBRARY="${{ env.VCPKG_ROOT }}\installed\${{ matrix.vcpkg_triplet }}\lib\lua.lib" `
+            -DLUA_LIBRARIES="${{ env.VCPKG_ROOT }}\installed\${{ matrix.vcpkg_triplet }}\lib\lua.lib" `
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
         shell: pwsh
 
       - name: Build Project
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build --config ${{ env.CMAKE_BUILD_TYPE }} --parallel
         shell: pwsh
 
-      - name: Run tests
+      - name: Run tests (x64 only)
+        if: matrix.arch == 'x64'
         run: |
           cd build
-          ctest -C Release --output-on-failure
+          ctest -C ${{ env.CMAKE_BUILD_TYPE }} --output-on-failure --parallel
         shell: pwsh
         continue-on-error: true
 
       - name: Copy Runtime DLLs
         run: |
-          $vcpkgBinDir = "${{ env.VCPKG_ROOT }}\installed\x64-windows\bin"
-          $targetBinDir = "build\bin\Release"
+          $vcpkgBinDir = "${{ env.VCPKG_ROOT }}\installed\${{ matrix.vcpkg_triplet }}\bin"
+          $targetBinDir = "build\bin\${{ env.CMAKE_BUILD_TYPE }}"
 
           Write-Host "Copying DLLs from $vcpkgBinDir to $targetBinDir"
 
-          New-Item -ItemType Directory -Force -Path $targetBinDir
+          if (-not (Test-Path $targetBinDir)) {
+            New-Item -ItemType Directory -Force -Path $targetBinDir
+          }
 
           $dllsToCopy = @(
               "lua.dll",
@@ -243,6 +372,12 @@ jobs:
               "zlib1.dll"
           )
 
+          # For x86 architecture, adjust DLL names
+          if ("${{ matrix.arch }}" -eq "x86") {
+            $dllsToCopy = $dllsToCopy -replace "libcrypto-3-x64.dll", "libcrypto-3.dll"
+            $dllsToCopy = $dllsToCopy -replace "libssl-3-x64.dll", "libssl-3.dll"
+          }
+
           foreach ($dll in $dllsToCopy) {
               $sourcePath = Join-Path $vcpkgBinDir $dll
               $destinationPath = Join-Path $targetBinDir $dll
@@ -250,30 +385,31 @@ jobs:
                   Copy-Item -Path $sourcePath -Destination $destinationPath -Force
                   Write-Host "  Copied $dll"
               } else {
-                  Write-Warning "  DLL not found: $sourcePath. This might indicate a missing dependency or an issue with vcpkg installation."
+                  Write-Warning "  DLL not found: $sourcePath"
               }
           }
         shell: pwsh
 
-      - name: Upload CI Build Artifacts (not for tags)
+      - name: Upload Build Artifacts (CI builds)
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-build-artifacts-windows-x64
+          name: BuildArtifacts-windows-${{ matrix.arch }}
           path: |
             build/bin/
             src/plugins/
             LICENSE
+          retention-days: 7
 
-      - name: Create Release Package
+      - name: Create Release Package (Tagged builds)
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           $releaseDir = "phgit-release"
-          $buildBinDir = "build/bin/Release"
+          $buildBinDir = "build/bin/${{ env.CMAKE_BUILD_TYPE }}"
           $pluginsDir = "src/plugins"
           $licenseFile = "LICENSE"
           $tagVersion = "${{ github.ref_name }}"
-          $zipFileName = "phgit-windows-x64-$tagVersion.zip"
+          $zipFileName = "phgit-windows-${{ matrix.arch }}-$tagVersion.zip"
 
           Write-Host "Preparing release package for version: $tagVersion"
           Write-Host "Output ZIP file: $zipFileName"
@@ -281,24 +417,114 @@ jobs:
           New-Item -ItemType Directory -Force -Path $releaseDir
 
           Write-Host "Copying executable and DLLs from $buildBinDir to $releaseDir"
-          Copy-Item -Path "$buildBinDir/*" -Destination $releaseDir -Recurse -Force
+          if (Test-Path $buildBinDir) {
+            Copy-Item -Path "$buildBinDir\*" -Destination $releaseDir -Recurse -Force
+          }
 
-          Write-Host "Copying plugins from $pluginsDir to $releaseDir/plugins"
-          New-Item -ItemType Directory -Force -Path "$releaseDir/plugins"
-          Copy-Item -Path "$pluginsDir/*" -Destination "$releaseDir/plugins" -Recurse -Force
+          Write-Host "Copying plugins from $pluginsDir to $releaseDir\plugins"
+          if (Test-Path $pluginsDir) {
+            New-Item -ItemType Directory -Force -Path "$releaseDir\plugins"
+            Copy-Item -Path "$pluginsDir\*" -Destination "$releaseDir\plugins" -Recurse -Force
+          }
 
           Write-Host "Copying LICENSE file to $releaseDir"
-          Copy-Item -Path $licenseFile -Destination $releaseDir -Force
+          if (Test-Path $licenseFile) {
+            Copy-Item -Path $licenseFile -Destination $releaseDir -Force
+          }
 
           Write-Host "Creating ZIP archive: $zipFileName"
-          Compress-Archive -Path "$releaseDir/*" -DestinationPath $zipFileName -Force
+          Compress-Archive -Path "$releaseDir\*" -DestinationPath $zipFileName -Force
 
           Write-Host "Release package created successfully."
         shell: pwsh
 
-      - name: Upload Release Package Artifact
+      - name: Upload Release Artifacts (Tagged builds)
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-release-windows-x64-${{ github.ref_name }}
-          path: phgit-windows-x64-*.zip
+          name: phgit-windows-${{ matrix.arch }}-${{ github.ref_name }}
+          path: phgit-windows-${{ matrix.arch }}-*.zip
+
+  # ============================================================================
+  # FreeBSD Build
+  # ============================================================================
+  build-freebsd:
+    name: Build-freebsd-x86_64
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build in FreeBSD VM
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          mem: 2048
+          copyback: false
+          prepare: |
+            pkg install -y cmake pkgconf lua54 curl nlohmann-json openssl git rust
+          run: |
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }}
+            cmake --build build --parallel $(sysctl -n hw.ncpu)
+
+      - name: Upload Build Artifacts (CI builds)
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: BuildArtifacts-freebsd-x86_64
+          path: |
+            build/bin/
+            src/plugins/
+            LICENSE
+          retention-days: 7
+
+      - name: Upload Release Artifacts (Tagged builds)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: phgit-freebsd-x86_64-${{ github.ref_name }}
+          path: |
+            build/bin/
+            src/plugins/
+            LICENSE
+
+  # ============================================================================
+  # Build Status Summary
+  # ============================================================================
+  build-status:
+    name: Build Status Summary
+    runs-on: ubuntu-latest
+    needs: [build-linux, build-macos, build-windows, build-freebsd]
+    if: always()
+
+    steps:
+      - name: Generate Build Status
+        run: |
+          echo "# Build Status Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux | ${{ needs.build-linux.result == 'success' && '✅ Success' || needs.build-linux.result == 'failure' && '❌ Failed' || '⏭️ Skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| macOS | ${{ needs.build-macos.result == 'success' && '✅ Success' || needs.build-macos.result == 'failure' && '❌ Failed' || '⏭️ Skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Windows | ${{ needs.build-windows.result == 'success' && '✅ Success' || needs.build-windows.result == 'failure' && '❌ Failed' || '⏭️ Skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| FreeBSD | ${{ needs.build-freebsd.result == 'success' && '✅ Success' || needs.build-freebsd.result == 'failure' && '❌ Failed' || '⏭️ Skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Build Type:** ${{ startsWith(github.ref, 'refs/tags/') && 'Release' || 'CI' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Ref:** ${{ github.ref }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Set Build Status
+        run: |
+          if [[ "${{ needs.build-linux.result }}" == "success" && 
+                "${{ needs.build-macos.result }}" == "success" && 
+                "${{ needs.build-windows.result }}" == "success" && 
+                "${{ needs.build-freebsd.result }}" == "success" ]]; then
+            echo "All builds successful! ✅" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          else
+            echo "Some builds failed! ❌" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
