@@ -2,11 +2,11 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
   <metadata>
     <id>phgit</id>
-    <version>${phgit_VERSION}</version>
+    <version>@PHGIT_VERSION@</version>
     <title>phgit (Peitch Git)</title>
     <authors>Pedro Henrique / phkaiser13</authors>
     <owners>Pedro Henrique / phkaiser13</owners>
-    
+
     <licenseUrl>https://github.com/phkaiser13/peitchgit/blob/main/LICENSE</licenseUrl>
     <projectUrl>https://github.com/phkaiser13/peitchgit</projectUrl>
     <iconUrl>https://raw.githubusercontent.com/phkaiser13/peitchgit/main/docs/assets/logo.png</iconUrl>

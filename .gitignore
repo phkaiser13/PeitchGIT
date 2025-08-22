@@ -91,6 +91,7 @@ _build/
 build/
 build-*/
 out/
+CMakeSettings.json
 
 ###################################
 # Lua
