@@ -1,27 +1,39 @@
  <!-- Enhanced README header for phgit -->
-<div align="center" style="font-family:Segoe UI, Roboto, sans-serif;">
-  <a href="https://github.com/phkaiser13/peitchgit">
-    <!-- Optional: Insert project logo here -->
+<div align="center" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, system-ui; max-width:900px; margin:0 auto; padding:1.2rem 0;">
+
+  <a href="https://github.com/phkaiser13/peitchgit" aria-label="Ir para o repositório Ph Git" style="text-decoration:none; color:inherit;">
+    <!-- Use SVG quando disponível (melhor qualidade). PNG/ICO como fallback. -->
+    <picture>
+      <source type="image/svg+xml" srcset="/.github/forrepo/icon/icon.svg">
+      <source type="image/png" srcset="/.github/forrepo/icon/icon.png">
+      <!-- Último fallback: .ico -->
+      <img src="/.github/forrepo/icon/icon.png"
+           alt="Ph Git — logo"
+           width="112" height="112"
+           style="display:block; margin:0 auto 0.6rem; width:auto; height:112px; border-radius:16px;"
+           loading="lazy" decoding="async">
+    </picture>
   </a>
 
-  <h1 style="font-size:2.5em; margin-bottom:0.2em;">📖 Ph Git (Peitch Git)</h1>
-  <p style="font-size:1.2em; color:#555; margin-top:0;">
+  <h1 style="font-size:2.25rem; margin:0 0 0.2rem; line-height:1.05;">📖 Ph Git <small style="font-size:.6em; color:#666; margin-left:.5rem;">(Peitch Git)</small></h1>
+
+  <p style="font-size:1.05rem; color:#444; margin:0 0 0.8rem;">
     <em>The Polyglot Assistant for Git & DevOps Workflows</em>
   </p>
 
-  <p style="max-width:700px; font-size:1.05em; line-height:1.5em; color:#444;">
-    A high-performance command-line toolchain built with C/C++/Rust, designed not just to wrap Git, but to orchestrate complex development and DevOps workflows under a unified, extensible, and blazing-fast interface.
+  <p style="max-width:760px; font-size:0.98rem; line-height:1.5; color:#333; margin:0 auto 0.8rem;">
+    Ferramenta de linha de comando de alta performance (C/C++/Rust) que vai além do Git: orquestra workflows complexos de desenvolvimento e DevOps com uma interface unificada, extensível e super rápida.
   </p>
 
   <!-- Badges -->
-  <p>
-    <a href="https://github.com/phkaiser13/peitchgit/releases/latest">
+  <p style="margin:0.6rem 0 0;">
+    <a href="https://github.com/phkaiser13/peitchgit/releases/latest" style="margin-right:6px;">
       <img src="https://img.shields.io/github/v/release/phkaiser13/peitchgit?style=for-the-badge" alt="Latest Release" />
     </a>
-    <a href="https://github.com/phkaiser13/peitchgit/blob/main/LICENSE">
+    <a href="https://github.com/phkaiser13/peitchgit/blob/main/LICENSE" style="margin-right:6px;">
       <img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=for-the-badge" alt="License" />
     </a>
-    <a href="https://github.com/phkaiser13/peitchgit/actions">
+    <a href="https://github.com/phkaiser13/peitchgit/actions" style="margin-right:6px;">
       <img src="https://img.shields.io/github/actions/workflow/status/phkaiser13/peitchgit/build-phgit.yml?branch=main&logo=github&style=for-the-badge" alt="Build Status" />
     </a>
     <a href="https://github.com/phkaiser13/peitchgit/graphs/contributors">
