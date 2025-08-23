@@ -1,46 +1,47 @@
  <!-- Enhanced README header for phgit -->
-<div align="center" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, system-ui; max-width:900px; margin:0 auto; padding:1.2rem 0;">
-
-  <a href="https://github.com/phkaiser13/peitchgit" aria-label="Ir para o repositório Ph Git" style="text-decoration:none; color:inherit;">
-    <!-- Use SVG quando disponível (melhor qualidade). PNG/ICO como fallback. -->
-    <picture>
-      <source type="image/svg+xml" srcset="/.github/forrepo/icon/icon.svg">
-      <source type="image/png" srcset="/.github/forrepo/icon/icon.png">
-      <!-- Último fallback: .ico -->
-      <img src="/.github/forrepo/icon/icon.png"
-           alt="Ph Git — logo"
-           width="112" height="112"
-           style="display:block; margin:0 auto 0.6rem; width:auto; height:112px; border-radius:16px;"
-           loading="lazy" decoding="async">
-    </picture>
+<div align="center" style="font-family: 'Segoe UI', Roboto, system-ui, -apple-system, 'Helvetica Neue', Arial; padding: 1.5rem;">
+  <a href="https://github.com/phkaiser13/peitchgit" aria-label="Ph Git repository" style="text-decoration:none; color:inherit;">
+    <!-- Logo: use relative path to repo. onerror fallback points to a PNG in the same folder. -->
+    <img
+      src="./.github/ForRepo/icon.ico"
+      alt="Ph Git logo"
+      width="96"
+      height="96"
+      onerror="this.onerror=null;this.src='./.github/ForRepo/icon.png';"
+      style="border-radius:14px; box-shadow:0 8px 24px rgba(2,6,23,0.12); display:block; margin:0 auto 0.6rem;"
+    />
   </a>
 
-  <h1 style="font-size:2.25rem; margin:0 0 0.2rem; line-height:1.05;">📖 Ph Git <small style="font-size:.6em; color:#666; margin-left:.5rem;">(Peitch Git)</small></h1>
+  <h1 style="font-size:2.2rem; margin:0 0 0.15rem; line-height:1.05;">
+    📖 Ph Git <span style="font-size:0.72rem; color:#6b7280; font-weight:600;">(Peitch Git)</span>
+  </h1>
 
-  <p style="font-size:1.05rem; color:#444; margin:0 0 0.8rem;">
-    <em>The Polyglot Assistant for Git & DevOps Workflows</em>
+  <p style="margin:0 0 0.9rem; color:#5b6b77; font-size:1.05rem;">
+    <em>The polyglot assistant for Git & DevOps workflows</em>
   </p>
 
-  <p style="max-width:760px; font-size:0.98rem; line-height:1.5; color:#333; margin:0 auto 0.8rem;">
-    Ferramenta de linha de comando de alta performance (C/C++/Rust) que vai além do Git: orquestra workflows complexos de desenvolvimento e DevOps com uma interface unificada, extensível e super rápida.
+  <p style="max-width:760px; margin:0 auto 1.1rem; color:#3f4a4f; font-size:1rem; line-height:1.6;">
+    A high-performance command-line toolchain implemented in C/C++/Rust — not just a Git wrapper but an orchestration layer for complex development and DevOps workflows.
+    Unified, extensible and built for blazing-fast automation.
   </p>
 
-  <!-- Badges -->
-  <p style="margin:0.6rem 0 0;">
-    <a href="https://github.com/phkaiser13/peitchgit/releases/latest" style="margin-right:6px;">
+  <!-- Badges (kept your existing shields) -->
+  <div style="display:inline-flex; gap:10px; flex-wrap:wrap; justify-content:center;">
+    <a href="https://github.com/phkaiser13/peitchgit/releases/latest" aria-label="Latest release">
       <img src="https://img.shields.io/github/v/release/phkaiser13/peitchgit?style=for-the-badge" alt="Latest Release" />
     </a>
-    <a href="https://github.com/phkaiser13/peitchgit/blob/main/LICENSE" style="margin-right:6px;">
+    <a href="https://github.com/phkaiser13/peitchgit/blob/main/LICENSE" aria-label="License">
       <img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=for-the-badge" alt="License" />
     </a>
-    <a href="https://github.com/phkaiser13/peitchgit/actions" style="margin-right:6px;">
+    <a href="https://github.com/phkaiser13/peitchgit/actions" aria-label="Build status">
       <img src="https://img.shields.io/github/actions/workflow/status/phkaiser13/peitchgit/build-phgit.yml?branch=main&logo=github&style=for-the-badge" alt="Build Status" />
     </a>
-    <a href="https://github.com/phkaiser13/peitchgit/graphs/contributors">
+    <a href="https://github.com/phkaiser13/peitchgit/graphs/contributors" aria-label="Contributors">
       <img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=for-the-badge" alt="Contributions Welcome" />
     </a>
-  </p>
+  </div>
 </div>
+
 
 
 ## Table of Contents
