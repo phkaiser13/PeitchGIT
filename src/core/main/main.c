@@ -5,14 +5,15 @@
  * the entire application lifecycle. Its primary responsibilities include:
  *
  * 1. Initializing core subsystems in the correct order: platform-specific
- *    code, configuration management, logging, and the dynamic module loader.
- * 2. Parsing the initial command-line arguments to determine the execution mode.
- *    - If no commands are provided, it launches the interactive Text-based
- *      User Interface (TUI).
- *    - If a command is provided (e.g., "phgit SND"), it dispatches the command
- *      to the CLI handler.
- * 3. Ensuring a graceful shutdown by cleaning up all initialized subsystems
- *    before the program terminates.
+ * code, configuration management, logging, scripting, and the dynamic
+ * module loader.
+ * 2. Parsing command-line arguments to determine the execution mode. It handles
+ * immediate flags like --help and --version before dispatching to the main
+ * command handler.
+ * 3. Launching either the interactive Text-based User Interface (TUI) or the
+ * Command-Line Interface (CLI) handler based on the provided arguments.
+ * 4. Ensuring a graceful shutdown by cleaning up all initialized subsystems
+ * before the program terminates, regardless of the execution path.
  *
  * This file is intentionally kept high-level to provide a clear overview of
  * the application's control flow, delegating specialized logic to their
@@ -24,90 +25,122 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Core module headers - these will be created in subsequent steps
-#include "platform/platform.h"      // For platform-specific initializations
-#include "config/config_manager.h"  // For loading and accessing configuration
-#include "ui/tui.h"                 // For the interactive user interface
-#include "cli/cli_parser.h"         // For parsing and dispatching commands
-#include "module_loader/loader.h"   // For loading and managing modules
-#include "scripting/lua_bridge.h"   // For initializing the scripting engine
+// Core module headers
+#include "platform/platform.h"
+#include "config/config_manager.h"
+#include "ui/tui.h"
+#include "cli/cli_parser.h"
+#include "module_loader/loader.h"
+#include "scripting/lua_bridge.h"
 
 // Shared library headers
-#include "libs/liblogger/Logger.h"  // For the C++ based logging system (via C wrapper)
+#include "libs/liblogger/Logger.h"
 
-// Version is typically set by the build system (e.g., CMake/Makefile)
-#ifndef phgit_VERSION
-#define phgit_VERSION "0.1.0-dev"
-#endif
+// Define application constants to avoid hardcoded strings
+#define PHGIT_VERSION "0.1.0-dev"
+#define PHGIT_CONFIG_FILE "phgit.conf"
+#define PHGIT_LOG_FILE "phgit_log.txt"
+#define PHGIT_MODULES_DIR "./modules"
 
-/**
- * @brief Prints the application's version information and exits.
- */
-static void print_version(void) {
-    printf("phgit version %s\n", phgit_VERSION);
-    printf("Copyright (C) 2025 Pedro Henrique / phkaiser13\n");
-    printf("License: Apache-2.0\n");
-}
-
-/**
- * @brief Prints the main help message with basic usage and exits.
- *        Detailed help for commands is handled by the modules themselves.
- */
-static void print_help(const char* app_name) {
-    printf("Usage: %s [command] [options]\n\n", app_name);
-    printf("A modern, polyglot Git helper to streamline your workflow.\n\n");
-    printf("Run '%s' without arguments to enter the interactive menu.\n\n", app_name);
-    printf("Core Commands:\n");
-    printf("  --help      Show this help message and exit.\n");
-    printf("  --version   Show version information and exit.\n\n");
-    printf("For a full list of commands, enter the interactive menu.\n");
-}
+// Forward declarations for static functions
+static void print_version(void);
+static void print_help(const char* app_name);
+static int initialize_subsystems(void);
+static void cleanup_subsystems(void);
+static int process_arguments(int argc, char* argv[]);
 
 /**
  * @brief The main entry point of the phgit application.
  *
+ * Orchestrates the application's lifecycle: initialization, execution,
+ * and cleanup. It sets up all necessary subsystems, processes command-line
+ * arguments to decide the execution mode (TUI or CLI), and ensures a
+ * graceful shutdown.
+ *
  * @param argc The number of command-line arguments.
  * @param argv An array of command-line argument strings.
- * @return EXIT_SUCCESS on successful execution, EXIT_FAILURE on error.
+ * @return EXIT_SUCCESS on successful execution, EXIT_FAILURE on critical error.
  */
 int main(int argc, char* argv[]) {
+    int exit_code = EXIT_SUCCESS;
+
     // 1. Initialize Core Subsystems
+    if (initialize_subsystems() != 0) {
+        // A critical subsystem failed to initialize. The logger might not be
+        // available, so a printf fallback is used.
+        fprintf(stderr, "A critical subsystem failed to initialize. Exiting.\n");
+        exit_code = EXIT_FAILURE;
+        goto cleanup; // Proceed to cleanup what might have been initialized.
+    }
+
+    // 2. Process Arguments and Determine Execution Mode
+    exit_code = process_arguments(argc, argv);
+
+
+    // 3. Graceful Shutdown
+cleanup:
+    logger_log(LOG_LEVEL_INFO, "MAIN", "phgit application shutting down.");
+    cleanup_subsystems();
+
+    return exit_code;
+}
+
+/**
+ * @brief Initializes all core application subsystems in the correct order.
+ *
+ * This function handles the setup of platform-specific features, logging,
+ * configuration, scripting engine, and module loading.
+ *
+ * @return 0 on success, -1 on a critical failure.
+ */
+static int initialize_subsystems(void) {
     // Platform-specific setup (e.g., console encoding on Windows)
     platform_global_init();
 
-    // Initialize the logging system (the logger itself is C++, but we'll have a C API)
-    // Note: We will create a C wrapper for the C++ logger.
-    logger_init("phgit_log.txt");
+    // Initialize the logging system first to make it available to other subsystems.
+    logger_init(PHGIT_LOG_FILE);
     logger_log(LOG_LEVEL_INFO, "MAIN", "phgit application starting.");
 
-    // Load configuration from file (e.g., .phgit.conf)
-    if (config_load("phgit.conf") != phgit_SUCCESS) {
-        logger_log(LOG_LEVEL_ERROR, "MAIN", "Failed to load configuration. Using defaults.");
-        // This is not a fatal error; the app can run with default settings.
+    // Load configuration from file. This is not treated as a fatal error;
+    // the application can run with default settings.
+    if (config_load(PHGIT_CONFIG_FILE) != 0) {
+        logger_log(LOG_LEVEL_WARN, "MAIN", "Failed to load configuration. Using defaults.");
     }
 
-    // Initialize the Lua scripting engine
-    if (lua_bridge_init() != phgit_SUCCESS) {
+    // Initialize the Lua scripting engine. This is critical for functionality.
+    if (lua_bridge_init() != 0) {
         logger_log(LOG_LEVEL_FATAL, "MAIN", "Failed to initialize Lua scripting engine. Exiting.");
-        goto cleanup;
+        return -1;
     }
 
-    // Discover and load all external modules from the 'modules' directory
-    if (modules_load("./modules") != phgit_SUCCESS) {
+    // Discover and load all external modules. This is critical.
+    if (modules_load(PHGIT_MODULES_DIR) != 0) {
         logger_log(LOG_LEVEL_FATAL, "MAIN", "Failed to load core modules. Exiting.");
-        goto cleanup;
+        return -1;
     }
     logger_log(LOG_LEVEL_INFO, "MAIN", "All modules loaded successfully.");
 
+    return 0; // Success
+}
 
-    // 2. Determine Execution Mode
+/**
+ * @brief Processes command-line arguments and launches the appropriate mode.
+ *
+ * It checks for simple flags like --help and --version for immediate exit.
+ * If no arguments are given, it starts the TUI. Otherwise, it dispatches
+ * the command to the CLI handler.
+ *
+ * @param argc The number of command-line arguments.
+ * @param argv An array of command-line argument strings.
+ * @return EXIT_SUCCESS.
+ */
+static int process_arguments(int argc, char* argv[]) {
     if (argc < 2) {
         // No arguments provided: Enter interactive TUI mode
         logger_log(LOG_LEVEL_INFO, "MAIN", "No arguments detected. Starting interactive TUI mode.");
         tui_show_main_menu();
     } else {
-        // Arguments provided: Dispatch to CLI handler
-        // Note: Basic flags like --help are handled here for fast response.
+        // Arguments provided: handle basic flags or dispatch to CLI
         if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0) {
             print_help(argv[0]);
         } else if (strcmp(argv[1], "--version") == 0) {
@@ -117,16 +150,48 @@ int main(int argc, char* argv[]) {
             cli_dispatch_command(argc, (const char**)argv);
         }
     }
+    return EXIT_SUCCESS;
+}
 
-    logger_log(LOG_LEVEL_INFO, "MAIN", "phgit application shutting down.");
-
-    // 3. Graceful Shutdown
-cleanup:
+/**
+ * @brief Cleans up and terminates all initialized subsystems.
+ *
+ * This function is called during graceful shutdown to release resources,
+ * ensuring no memory leaks or dangling file handlers. The order of cleanup
+ * is the reverse of initialization.
+ */
+static void cleanup_subsystems(void) {
     modules_cleanup();
     lua_bridge_cleanup();
     config_cleanup();
     logger_cleanup();
     platform_global_cleanup();
+}
 
-    return EXIT_SUCCESS;
+
+/**
+ * @brief Prints the application's version information and exits.
+ */
+static void print_version(void) {
+    printf("phgit version %s\n", PHGIT_VERSION);
+    printf("Copyright (C) 2025 Pedro Henrique / phkaiser13\n");
+    printf("License: Apache-2.0\n");
+}
+
+/**
+ * @brief Prints the main help message with basic usage and exits.
+ *
+ * Detailed help for specific commands should be handled by the modules
+ * themselves or the CLI parser.
+ *
+ * @param app_name The name of the executable (argv[0]).
+ */
+static void print_help(const char* app_name) {
+    printf("Usage: %s [command] [options]\n\n", app_name);
+    printf("A modern, polyglot Git helper to streamline your workflow.\n\n");
+    printf("Run '%s' without arguments to enter the interactive menu.\n\n", app_name);
+    printf("Core Commands:\n");
+    printf("  --help, -h  Show this help message and exit.\n");
+    printf("  --version   Show version information and exit.\n\n");
+    printf("For a full list of commands, run the interactive TUI or consult the documentation.\n");
 }
