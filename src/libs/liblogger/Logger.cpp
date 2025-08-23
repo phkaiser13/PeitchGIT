@@ -15,7 +15,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
-#include "Logger.h"
+#include "Logger.hpp"
 #include <iostream>
 #include <chrono>
 #include <ctime>
@@ -152,7 +152,7 @@ void Logger::log(phgitLogLevel level, const std::string& module_name, const char
 // --- C Wrapper Implementation ---
 
 /**
- * @see Logger.h
+ * @see logger.hpp
  */
 int logger_init(const char* filename) {
     // The C function calls the C++ singleton's method.
@@ -163,7 +163,7 @@ int logger_init(const char* filename) {
 }
 
 /**
- * @see Logger.h
+ * @see logger.hpp
  */
 void logger_log(phgitLogLevel level, const char* module_name, const char* message) {
     // Check for null pointers to prevent crashes.
@@ -175,7 +175,7 @@ void logger_log(phgitLogLevel level, const char* module_name, const char* messag
 }
 
 /**
- * @see Logger.h
+ * @see logger.hpp
  */
 void logger_log_fmt(phgitLogLevel level, const char* module_name, const char* format, ...) {
     if (module_name == nullptr || format == nullptr) {
@@ -191,7 +191,7 @@ void logger_log_fmt(phgitLogLevel level, const char* module_name, const char* fo
 }
 
 /**
- * @see Logger.h
+ * @see logger.hpp
  */
 void logger_cleanup() {
     // In this singleton implementation using a static local variable, the

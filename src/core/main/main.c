@@ -34,7 +34,7 @@
 #include "scripting/lua_bridge.h"
 
 // Shared library headers
-#include "libs/liblogger/Logger.h"
+#include "libs/liblogger/Logger.hpp"
 
 // Define application constants to avoid hardcoded strings
 #define PHGIT_VERSION "0.1.0-dev"

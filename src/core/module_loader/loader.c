@@ -22,7 +22,7 @@
 #include "loader.h"
 #include "platform/platform.h"      // For MODULE_EXTENSION
 #include "config/config_manager.h"  // For providing config access to modules
-#include "libs/liblogger/Logger.h"  // For logging loading process
+#include "libs/liblogger/Logger.hpp"  // For logging loading process
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>

@@ -21,7 +21,7 @@
 #include "cli_parser.h"
 #include "module_loader/loader.h"
 #include "ui/tui.h" // For printing user-facing errors
-#include "libs/liblogger/Logger.h"
+#include "libs/liblogger/Logger.hpp"
 #include "scripting/lua_bridge.h" // To get Lua commands
 #include <stdio.h>
 #include <string.h>

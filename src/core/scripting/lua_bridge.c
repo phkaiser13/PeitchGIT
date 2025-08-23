@@ -16,7 +16,7 @@
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "lua_bridge.h"
-#include "libs/liblogger/Logger.h"
+#include "libs/liblogger/Logger.hpp"
 #include "platform/platform.h"
 #include "cli/cli_parser.h"
 #include "core/config/config_manager.h"

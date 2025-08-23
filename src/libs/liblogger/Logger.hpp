@@ -1,5 +1,5 @@
 /* Copyright (C) 2025 Pedro Henrique / phkaiser13
- * Logger.h - Advanced C++ logger with a C-compatible interface.
+ * logger.hpp - Advanced C++ logger with a C-compatible interface.
  *
  * This header defines a singleton Logger class designed for robust, thread-safe
  * logging across the entire application. It is implemented in C++ to leverage
@@ -18,8 +18,8 @@
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
-#ifndef LOGGER_H
-#define LOGGER_H
+#ifndef LOGGER_HPP
+#define LOGGER_HPP
 
 // We need the core API header to use the consistent phgitLogLevel enum.
 // This demonstrates how even C++ modules adhere to the core contracts.
@@ -145,4 +145,4 @@ void logger_cleanup();
 } // extern "C"
 #endif
 
-#endif // LOGGER_H
+#endif // LOGGER_HPP

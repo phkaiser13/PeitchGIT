@@ -4,7 +4,7 @@
 #include "config/config_manager.h"
 #include <stdio.h>
 #include <string.h>
-#include "libs/liblogger/Logger.h" // <-- FIX: Include the logger header
+#include "libs/liblogger/logger.hpp" // <-- FIX: Include the logger header
 #include <assert.h>
 
 // Helper to create a temporary config file for testing.
