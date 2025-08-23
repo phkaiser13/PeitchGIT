@@ -1,7 +1,6 @@
  <!-- Enhanced README header for phgit -->
 <div align="center" style="font-family: 'Segoe UI', Roboto, system-ui, -apple-system, 'Helvetica Neue', Arial; padding: 1.5rem;">
   <a href="https://github.com/phkaiser13/peitchgit" aria-label="Ph Git repository" style="text-decoration:none; color:inherit;">
-    <!-- Logo: use relative path to repo. onerror fallback points to a PNG in the same folder. -->
     <img
       src="./.github/ForRepo/icon.ico"
       alt="Ph Git logo"
@@ -11,7 +10,6 @@
       style="border-radius:14px; box-shadow:0 8px 24px rgba(2,6,23,0.12); display:block; margin:0 auto 0.6rem;"
     />
   </a>
-
   <h1 style="font-size:2.2rem; margin:0 0 0.15rem; line-height:1.05;">
     📖 Ph Git <span style="font-size:0.72rem; color:#6b7280; font-weight:600;">(Peitch Git)</span>
   </h1>
@@ -19,13 +17,10 @@
   <p style="margin:0 0 0.9rem; color:#5b6b77; font-size:1.05rem;">
     <em>The polyglot assistant for Git & DevOps workflows</em>
   </p>
-
   <p style="max-width:760px; margin:0 auto 1.1rem; color:#3f4a4f; font-size:1rem; line-height:1.6;">
     A high-performance command-line toolchain implemented in C/C++/Rust — not just a Git wrapper but an orchestration layer for complex development and DevOps workflows.
     Unified, extensible and built for blazing-fast automation.
   </p>
-
-  <!-- Badges (kept your existing shields) -->
   <div style="display:inline-flex; gap:10px; flex-wrap:wrap; justify-content:center;">
     <a href="https://github.com/phkaiser13/peitchgit/releases/latest" aria-label="Latest release">
       <img src="https://img.shields.io/github/v/release/phkaiser13/peitchgit?style=for-the-badge" alt="Latest Release" />
