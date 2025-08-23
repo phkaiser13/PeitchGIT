@@ -1,234 +1,212 @@
 /* Copyright (C) 2025 Pedro Henrique / phkaiser13
- * config_manager.c - Implementation of the application configuration manager.
+ * config_manager.c - Manages application settings from a configuration file.
  *
- * This file implements the configuration management functionality using a hash
- * table for efficient key-value storage and retrieval. This approach ensures
- * fast lookups (average O(1) time complexity), which is essential for a
- * responsive application.
+ * This module is responsible for parsing, storing, and providing access to
+ * application-wide configuration settings. It reads a simple key-value file
+ * where keys and values are separated by an equals sign '='.
  *
- * The implementation handles:
- * - Parsing of `key=value` files, ignoring comments and whitespace.
- * - Dynamic allocation and safe copying of keys and values.
- * - In-memory creation and modification of configuration pairs.
- * - A string hashing function (djb2) to map keys to table indices.
- * - Collision resolution using separate chaining (linked lists).
- * - A thorough cleanup mechanism to prevent memory leaks.
+ * Core responsibilities include:
+ * 1. Loading settings from a specified file (e.g., "phgit.conf").
+ * 2. Storing these settings in an efficient, queryable data structure.
+ * 3. Providing getter functions for other modules to retrieve configuration
+ * values. It supports retrieving values as strings or integers with
+ * default fallbacks.
+ * 4. Cleaning up all allocated resources upon application shutdown to prevent
+ * memory leaks.
+ *
+ * The current implementation uses a fixed-size array of key-value pairs,
+ * which is simple and avoids dynamic allocation complexity for a small number
+ * of keys. Lines starting with '#' or ';' are treated as comments and ignored.
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
 #include "config_manager.h"
-#include "libs/liblogger/Logger.h" // For logging parsing warnings
+#include "libs/liblogger/Logger.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 
-// --- Internal Data Structures ---
+// Constants for configuration parsing
+#define MAX_CONFIG_ENTRIES 64 // Maximum number of key-value pairs
+#define MAX_LINE_LENGTH 256	  // Maximum characters per line in the config file
 
-#define HASH_TABLE_SIZE 128 // A prime number is often a good choice
+// Internal structure for a single configuration entry
+typedef struct
+{
+	char key[MAX_LINE_LENGTH];
+	char value[MAX_LINE_LENGTH];
+} ConfigEntry;
 
-/**
- * @struct ConfigNode
- * @brief A node in the hash table's linked list (for collision handling).
- */
-typedef struct ConfigNode {
-    char* key;
-    char* value;
-    struct ConfigNode* next;
-} ConfigNode;
-
-// The global hash table. It's an array of pointers to ConfigNodes.
-// Declared `static` to be private to this file.
-static ConfigNode* g_config_table[HASH_TABLE_SIZE] = {NULL};
-
-
-// --- Private Helper Functions ---
-
-/**
- * @brief The djb2 hash function for strings.
- *
- * A simple, fast, and effective hashing algorithm for strings.
- * See: http://www.cse.yorku.ca/~oz/hash.html
- *
- * @param str The string to hash.
- * @return The calculated hash value.
- */
-static unsigned long hash_string(const char* str) {
-    unsigned long hash = 5381;
-    int c;
-    while ((c = *str++)) {
-        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
-    }
-    return hash;
-}
+// Static (module-private) storage for configuration data
+static ConfigEntry g_config_entries[MAX_CONFIG_ENTRIES];
+static int g_config_count = 0; // Number of entries currently loaded
 
 /**
  * @brief Trims leading and trailing whitespace from a string in-place.
+ *
+ * Modifies the input string by removing any space or tab characters from the
+ * beginning and end.
+ *
  * @param str The string to trim.
- * @return A pointer to the beginning of the trimmed string.
  */
-static char* trim_whitespace(char* str) {
-    if (!str) return NULL;
-    char* end;
+static void trim_whitespace(char *str)
+{
+	if (!str)
+		return;
 
-    // Trim leading space
-    while (isspace((unsigned char)*str)) str++;
+	// Trim trailing whitespace
+	char *end = str + strlen(str) - 1;
+	while (end > str && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r'))
+	{
+		*end = '\0';
+		end--;
+	}
 
-    if (*str == 0) // All spaces?
-        return str;
+	// Trim leading whitespace
+	char *start = str;
+	while (*start == ' ' || *start == '\t' || *start == '\n' || *start == '\r')
+	{
+		start++;
+	}
 
-    // Trim trailing space
-    end = str + strlen(str) - 1;
-    while (end > str && isspace((unsigned char)*end)) end--;
-
-    // Write new null terminator
-    *(end + 1) = '\0';
-
-    return str;
-}
-
-// --- Public API Implementation ---
-
-/**
- * @see config_manager.h
- */
-void config_cleanup(void) {
-    for (int i = 0; i < HASH_TABLE_SIZE; ++i) {
-        ConfigNode* current = g_config_table[i];
-        while (current != NULL) {
-            ConfigNode* next = current->next;
-            free(current->key);
-            free(current->value);
-            free(current);
-            current = next;
-        }
-        g_config_table[i] = NULL;
-    }
+	// Shift the string to the left if leading whitespace was found
+	if (start != str)
+	{
+		memmove(str, start, strlen(start) + 1);
+	}
 }
 
 /**
- * @see config_manager.h
+ * @brief Parses a single line from the config file and stores it if valid.
+ *
+ * @param line The line to parse.
+ * @return 0 on success, -1 on failure (e.g., malformed line or storage full).
  */
-phgitStatus config_load(const char* filename) {
-    // Ensure the previous configuration is cleared before loading a new one.
-    config_cleanup();
+static int parse_and_store_line(const char *line)
+{
+	char key[MAX_LINE_LENGTH];
+	char value[MAX_LINE_LENGTH];
+	char mutable_line[MAX_LINE_LENGTH];
 
-    FILE* file = fopen(filename, "r");
-    if (!file) {
-        // It's not an error if the config file doesn't exist.
-        // The application will just use default values.
-        logger_log(LOG_LEVEL_INFO, "CONFIG", "Configuration file not found. Using defaults.");
-        return phgit_SUCCESS;
-    }
+	// Make a mutable copy to use with strtok
+	strncpy(mutable_line, line, MAX_LINE_LENGTH - 1);
+	mutable_line[MAX_LINE_LENGTH - 1] = '\0'; // Ensure null-termination
 
-    char line[1024];
-    int line_number = 0;
-    while (fgets(line, sizeof(line), file)) {
-        line_number++;
-        char* trimmed_line = trim_whitespace(line);
+	// Find the separator
+	char *separator = strchr(mutable_line, '=');
+	if (separator == NULL)
+	{
+		logger_log(LOG_LEVEL_WARN, "CONFIG", "Malformed line (no '=' separator): %s", line);
+		return -1; // Not a valid key-value pair
+	}
 
-        if (strlen(trimmed_line) == 0 || trimmed_line[0] == '#') {
-            continue; // Skip empty or commented lines
-        }
+	// Split the line into key and value
+	*separator = '\0';
+	strncpy(key, mutable_line, MAX_LINE_LENGTH - 1);
+	strncpy(value, separator + 1, MAX_LINE_LENGTH - 1);
+	key[MAX_LINE_LENGTH - 1] = '\0';
+	value[MAX_LINE_LENGTH - 1] = '\0';
 
-        char* separator = strchr(trimmed_line, '=');
-        if (!separator) {
-            logger_log_fmt(LOG_LEVEL_WARN, "CONFIG", "Malformed line %d in config file. Skipping.", line_number);
-            continue;
-        }
+	// Clean up key and value by trimming whitespace
+	trim_whitespace(key);
+	trim_whitespace(value);
 
-        *separator = '\0'; // Split the line into key and value
-        char* key = trim_whitespace(trimmed_line);
-        char* value = trim_whitespace(separator + 1);
+	// Basic validation: ensure key is not empty
+	if (strlen(key) == 0)
+	{
+		logger_log(LOG_LEVEL_WARN, "CONFIG", "Ignoring entry with empty key.");
+		return -1;
+	}
 
-        if (strlen(key) == 0) {
-            logger_log_fmt(LOG_LEVEL_WARN, "CONFIG", "Empty key on line %d in config file. Skipping.", line_number);
-            continue;
-        }
+	// Check if storage is full
+	if (g_config_count >= MAX_CONFIG_ENTRIES)
+	{
+		logger_log(LOG_LEVEL_ERROR, "CONFIG", "Configuration storage is full. Cannot add more entries.");
+		return -1;
+	}
 
-        // Use the new set function to add the value, ensuring consistency.
-        config_set_value(key, value);
-    }
+	// Store the new entry
+	strncpy(g_config_entries[g_config_count].key, key, MAX_LINE_LENGTH - 1);
+	strncpy(g_config_entries[g_config_count].value, value, MAX_LINE_LENGTH - 1);
+	g_config_count++;
 
-    fclose(file);
-    logger_log(LOG_LEVEL_INFO, "CONFIG", "Configuration loaded successfully.");
-    return phgit_SUCCESS;
+	logger_log(LOG_LEVEL_DEBUG, "CONFIG", "Loaded config: %s = %s", key, value);
+
+	return 0;
 }
 
-/**
- * @see config_manager.h
- */
-char* config_get_value(const char* key) {
-    if (!key) {
-        return NULL;
-    }
+int config_load(const char *file_path)
+{
+	FILE *file = fopen(file_path, "r");
+	if (!file)
+	{
+		logger_log(LOG_LEVEL_INFO, "CONFIG", "Configuration file not found at '%s'. Using default settings.", file_path);
+		return -1; // Not a fatal error, but indicates no file was loaded
+	}
 
-    unsigned long hash = hash_string(key);
-    unsigned int index = hash % HASH_TABLE_SIZE;
+	logger_log(LOG_LEVEL_INFO, "CONFIG", "Loading configuration from '%s'.", file_path);
 
-    ConfigNode* current = g_config_table[index];
-    while (current != NULL) {
-        if (strcmp(current->key, key) == 0) {
-            // Return a copy that the caller is responsible for freeing.
-            // This is critical for memory safety with external modules.
-            return strdup(current->value);
-        }
-        current = current->next;
-    }
+	char line_buffer[MAX_LINE_LENGTH];
+	int line_num = 0;
+	g_config_count = 0; // Reset count before loading
 
-    return NULL; // Key not found
+	while (fgets(line_buffer, sizeof(line_buffer), file))
+	{
+		line_num++;
+		trim_whitespace(line_buffer);
+
+		// Skip empty lines or comments
+		if (line_buffer[0] == '\0' || line_buffer[0] == '#' || line_buffer[0] == ';')
+		{
+			continue;
+		}
+
+		if (parse_and_store_line(line_buffer) != 0)
+		{
+			logger_log(LOG_LEVEL_WARN, "CONFIG", "Skipping invalid configuration entry at line %d.", line_num);
+		}
+	}
+
+	fclose(file);
+	return 0;
 }
 
-/**
- * @see config_manager.h
- */
-phgitStatus config_set_value(const char* key, const char* value) {
-    if (!key || !value) {
-        return phgit_ERROR_INVALID_ARGS;
-    }
+const char *config_get_string(const char *key, const char *default_value)
+{
+	for (int i = 0; i < g_config_count; ++i)
+	{
+		if (strcmp(g_config_entries[i].key, key) == 0)
+		{
+			return g_config_entries[i].value;
+		}
+	}
+	return default_value;
+}
 
-    unsigned long hash = hash_string(key);
-    unsigned int index = hash % HASH_TABLE_SIZE;
+int config_get_int(const char *key, int default_value)
+{
+	const char *value_str = config_get_string(key, NULL);
+	if (value_str)
+	{
+		// Use strtol for robust integer conversion
+		char *endptr;
+		long val = strtol(value_str, &endptr, 10);
 
-    // First, check if the key already exists to update it.
-    ConfigNode* current = g_config_table[index];
-    while (current != NULL) {
-        if (strcmp(current->key, key) == 0) {
-            // Key found, update the value.
-            char* new_value = strdup(value);
-            if (!new_value) {
-                logger_log(LOG_LEVEL_FATAL, "CONFIG", "Memory allocation failed for config value update.");
-                return phgit_ERROR_GENERAL;
-            }
-            free(current->value); // Free the old value
-            current->value = new_value; // Assign the new one
-            return phgit_SUCCESS;
-        }
-        current = current->next;
-    }
+		// Check if conversion was successful
+		if (*endptr == '\0' || *endptr == ' ' || *endptr == '\t')
+		{
+			return (int)val;
+		}
+	}
+	return default_value;
+}
 
-    // If we reach here, the key does not exist. Create a new node.
-    ConfigNode* new_node = (ConfigNode*)malloc(sizeof(ConfigNode));
-    if (!new_node) {
-        logger_log(LOG_LEVEL_FATAL, "CONFIG", "Memory allocation failed for new config node.");
-        return phgit_ERROR_GENERAL;
-    }
-
-    new_node->key = strdup(key);
-    new_node->value = strdup(value);
-
-    // Check for allocation failures during strdup and clean up if necessary
-    if (!new_node->key || !new_node->value) {
-        logger_log(LOG_LEVEL_FATAL, "CONFIG", "Memory allocation failed for new config key/value.");
-        free(new_node->key);   // free() on NULL is safe
-        free(new_node->value); // free() on NULL is safe
-        free(new_node);
-        return phgit_ERROR_GENERAL;
-    }
-
-    // Prepend the new node to the list at the calculated index.
-    new_node->next = g_config_table[index];
-    g_config_table[index] = new_node;
-
-    return phgit_SUCCESS;
+void config_cleanup(void)
+{
+	// With the current static array implementation, no dynamic memory is allocated.
+	// This function serves as a placeholder for future enhancements where
+	// dynamic memory (e.g., linked list, hash map) might be used.
+	// We reset the count to ensure a clean state if re-initialized.
+	g_config_count = 0;
+	logger_log(LOG_LEVEL_INFO, "CONFIG", "Configuration manager cleaned up.");
 }
