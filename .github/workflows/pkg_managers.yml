@@ -198,7 +198,7 @@ jobs:
             echo "ℹ️ No changes to commit in packaging/"
           else
             git commit -m "chore(release): render packaging templates for phgit ${{ steps.version.outputs.version }}"
-            git push origin HEAD
+            git push origin HEAD:refs/heads/main
             echo "✅ Committed packaging files to repository"
           fi
 
@@ -242,7 +242,7 @@ jobs:
             echo "ℹ️ No changes to commit in homebrew-tap."
           else
             git commit -m "chore(release): update phgit formula to ${{ steps.version.outputs.version }}"
-            git push origin HEAD
+            git push origin HEAD:refs/heads/main
             echo "🍺 Updated Homebrew formula"
           fi
 
@@ -293,7 +293,7 @@ jobs:
             echo "ℹ️ No changes to commit in vcpkg-registry."
           else
             git commit -m "chore(release): update vcpkg port for phgit ${{ steps.version.outputs.version }}"
-            git push origin HEAD
+            git push origin HEAD:refs/heads/main
             echo "📦 Updated vcpkg registry"
           fi
 
@@ -353,7 +353,7 @@ jobs:
             echo "ℹ️ No changes to commit in aur-packages."
           else
             git commit -m "chore(release): update PKGBUILD for phgit ${{ steps.version.outputs.version }}"
-            git push origin HEAD
+            git push origin HEAD:refs/heads/main
             echo "🏛️ Updated AUR package"
           fi
 
