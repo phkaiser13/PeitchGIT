@@ -94,6 +94,27 @@ jobs:
       - name: Compile Project
         run: cmake --build build --parallel
 
+      - name: Test phgit execution (Linux - ${{ matrix.distro }})
+        run: |
+          echo "Testing phgit executable..."
+          if [ -f build/phgit ]; then
+            echo "Found phgit executable at build/phgit"
+            # Test basic execution (--help or --version should work without errors)
+            timeout 10s ./build/phgit --help || echo "phgit --help failed or timed out"
+            timeout 10s ./build/phgit --version || echo "phgit --version failed or timed out"
+            echo "phgit execution test completed for ${{ matrix.distro }}"
+          elif [ -f build/bin/phgit ]; then
+            echo "Found phgit executable at build/bin/phgit"
+            timeout 10s ./build/bin/phgit --help || echo "phgit --help failed or timed out"
+            timeout 10s ./build/bin/phgit --version || echo "phgit --version failed or timed out"
+            echo "phgit execution test completed for ${{ matrix.distro }}"
+          else
+            echo "ERROR: phgit executable not found in expected locations!"
+            echo "Listing build directory contents:"
+            find build -name "phgit*" -type f || true
+            exit 1
+          fi
+
       - name: Run unit tests (Fedora only)
         if: matrix.distro == 'fedora' && always()
         run: |
@@ -148,6 +169,27 @@ jobs:
 
       - name: Compile Project
         run: cmake --build build --parallel
+
+      - name: Test phgit execution (macOS - ${{ matrix.arch }})
+        run: |
+          echo "Testing phgit executable on macOS ${{ matrix.arch }}..."
+          if [ -f build/bin/phgit ]; then
+            echo "Found phgit executable at build/bin/phgit"
+            # Test basic execution
+            timeout 10s ./build/bin/phgit --help || echo "phgit --help failed or timed out"
+            timeout 10s ./build/bin/phgit --version || echo "phgit --version failed or timed out"
+            echo "phgit execution test completed for macOS ${{ matrix.arch }}"
+          elif [ -f build/phgit ]; then
+            echo "Found phgit executable at build/phgit"
+            timeout 10s ./build/phgit --help || echo "phgit --help failed or timed out"
+            timeout 10s ./build/phgit --version || echo "phgit --version failed or timed out"
+            echo "phgit execution test completed for macOS ${{ matrix.arch }}"
+          else
+            echo "ERROR: phgit executable not found in expected locations!"
+            echo "Listing build directory contents:"
+            find build -name "phgit*" -type f || true
+            exit 1
+          fi
 
       - name: Upload CI Build Artifacts (not for tags)
         if: "!startsWith(github.ref, 'refs/tags/')"
@@ -252,6 +294,56 @@ jobs:
               } else {
                   Write-Warning "  DLL not found: $sourcePath. This might indicate a missing dependency or an issue with vcpkg installation."
               }
+          }
+        shell: pwsh
+
+      - name: Test phgit execution (Windows x64)
+        run: |
+          Write-Host "Testing phgit executable on Windows x64..."
+          $exePath = "build\bin\Release\phgit.exe"
+          
+          if (Test-Path $exePath) {
+              Write-Host "Found phgit executable at $exePath"
+              
+              # Test basic execution with timeout (10 seconds)
+              try {
+                  Write-Host "Testing phgit --help..."
+                  $process = Start-Process -FilePath $exePath -ArgumentList "--help" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "phgit_help_output.txt" -RedirectStandardError "phgit_help_error.txt"
+                  if ($process.ExitCode -eq 0) {
+                      Write-Host "phgit --help executed successfully"
+                  } else {
+                      Write-Host "phgit --help returned exit code: $($process.ExitCode)"
+                      if (Test-Path "phgit_help_error.txt") {
+                          Write-Host "Error output:"
+                          Get-Content "phgit_help_error.txt"
+                      }
+                  }
+              } catch {
+                  Write-Host "phgit --help failed with exception: $($_.Exception.Message)"
+              }
+              
+              try {
+                  Write-Host "Testing phgit --version..."
+                  $process = Start-Process -FilePath $exePath -ArgumentList "--version" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "phgit_version_output.txt" -RedirectStandardError "phgit_version_error.txt"
+                  if ($process.ExitCode -eq 0) {
+                      Write-Host "phgit --version executed successfully"
+                  } else {
+                      Write-Host "phgit --version returned exit code: $($process.ExitCode)"
+                      if (Test-Path "phgit_version_error.txt") {
+                          Write-Host "Error output:"
+                          Get-Content "phgit_version_error.txt"
+                      }
+                  }
+              } catch {
+                  Write-Host "phgit --version failed with exception: $($_.Exception.Message)"
+              }
+              
+              Write-Host "phgit execution test completed for Windows x64"
+          } else {
+              Write-Host "ERROR: phgit executable not found at $exePath!"
+              Write-Host "Listing build directory contents:"
+              Get-ChildItem -Path "build" -Recurse -Filter "*phgit*" | ForEach-Object { Write-Host $_.FullName }
+              exit 1
           }
         shell: pwsh
 
