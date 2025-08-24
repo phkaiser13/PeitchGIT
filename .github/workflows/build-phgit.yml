@@ -1,395 +1,371 @@
-name: Build phgit (Multi-Platform)
+name: Release -> Render & Publish Packaging
 
+# Trigger on published releases
 on:
-  push:
-    branches: [ "main" ]
-    tags:
-      - 'v*'
-  pull_request:
-    branches: [ "main" ]
-  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write   # allow commits/pushes (for the repo where this workflow lives)
+
+env:
+  # Target repositories (change to your actual repositories if different)
+  HOME_TAP_REPO: "phkaiser13/homebrew-tap"
+  VCPKG_REPO: "phkaiser13/vcpkg-registry"
+  AUR_PACKAGES_REPO: "phkaiser13/aur-packages"
+
+  # Templates for EXTERNAL repositories (inside THIS repository)
+  TEMPLATE_HOMEBREW: "./templates/Extern-pkgs/homebrew/phgit.rb.template"
+  TEMPLATE_VCPKG_PORTFILE: "./templates/Extern-pkgs/vcpkg/portfile.cmake.template"
+  TEMPLATE_VCPKG_JSON: "./templates/Extern-pkgs/vcpkg/vcpkg.json.template"
+  TEMPLATE_AUR_PKGBUILD: "./templates/Extern-pkgs/aur/PKGBUILD.template"
+
+  # Templates for THIS repository (For-Repo -> packaging/)
+  SHARED_TEMPLATES_DIR: "./templates/For-Repo"
 
 jobs:
-  build-linux:
-    name: Build Linux (${{ matrix.distro }})
+  render-and-push:
     runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - distro: ubuntu
-            container: ubuntu:latest
-            package_manager: apt
-            deps_command: |
-              apt-get update && apt-get install -y \
-                build-essential \
-                cmake \
-                libssl-dev \
-                pkg-config \
-                liblua5.4-dev \
-                libcurl4-openssl-dev \
-                nlohmann-json3-dev \
-                git \
-                curl
-          - distro: fedora
-            container: fedora:latest
-            package_manager: dnf
-            deps_command: |
-              dnf -y update
-              dnf install -y \
-                gcc-c++ \
-                make \
-                cmake \
-                pkgconf-pkg-config \
-                lua-devel \
-                libcurl-devel \
-                openssl-devel \
-                nlohmann-json-devel \
-                binutils \
-                git \
-                tar \
-                gzip \
-                which \
-                curl
-              dnf clean all
-          - distro: arch
-            container: archlinux:latest
-            package_manager: pacman
-            deps_command: |
-              pacman-key --init
-              pacman-key --populate archlinux
-              pacman -Syu --noconfirm --needed \
-                base-devel \
-                cmake \
-                lua \
-                curl \
-                nlohmann-json \
-                go \
-                rust \
-                git \
-                pkgconf
-
-    container:
-      image: ${{ matrix.container }}
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
-      - name: Install system dependencies (${{ matrix.distro }})
-        run: ${{ matrix.deps_command }}
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: Configure CMake
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-
-      - name: Compile Project
-        run: cmake --build build --parallel
-
-      - name: Test phgit execution (Linux - ${{ matrix.distro }})
-        run: |
-          echo "Testing phgit executable..."
-          if [ -f build/phgit ]; then
-            echo "Found phgit executable at build/phgit"
-            # Test basic execution (--help or --version should work without errors)
-            timeout 10s ./build/phgit --help || echo "phgit --help failed or timed out"
-            timeout 10s ./build/phgit --version || echo "phgit --version failed or timed out"
-            echo "phgit execution test completed for ${{ matrix.distro }}"
-          elif [ -f build/bin/phgit ]; then
-            echo "Found phgit executable at build/bin/phgit"
-            timeout 10s ./build/bin/phgit --help || echo "phgit --help failed or timed out"
-            timeout 10s ./build/bin/phgit --version || echo "phgit --version failed or timed out"
-            echo "phgit execution test completed for ${{ matrix.distro }}"
-          else
-            echo "ERROR: phgit executable not found in expected locations!"
-            echo "Listing build directory contents:"
-            find build -name "phgit*" -type f || true
-            exit 1
-          fi
-
-      - name: Run unit tests (Fedora only)
-        if: matrix.distro == 'fedora' && always()
-        run: |
-          if [ -f build/CTestTestfile.cmake ]; then
-            (cd build && ctest --output-on-failure)
-          else
-            echo "No tests configured (CTestTestfile.cmake not found)."
-          fi
-
-      - name: Upload CI Build Artifacts (not for tags)
-        if: "!startsWith(github.ref, 'refs/tags/')"
-        uses: actions/upload-artifact@v4
-        with:
-          name: phgit-build-artifacts-${{ matrix.distro }}
-          path: |
-            build/
-            src/plugins/
-            LICENSE
-          retention-days: 3
-
-  build-Darwin:
-    name: Build Darwin (${{ matrix.arch }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            arch: x86_64
-          - os: macos-latest
-            arch: Silicon
-    runs-on: ${{ matrix.os }}
-
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install dependencies (Homebrew)
-        run: brew install cmake pkg-config lua curl nlohmann-json
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: Configure CMake
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-
-      - name: Compile Project
-        run: cmake --build build --parallel
-
-      - name: Test phgit execution (Darwin - ${{ matrix.arch }})
-        run: |
-          echo "Testing phgit executable on Darwin ${{ matrix.arch }}..."
-          if [ -f build/bin/phgit ]; then
-            echo "Found phgit executable at build/bin/phgit"
-            # Test basic execution
-            timeout 10s ./build/bin/phgit --help || echo "phgit --help failed or timed out"
-            timeout 10s ./build/bin/phgit --version || echo "phgit --version failed or timed out"
-            echo "phgit execution test completed for Darwin ${{ matrix.arch }}"
-          elif [ -f build/phgit ]; then
-            echo "Found phgit executable at build/phgit"
-            timeout 10s ./build/phgit --help || echo "phgit --help failed or timed out"
-            timeout 10s ./build/phgit --version || echo "phgit --version failed or timed out"
-            echo "phgit execution test completed for Darwin ${{ matrix.arch }}"
-          else
-            echo "ERROR: phgit executable not found in expected locations!"
-            echo "Listing build directory contents:"
-            find build -name "phgit*" -type f || true
-            exit 1
-          fi
-
-      - name: Upload CI Build Artifacts (not for tags)
-        if: "!startsWith(github.ref, 'refs/tags/')"
-        uses: actions/upload-artifact@v4
-        with:
-          name: phgit-build-artifacts-Darwin-${{ matrix.arch }}
-          path: |
-            build/bin/
-            src/plugins/
-            LICENSE
-          retention-days: 3
-
-  build-windows:
-    name: Build Windows (x64)
-    runs-on: windows-latest
-
-    env:
-      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
-      VCPKG_DEFAULT_TRIPLET: x64-windows
-      RUSTFLAGS: ""
-
-    steps:
-      - name: Checkout repository
+      - name: Checkout current repository (templates & workspace)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install CMake
-        uses: jwlawson/actions-setup-cmake@v1
+      - name: Determine release version (strip leading 'v')
+        id: version
+        run: |
+          set -euo pipefail
+          echo "GITHUB_REF_NAME = ${{ github.ref_name }}"
+          RAW="${{ github.ref_name }}"
+          if [[ -z "$RAW" ]]; then
+            echo "ERROR: workflow must run from a release tag (GITHUB_REF_NAME empty)."
+            exit 1
+          fi
+          VERSION="${RAW#v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Download source tarball and compute checksums
+        id: checksums
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          TAR_URL="https://github.com/phkaiser13/peitchgit/archive/refs/tags/v${VERSION}.tar.gz"
+          echo "Tarball URL: ${TAR_URL}"
+          TMP="$(mktemp)"
+          curl -L --fail -sS "${TAR_URL}" -o "${TMP}"
+          # SHA256 & SHA512
+          if command -v sha256sum >/dev/null 2>&1; then
+            TARBALL_SHA256="$(sha256sum "${TMP}" | awk '{print $1}')"
+            TARBALL_SHA512="$(sha512sum "${TMP}" | awk '{print $1}')"
+          else
+            TARBALL_SHA256="$(shasum -a 256 "${TMP}" | awk '{print $1}')"
+            TARBALL_SHA512="$(shasum -a 512 "${TMP}" | awk '{print $1}')"
+          fi
+          echo "Computed tarball SHA256: ${TARBALL_SHA256}"
+          echo "Computed tarball SHA512: ${TARBALL_SHA512}"
+          # export
+          echo "phgit_tarb_sha256=${TARBALL_SHA256}" >> $GITHUB_OUTPUT
+          echo "phgit_tarb_sha512=${TARBALL_SHA512}" >> $GITHUB_OUTPUT
+          # keep tmp path in env in case other steps want to reuse
+          echo "TARBALL_PATH=${TMP}" >> $GITHUB_ENV
+
+      - name: Try to download Windows installer asset and compute installer sha256 (optional)
+        id: installer
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          INSTALLER_NAME="phgit-${VERSION}-installer.exe"
+          INSTALLER_URL="https://github.com/phkaiser13/peitchgit/releases/download/v${VERSION}/${INSTALLER_NAME}"
+          echo "Attempting to download installer: ${INSTALLER_URL}"
+          TMP_INSTALLER="$(mktemp)"
+          if curl -L --fail -sS "${INSTALLER_URL}" -o "${TMP_INSTALLER}"; then
+            if command -v sha256sum >/dev/null 2>&1; then
+              INSTALLER_SHA256="$(sha256sum "${TMP_INSTALLER}" | awk '{print $1}')"
+            else
+              INSTALLER_SHA256="$(shasum -a 256 "${TMP_INSTALLER}" | awk '{print $1}')"
+            fi
+            echo "Installer found. SHA256: ${INSTALLER_SHA256}"
+            echo "installer_sha256=${INSTALLER_SHA256}" >> $GITHUB_OUTPUT
+            echo "INSTALLER_PATH=${TMP_INSTALLER}" >> $GITHUB_ENV
+          else
+            echo "Installer not found at ${INSTALLER_URL} -- skipping installer checksum."
+            echo "installer_sha256=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Render shared templates into packaging/ (THIS repository)
+        id: render-local
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          TARBALL_SHA256="${{ steps.checksums.outputs.phgit_tarb_sha256 }}"
+          TARBALL_SHA512="${{ steps.checksums.outputs.phgit_tarb_sha512 }}"
+          INSTALLER_SHA256="${{ steps.installer.outputs.installer_sha256 }}"
+          TAR_URL="https://github.com/phkaiser13/peitchgit/archive/refs/tags/v${VERSION}.tar.gz"
+          TODAY="$(date -R)"
+
+          echo "🔄 Rendering shared templates into packaging/ ..."
+
+          # Create all packaging directories
+          mkdir -p packaging/chocolatey/tools
+          mkdir -p packaging/rpm
+          mkdir -p packaging/debian
+          mkdir -p packaging/snap
+
+          # === CHOCOLATEY ===
+          # Render Chocolatey nuspec
+          if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/phgit.nuspec.template" ]]; then
+            sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
+                "${{ env.SHARED_TEMPLATES_DIR }}/phgit.nuspec.template" > packaging/chocolatey/phgit.nuspec
+            echo "✅ Rendered packaging/chocolatey/phgit.nuspec"
+          fi
+
+          # Render Chocolatey install script
+          if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/chocolateyinstall.ps1.template" ]]; then
+            sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
+                -e "s/@PHGIT_INSTALLER_SHA256@/${INSTALLER_SHA256}/g" \
+                "${{ env.SHARED_TEMPLATES_DIR }}/chocolateyinstall.ps1.template" > packaging/chocolatey/tools/chocolateyinstall.ps1
+            echo "✅ Rendered packaging/chocolatey/tools/chocolateyinstall.ps1"
+          fi
+
+          # === RPM ===
+          # Render RPM spec
+          if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/phgit.spec.template" ]]; then
+            sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
+                -e "s,@PHGIT_TARBALL_URL@,${TAR_URL},g" \
+                -e "s/@PHGIT_RELEASE_DATE@/${TODAY}/g" \
+                "${{ env.SHARED_TEMPLATES_DIR }}/phgit.spec.template" > packaging/rpm/phgit.spec
+            echo "✅ Rendered packaging/rpm/phgit.spec"
+          fi
+
+          # === DEBIAN ===
+          # Render Debian control
+          if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/debian/control.template" ]]; then
+            cp "${{ env.SHARED_TEMPLATES_DIR }}/debian/control.template" packaging/debian/control
+            echo "✅ Rendered packaging/debian/control"
+          fi
+
+          # Render Debian postrm
+          if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/debian/postrm.template" ]]; then
+            cp "${{ env.SHARED_TEMPLATES_DIR }}/debian/postrm.template" packaging/debian/postrm
+            chmod +x packaging/debian/postrm
+            echo "✅ Rendered packaging/debian/postrm"
+          fi
+
+          # Render Debian rules
+          if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/debian/rules.template" ]]; then
+            cp "${{ env.SHARED_TEMPLATES_DIR }}/debian/rules.template" packaging/debian/rules
+            chmod +x packaging/debian/rules
+            echo "✅ Rendered packaging/debian/rules"
+          fi
+
+          # Render Debian changelog
+          if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/debian/changelog.template" ]]; then
+            sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
+                -e "s/@PHGIT_RELEASE_DATE@/${TODAY}/g" \
+                "${{ env.SHARED_TEMPLATES_DIR }}/debian/changelog.template" > packaging/debian/changelog
+            echo "✅ Rendered packaging/debian/changelog"
+          fi
+
+          # === SNAP ===
+          # Render Snap snapcraft.yaml
+          if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/snap/snapcraft.yaml.template" ]]; then
+            sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
+                "${{ env.SHARED_TEMPLATES_DIR }}/snap/snapcraft.yaml.template" > packaging/snap/snapcraft.yaml
+            echo "✅ Rendered packaging/snap/snapcraft.yaml"
+          fi
+
+          echo "🎯 All shared templates rendered successfully!"
+
+      - name: Commit shared-template renders to THIS repository
+        id: commit-local
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add packaging || true
+          if git diff --staged --quiet; then
+            echo "ℹ️ No changes to commit in packaging/"
+          else
+            git commit -m "chore(release): render packaging templates for phgit ${{ steps.version.outputs.version }}"
+            git push origin HEAD
+            echo "✅ Committed packaging files to repository"
+          fi
+
+      # ---------------------------
+      # Update homebrew-tap repository
+      # ---------------------------
+      - name: Checkout homebrew-tap repository
+        uses: actions/checkout@v4
         with:
-          cmake-version: '3.29.3'
+          repository: ${{ env.HOME_TAP_REPO }}
+          token: ${{ secrets.GH_PAT || github.token }}
+          path: homebrew-tap
+          fetch-depth: 0
 
-      - name: Install Ninja
-        run: choco install ninja -y
-
-      - name: Install vcpkg and libraries
+      - name: Render and place Homebrew formula
         run: |
-          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
-          cd $env:VCPKG_ROOT
-          .\bootstrap-vcpkg.bat
-          .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
-        shell: pwsh
-
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-
-      - name: Debug vcpkg installed files
-        run: |
-          Write-Host "VCPKG_ROOT = $env:VCPKG_ROOT"
-          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\share" -Recurse -Depth 2 | Select-Object -First 200
-          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\bin" -Recurse -Depth 1 | Select-Object -First 200
-        shell: pwsh
-
-      - name: Configure CMake (MSVC, Visual Studio generator)
-        run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" `
-            -DCMAKE_PREFIX_PATH="${{ env.VCPKG_ROOT }}\installed\x64-windows\share" `
-            -DLua_FOUND=TRUE `
-            -DLUA_INCLUDE_DIR="${{ env.VCPKG_ROOT }}\installed\x64-windows\include" `
-            -DLUA_LIBRARY="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
-            -DLUA_LIBRARIES="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
-            -DCMAKE_BUILD_TYPE=Release
-        shell: pwsh
-
-      - name: Build Project
-        run: cmake --build build --config Release --parallel
-        shell: pwsh
-
-      - name: Run tests
-        run: |
-          cd build
-          ctest -C Release --output-on-failure
-        shell: pwsh
-        continue-on-error: true
-
-      - name: Copy Runtime DLLs
-        run: |
-          $vcpkgBinDir = "${{ env.VCPKG_ROOT }}\installed\x64-windows\bin"
-          $targetBinDir = "build\bin\Release"
-
-          Write-Host "Copying DLLs from $vcpkgBinDir to $targetBinDir"
-
-          New-Item -ItemType Directory -Force -Path $targetBinDir
-
-          $dllsToCopy = @(
-              "lua.dll",
-              "libcurl.dll",
-              "libcrypto-3-x64.dll",
-              "libssl-3-x64.dll",
-              "zlib1.dll"
-          )
-
-          foreach ($dll in $dllsToCopy) {
-              $sourcePath = Join-Path $vcpkgBinDir $dll
-              $destinationPath = Join-Path $targetBinDir $dll
-              if (Test-Path $sourcePath) {
-                  Copy-Item -Path $sourcePath -Destination $destinationPath -Force
-                  Write-Host "  Copied $dll"
-              } else {
-                  Write-Warning "  DLL not found: $sourcePath. This might indicate a missing dependency or an issue with vcpkg installation."
-              }
-          }
-        shell: pwsh
-
-      - name: Test phgit execution (Windows x64)
-        run: |
-          Write-Host "Testing phgit executable on Windows x64..."
-          $exePath = "build\bin\Release\phgit.exe"
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          TARBALL_SHA256="${{ steps.checksums.outputs.phgit_tarb_sha256 }}"
+          TEMPLATE="${{ env.TEMPLATE_HOMEBREW }}"
           
-          if (Test-Path $exePath) {
-              Write-Host "Found phgit executable at $exePath"
-              
-              # Test basic execution with timeout (10 seconds)
-              try {
-                  Write-Host "Testing phgit --help..."
-                  $process = Start-Process -FilePath $exePath -ArgumentList "--help" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "phgit_help_output.txt" -RedirectStandardError "phgit_help_error.txt"
-                  if ($process.ExitCode -eq 0) {
-                      Write-Host "phgit --help executed successfully"
-                  } else {
-                      Write-Host "phgit --help returned exit code: $($process.ExitCode)"
-                      if (Test-Path "phgit_help_error.txt") {
-                          Write-Host "Error output:"
-                          Get-Content "phgit_help_error.txt"
-                      }
-                  }
-              } catch {
-                  Write-Host "phgit --help failed with exception: $($_.Exception.Message)"
-              }
-              
-              try {
-                  Write-Host "Testing phgit --version..."
-                  $process = Start-Process -FilePath $exePath -ArgumentList "--version" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "phgit_version_output.txt" -RedirectStandardError "phgit_version_error.txt"
-                  if ($process.ExitCode -eq 0) {
-                      Write-Host "phgit --version executed successfully"
-                  } else {
-                      Write-Host "phgit --version returned exit code: $($process.ExitCode)"
-                      if (Test-Path "phgit_version_error.txt") {
-                          Write-Host "Error output:"
-                          Get-Content "phgit_version_error.txt"
-                      }
-                  }
-              } catch {
-                  Write-Host "phgit --version failed with exception: $($_.Exception.Message)"
-              }
-              
-              Write-Host "phgit execution test completed for Windows x64"
-          } else {
-              Write-Host "ERROR: phgit executable not found at $exePath!"
-              Write-Host "Listing build directory contents:"
-              Get-ChildItem -Path "build" -Recurse -Filter "*phgit*" | ForEach-Object { Write-Host $_.FullName }
-              exit 1
-          }
-        shell: pwsh
+          if [[ ! -f "${TEMPLATE}" ]]; then
+            echo "❌ ERROR: Homebrew template not found at ${TEMPLATE}"
+            exit 1
+          fi
+          
+          mkdir -p homebrew-tap/Formula
+          sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
+              -e "s/@PHGIT_SHA256@/${TARBALL_SHA256}/g" \
+              "${TEMPLATE}" > homebrew-tap/Formula/phgit.rb
+          echo "✅ Rendered homebrew-tap/Formula/phgit.rb"
 
-      - name: Upload CI Build Artifacts (not for tags)
-        if: "!startsWith(github.ref, 'refs/tags/')"
-        uses: actions/upload-artifact@v4
-        with:
-          name: phgit-build-artifacts-windows-x64
-          path: |
-            build/bin/
-            src/plugins/
-            LICENSE
-
-      - name: Create Release Package
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Commit & push Homebrew formula
         run: |
-          $releaseDir = "phgit-release"
-          $buildBinDir = "build/bin/Release"
-          $pluginsDir = "src/plugins"
-          $licenseFile = "LICENSE"
-          $tagVersion = "${{ github.ref_name }}"
-          $zipFileName = "phgit-windows-x64-$tagVersion.zip"
+          set -euo pipefail
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/phgit.rb
+          if git diff --staged --quiet; then
+            echo "ℹ️ No changes to commit in homebrew-tap."
+          else
+            git commit -m "chore(release): update phgit formula to ${{ steps.version.outputs.version }}"
+            git push origin HEAD
+            echo "🍺 Updated Homebrew formula"
+          fi
 
-          Write-Host "Preparing release package for version: $tagVersion"
-          Write-Host "Output ZIP file: $zipFileName"
-
-          New-Item -ItemType Directory -Force -Path $releaseDir
-
-          Write-Host "Copying executable and DLLs from $buildBinDir to $releaseDir"
-          Copy-Item -Path "$buildBinDir/*" -Destination $releaseDir -Recurse -Force
-
-          Write-Host "Copying plugins from $pluginsDir to $releaseDir/plugins"
-          New-Item -ItemType Directory -Force -Path "$releaseDir/plugins"
-          Copy-Item -Path "$pluginsDir/*" -Destination "$releaseDir/plugins" -Recurse -Force
-
-          Write-Host "Copying LICENSE file to $releaseDir"
-          Copy-Item -Path $licenseFile -Destination $releaseDir -Force
-
-          Write-Host "Creating ZIP archive: $zipFileName"
-          Compress-Archive -Path "$releaseDir/*" -DestinationPath $zipFileName -Force
-
-          Write-Host "Release package created successfully."
-        shell: pwsh
-
-      - name: Upload Release Package Artifact
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
+      # ---------------------------
+      # Update vcpkg-registry repository
+      # ---------------------------
+      - name: Checkout vcpkg-registry repository
+        uses: actions/checkout@v4
         with:
-          name: phgit-release-windows-x64-${{ github.ref_name }}
-          path: phgit-windows-x64-*.zip
+          repository: ${{ env.VCPKG_REPO }}
+          token: ${{ secrets.GH_PAT || github.token }}
+          path: vcpkg-registry
+          fetch-depth: 0
+
+      - name: Render and place vcpkg port files
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          TARBALL_SHA512="${{ steps.checksums.outputs.phgit_tarb_sha512 }}"
+          
+          mkdir -p vcpkg-registry/ports/phgit
+
+          # Render portfile.cmake
+          if [[ ! -f "${{ env.TEMPLATE_VCPKG_PORTFILE }}" ]]; then
+            echo "❌ ERROR: vcpkg portfile template missing: ${{ env.TEMPLATE_VCPKG_PORTFILE }}"
+            exit 1
+          fi
+          sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
+              -e "s/@PHGIT_SHA512@/${TARBALL_SHA512}/g" \
+              "${{ env.TEMPLATE_VCPKG_PORTFILE }}" > vcpkg-registry/ports/phgit/portfile.cmake
+          echo "✅ Rendered portfile.cmake"
+
+          # Render vcpkg.json
+          if [[ -f "${{ env.TEMPLATE_VCPKG_JSON }}" ]]; then
+            sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
+                "${{ env.TEMPLATE_VCPKG_JSON }}" > vcpkg-registry/ports/phgit/vcpkg.json
+            echo "✅ Rendered vcpkg.json"
+          fi
+
+      - name: Commit & push vcpkg-registry
+        run: |
+          set -euo pipefail
+          cd vcpkg-registry
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ports/phgit || true
+          if git diff --staged --quiet; then
+            echo "ℹ️ No changes to commit in vcpkg-registry."
+          else
+            git commit -m "chore(release): update vcpkg port for phgit ${{ steps.version.outputs.version }}"
+            git push origin HEAD
+            echo "📦 Updated vcpkg registry"
+          fi
+
+      # ---------------------------
+      # Update aur-packages repository
+      # ---------------------------
+      - name: Checkout aur-packages repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.AUR_PACKAGES_REPO }}
+          token: ${{ secrets.GH_PAT || github.token }}
+          path: aur-packages
+          fetch-depth: 0
+
+      - name: Render and place PKGBUILD
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          TARBALL_SHA256="${{ steps.checksums.outputs.phgit_tarb_sha256 }}"
+          TEMPLATE="${{ env.TEMPLATE_AUR_PKGBUILD }}"
+          
+          if [[ ! -f "${TEMPLATE}" ]]; then
+            echo "❌ ERROR: AUR PKGBUILD template not found at ${TEMPLATE}"
+            exit 1
+          fi
+          
+          mkdir -p aur-packages/phgit
+          sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
+              -e "s/@PHGIT_SHA256@/${TARBALL_SHA256}/g" \
+              "${TEMPLATE}" > aur-packages/phgit/PKGBUILD
+          echo "✅ Rendered aur-packages/phgit/PKGBUILD"
+
+      - name: Generate .SRCINFO for PKGBUILD (optional)
+        run: |
+          set -euo pipefail
+          if command -v docker >/dev/null 2>&1; then
+            echo "🐳 Generating .SRCINFO with Docker..."
+            mkdir -p /tmp/pkgbdir
+            cp aur-packages/phgit/PKGBUILD /tmp/pkgbdir/PKGBUILD
+            docker run --rm -v /tmp/pkgbdir:/work -w /work archlinux:latest bash -lc "
+              pacman -Sy --noconfirm --needed base-devel >/dev/null 2>&1 || true
+              makepkg --printsrcinfo > .SRCINFO
+            " && mv /tmp/pkgbdir/.SRCINFO aur-packages/phgit/.SRCINFO
+            echo "✅ Generated .SRCINFO"
+          else
+            echo "⚠️ Docker not available — skipping .SRCINFO generation"
+          fi
+
+      - name: Commit & push aur-packages
+        run: |
+          set -euo pipefail
+          cd aur-packages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add phgit || true
+          if git diff --staged --quiet; then
+            echo "ℹ️ No changes to commit in aur-packages."
+          else
+            git commit -m "chore(release): update PKGBUILD for phgit ${{ steps.version.outputs.version }}"
+            git push origin HEAD
+            echo "🏛️ Updated AUR package"
+          fi
+
+      - name: Summary
+        run: |
+          set -euo pipefail
+          echo "🎉 Release packaging completed for phgit ${{ steps.version.outputs.version }}"
+          echo ""
+          echo "📊 Checksums:"
+          echo "  📄 Tarball SHA256: ${{ steps.checksums.outputs.phgit_tarb_sha256 }}"
+          echo "  📄 Tarball SHA512: ${{ steps.checksums.outputs.phgit_tarb_sha512 }}"
+          if [[ -n "${{ steps.installer.outputs.installer_sha256 }}" ]]; then
+            echo "  🪟 Installer SHA256: ${{ steps.installer.outputs.installer_sha256 }}"
+          else
+            echo "  🪟 Installer: Not found (skipped)"
+          fi
+          echo ""
+          echo "📦 Updated repositories:"
+          echo "  🍺 ${{ env.HOME_TAP_REPO }} (Homebrew)"
+          echo "  📚 ${{ env.VCPKG_REPO }} (vcpkg)"
+          echo "  🏛️ ${{ env.AUR_PACKAGES_REPO }} (AUR)"
+          echo "  📁 phkaiser13/peitchgit (packaging/)"
+          echo ""
+          echo "✨ All package managers updated successfully!"
