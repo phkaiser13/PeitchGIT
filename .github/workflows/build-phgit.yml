@@ -135,17 +135,17 @@ jobs:
             LICENSE
           retention-days: 3
 
-  build-macos:
-    name: Build macOS (${{ matrix.arch }})
+  build-Darwin:
+    name: Build Darwin (${{ matrix.arch }})
 
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-13
+          - os: Darwin
             arch: x86_64
-          - os: macos-14
-            arch: arm64
+          - os: Darwin
+            arch: Sillicon
 
     runs-on: ${{ matrix.os }}
 
@@ -170,20 +170,20 @@ jobs:
       - name: Compile Project
         run: cmake --build build --parallel
 
-      - name: Test phgit execution (macOS - ${{ matrix.arch }})
+      - name: Test phgit execution (Darwin - ${{ matrix.arch }})
         run: |
-          echo "Testing phgit executable on macOS ${{ matrix.arch }}..."
+          echo "Testing phgit executable on Darwin ${{ matrix.arch }}..."
           if [ -f build/bin/phgit ]; then
             echo "Found phgit executable at build/bin/phgit"
             # Test basic execution
             timeout 10s ./build/bin/phgit --help || echo "phgit --help failed or timed out"
             timeout 10s ./build/bin/phgit --version || echo "phgit --version failed or timed out"
-            echo "phgit execution test completed for macOS ${{ matrix.arch }}"
+            echo "phgit execution test completed for Darwin ${{ matrix.arch }}"
           elif [ -f build/phgit ]; then
             echo "Found phgit executable at build/phgit"
             timeout 10s ./build/phgit --help || echo "phgit --help failed or timed out"
             timeout 10s ./build/phgit --version || echo "phgit --version failed or timed out"
-            echo "phgit execution test completed for macOS ${{ matrix.arch }}"
+            echo "phgit execution test completed for Darwin ${{ matrix.arch }}"
           else
             echo "ERROR: phgit executable not found in expected locations!"
             echo "Listing build directory contents:"
@@ -195,7 +195,7 @@ jobs:
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-build-artifacts-macos-${{ matrix.arch }}
+          name: phgit-build-artifacts-Darwin-${{ matrix.arch }}
           path: |
             build/bin/
             src/plugins/
