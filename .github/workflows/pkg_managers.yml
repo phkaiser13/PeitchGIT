@@ -15,22 +15,17 @@ env:
   AUR_PACKAGES_REPO: "phkaiser13/aur-packages"
 
   # Templates for EXTERNAL repositories (inside THIS repository)
-  TEMPLATE_HOMEBREW: "./templates/homebrew/phgit.rb.template"
-  TEMPLATE_VCPKG_PORTFILE: "./templates/vcpkg/portfile.cmake.template"
-  TEMPLATE_VCPKG_JSON: "./templates/vcpkg/vcpkg.json.template"
-  TEMPLATE_AUR_PKGBUILD: "./templates/aur/PKGBUILD.template"
+  TEMPLATE_HOMEBREW: "./templates/Extern-pkgs/homebrew/phgit.rb.template"
+  TEMPLATE_VCPKG_PORTFILE: "./templates/Extern-pkgs/vcpkg/portfile.cmake.template"
+  TEMPLATE_VCPKG_JSON: "./templates/Extern-pkgs/vcpkg/vcpkg.json.template"
+  TEMPLATE_AUR_PKGBUILD: "./templates/Extern-pkgs/aur/PKGBUILD.template"
 
-  # Templates for THIS repository (shared/template -> packaging/)
-  SHARED_TEMPLATES_DIR: "./shared/template"
+  # Templates for THIS repository (For-Repo -> packaging/)
+  SHARED_TEMPLATES_DIR: "./templates/For-Repo"
 
 jobs:
   render-and-push:
     runs-on: ubuntu-latest
-    env:
-      # Allow user to override PAT secrets names; if not set we'll fallback to GITHUB_TOKEN where possible.
-      HOME_TAP_PAT_SECRET_NAME: HOME_TAP_PAT
-      VCPKG_PAT_SECRET_NAME: VCPKG_PAT
-      AUR_PACKAGES_PAT_SECRET_NAME: AUR_PACKAGES_PAT
     steps:
 
       - name: Checkout current repository (templates & workspace)
@@ -117,6 +112,7 @@ jobs:
           mkdir -p packaging/rpm
           mkdir -p packaging/debian
           mkdir -p packaging/snap
+          mkdir -p packaging/nsis
 
           # === CHOCOLATEY ===
           # Render Chocolatey nuspec
@@ -181,6 +177,14 @@ jobs:
             echo "✅ Rendered packaging/snap/snapcraft.yaml"
           fi
 
+          # === NSIS ===
+          # Render NSIS installer script
+          if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/nsis/phgit.nsi.template" ]]; then
+            sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
+                "${{ env.SHARED_TEMPLATES_DIR }}/nsis/phgit.nsi.template" > packaging/nsis/phgit.nsi
+            echo "✅ Rendered packaging/nsis/phgit.nsi"
+          fi
+
           echo "🎯 All shared templates rendered successfully!"
 
       - name: Commit shared-template renders to THIS repository
@@ -205,7 +209,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ env.HOME_TAP_REPO }}
-          token: ${{ secrets.HOME_TAP_PAT || github.token }}
+          token: ${{ secrets.GH_PAT || github.token }}
           path: homebrew-tap
           fetch-depth: 0
 
@@ -249,7 +253,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ env.VCPKG_REPO }}
-          token: ${{ secrets.VCPKG_PAT || github.token }}
+          token: ${{ secrets.GH_PAT || github.token }}
           path: vcpkg-registry
           fetch-depth: 0
 
@@ -300,7 +304,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ env.AUR_PACKAGES_REPO }}
-          token: ${{ secrets.AUR_PACKAGES_PAT || github.token }}
+          token: ${{ secrets.GH_PAT || github.token }}
           path: aur-packages
           fetch-depth: 0
 
@@ -372,5 +376,12 @@ jobs:
           echo "  📚 ${{ env.VCPKG_REPO }} (vcpkg)"
           echo "  🏛️ ${{ env.AUR_PACKAGES_REPO }} (AUR)"
           echo "  📁 phkaiser13/peitchgit (packaging/)"
+          echo ""
+          echo "📋 Generated packaging files:"
+          echo "  🍫 packaging/chocolatey/ (Chocolatey)"
+          echo "  🔴 packaging/rpm/ (RPM/RHEL/Fedora)"
+          echo "  🐧 packaging/debian/ (Debian/Ubuntu)"
+          echo "  📦 packaging/snap/ (Snap)"
+          echo "  🪟 packaging/nsis/ (Windows NSIS Installer)"
           echo ""
           echo "✨ All package managers updated successfully!"
