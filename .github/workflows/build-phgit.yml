@@ -1,4 +1,4 @@
-name: Build phgit (Multi-Platform Multi-Architecture)
+name: Build phgit (Multi-Platform)
 
 on:
   push:
@@ -11,26 +11,20 @@ on:
 
 jobs:
   build-linux:
-    name: Build Linux (${{ matrix.distro }}-${{ matrix.arch }})
-    runs-on: ${{ matrix.runner }}
+    name: Build Linux (${{ matrix.distro }})
+    runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Ubuntu builds
           - distro: ubuntu
-            arch: x86_64
-            runner: ubuntu-latest
             container: ubuntu:latest
             package_manager: apt
-            compiler: clang
             deps_command: |
               apt-get update && apt-get install -y \
                 build-essential \
                 cmake \
-                clang \
-                llvm \
                 libssl-dev \
                 pkg-config \
                 liblua5.4-dev \
@@ -38,46 +32,15 @@ jobs:
                 nlohmann-json3-dev \
                 git \
                 curl
-          - distro: ubuntu
-            arch: aarch64
-            runner: ubuntu-latest
-            container: ubuntu:latest
-            package_manager: apt
-            compiler: clang
-            cross_compile: true
-            deps_command: |
-              dpkg --add-architecture arm64
-              apt-get update && apt-get install -y \
-                build-essential \
-                cmake \
-                clang \
-                llvm \
-                gcc-aarch64-linux-gnu \
-                g++-aarch64-linux-gnu \
-                pkg-config \
-                nlohmann-json3-dev \
-                git \
-                curl
-              apt-get update
-              apt-get install -y \
-                libssl-dev:arm64 \
-                liblua5.4-dev:arm64 \
-                libcurl4-openssl-dev:arm64
-          # Fedora builds
           - distro: fedora
-            arch: x86_64
-            runner: ubuntu-latest
             container: fedora:latest
             package_manager: dnf
-            compiler: clang
             deps_command: |
               dnf -y update
               dnf install -y \
                 gcc-c++ \
                 make \
                 cmake \
-                clang \
-                llvm \
                 pkgconf-pkg-config \
                 lua-devel \
                 libcurl-devel \
@@ -90,51 +53,15 @@ jobs:
                 which \
                 curl
               dnf clean all
-          - distro: fedora
-            arch: aarch64
-            runner: ubuntu-latest
-            container: fedora:latest
-            package_manager: dnf
-            compiler: clang
-            cross_compile: true
-            deps_command: |
-              dnf -y update
-              dnf install -y \
-                gcc-c++ \
-                make \
-                cmake \
-                clang \
-                llvm \
-                pkgconf-pkg-config \
-                nlohmann-json-devel \
-                binutils \
-                git \
-                tar \
-                gzip \
-                which \
-                curl
-              dnf install -y \
-                gcc-aarch64-linux-gnu \
-                gcc-c++-aarch64-linux-gnu \
-                glibc-devel.aarch64 \
-                glibc-static.aarch64 \
-                libgcc.aarch64
-              dnf clean all
-          # Arch Linux builds
           - distro: arch
-            arch: x86_64
-            runner: ubuntu-latest
             container: archlinux:latest
             package_manager: pacman
-            compiler: clang
             deps_command: |
               pacman-key --init
               pacman-key --populate archlinux
               pacman -Syu --noconfirm --needed \
                 base-devel \
                 cmake \
-                clang \
-                llvm \
                 lua \
                 curl \
                 nlohmann-json \
@@ -142,30 +69,6 @@ jobs:
                 rust \
                 git \
                 pkgconf
-          - distro: arch
-            arch: aarch64
-            runner: ubuntu-latest
-            container: archlinux:latest
-            package_manager: pacman
-            compiler: clang
-            cross_compile: true
-            deps_command: |
-              pacman-key --init
-              pacman-key --populate archlinux
-              pacman -Syu --noconfirm --needed \
-                base-devel \
-                cmake \
-                clang \
-                llvm \
-                nlohmann-json \
-                go \
-                rust \
-                git \
-                pkgconf
-              pacman -S --noconfirm \
-                aarch64-linux-gnu-gcc \
-                aarch64-linux-gnu-binutils \
-                aarch64-linux-gnu-glibc
 
     container:
       image: ${{ matrix.container }}
@@ -174,77 +77,37 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install system dependencies (${{ matrix.distro }}-${{ matrix.arch }})
+      - name: Install system dependencies (${{ matrix.distro }})
         run: ${{ matrix.deps_command }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          targets: ${{ matrix.cross_compile && matrix.arch == 'aarch64' && 'aarch64-unknown-linux-gnu' || '' }}
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.distro }}-${{ matrix.arch }}
 
-      - name: Configure CMake (x86_64)
-        if: matrix.arch == 'x86_64'
-        run: |
-          cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-            -DCMAKE_C_COMPILER=clang \
-            -DCMAKE_CXX_COMPILER=clang++
-
-      - name: Configure CMake (AArch64 Cross-Compile)
-        if: matrix.arch == 'aarch64'
-        run: |
-          # Setup cross-compilation environment
-          export PKG_CONFIG_PATH=/usr/aarch64-linux-gnu/lib/pkgconfig:/usr/lib/aarch64-linux-gnu/pkgconfig
-          export CC=aarch64-linux-gnu-gcc
-          export CXX=aarch64-linux-gnu-g++
-          
-          cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-            -DCMAKE_C_COMPILER=clang \
-            -DCMAKE_CXX_COMPILER=clang++ \
-            -DCMAKE_SYSTEM_NAME=Linux \
-            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
-            -DCMAKE_C_COMPILER_TARGET=aarch64-linux-gnu \
-            -DCMAKE_CXX_COMPILER_TARGET=aarch64-linux-gnu \
-            -DCMAKE_SYSROOT=/usr/aarch64-linux-gnu \
-            -DCMAKE_FIND_ROOT_PATH="/usr/aarch64-linux-gnu;/usr/lib/aarch64-linux-gnu" \
-            -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
-            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
-            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
-            -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY \
-            -DCURL_FOUND=FALSE \
-            -DCMAKE_DISABLE_FIND_PACKAGE_CURL=TRUE
-
-      - name: Set Rust target for cross-compilation
-        if: matrix.cross_compile && matrix.arch == 'aarch64'
-        run: |
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 
       - name: Compile Project
         run: cmake --build build --parallel
 
-      - name: Test phgit execution (Linux - ${{ matrix.distro }}-${{ matrix.arch }})
-        if: matrix.arch == 'x86_64'
+      - name: Test phgit execution (Linux - ${{ matrix.distro }})
         run: |
           echo "Testing phgit executable..."
           if [ -f build/phgit ]; then
             echo "Found phgit executable at build/phgit"
+            # Test basic execution (--help or --version should work without errors)
             timeout 10s ./build/phgit --help || echo "phgit --help failed or timed out"
             timeout 10s ./build/phgit --version || echo "phgit --version failed or timed out"
-            echo "phgit execution test completed for ${{ matrix.distro }}-${{ matrix.arch }}"
+            echo "phgit execution test completed for ${{ matrix.distro }}"
           elif [ -f build/bin/phgit ]; then
             echo "Found phgit executable at build/bin/phgit"
             timeout 10s ./build/bin/phgit --help || echo "phgit --help failed or timed out"
             timeout 10s ./build/bin/phgit --version || echo "phgit --version failed or timed out"
-            echo "phgit execution test completed for ${{ matrix.distro }}-${{ matrix.arch }}"
+            echo "phgit execution test completed for ${{ matrix.distro }}"
           else
             echo "ERROR: phgit executable not found in expected locations!"
             echo "Listing build directory contents:"
@@ -252,24 +115,8 @@ jobs:
             exit 1
           fi
 
-      - name: Verify cross-compiled binary (AArch64)
-        if: matrix.arch == 'aarch64'
-        run: |
-          echo "Verifying cross-compiled binary for ${{ matrix.arch }}..."
-          if [ -f build/phgit ]; then
-            file build/phgit
-            echo "Cross-compilation completed for ${{ matrix.distro }}-${{ matrix.arch }}"
-          elif [ -f build/bin/phgit ]; then
-            file build/bin/phgit
-            echo "Cross-compilation completed for ${{ matrix.distro }}-${{ matrix.arch }}"
-          else
-            echo "ERROR: phgit executable not found!"
-            find build -name "phgit*" -type f || true
-            exit 1
-          fi
-
-      - name: Run unit tests (Fedora x86_64 only)
-        if: matrix.distro == 'fedora' && matrix.arch == 'x86_64' && always()
+      - name: Run unit tests (Fedora only)
+        if: matrix.distro == 'fedora' && always()
         run: |
           if [ -f build/CTestTestfile.cmake ]; then
             (cd build && ctest --output-on-failure)
@@ -281,7 +128,7 @@ jobs:
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-build-artifacts-${{ matrix.distro }}-${{ matrix.arch }}
+          name: phgit-build-artifacts-${{ matrix.distro }}
           path: |
             build/
             src/plugins/
@@ -297,10 +144,8 @@ jobs:
         include:
           - os: macos-13
             arch: x86_64
-            compiler: clang
           - os: macos-14
             arch: arm64
-            compiler: apple-clang
 
     runs-on: ${{ matrix.os }}
 
@@ -318,26 +163,9 @@ jobs:
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
-        with:
-          key: macos-${{ matrix.arch }}
 
-      - name: Configure CMake (x86_64 macOS with Clang)
-        if: matrix.arch == 'x86_64'
-        run: |
-          cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-            -DCMAKE_C_COMPILER=clang \
-            -DCMAKE_CXX_COMPILER=clang++ \
-            -DCMAKE_OSX_ARCHITECTURES=x86_64
-
-      - name: Configure CMake (arm64 macOS with Apple Clang)
-        if: matrix.arch == 'arm64'
-        run: |
-          cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-            -DCMAKE_OSX_ARCHITECTURES=arm64
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 
       - name: Compile Project
         run: cmake --build build --parallel
@@ -347,6 +175,7 @@ jobs:
           echo "Testing phgit executable on macOS ${{ matrix.arch }}..."
           if [ -f build/bin/phgit ]; then
             echo "Found phgit executable at build/bin/phgit"
+            # Test basic execution
             timeout 10s ./build/bin/phgit --help || echo "phgit --help failed or timed out"
             timeout 10s ./build/bin/phgit --version || echo "phgit --version failed or timed out"
             echo "phgit execution test completed for macOS ${{ matrix.arch }}"
@@ -374,23 +203,12 @@ jobs:
           retention-days: 3
 
   build-windows:
-    name: Build Windows (${{ matrix.arch }})
+    name: Build Windows (x64)
     runs-on: windows-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x64
-            vcpkg_triplet: x64-windows
-            cmake_arch: x64
-          - arch: x86
-            vcpkg_triplet: x86-windows
-            cmake_arch: Win32
 
     env:
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
-      VCPKG_DEFAULT_TRIPLET: ${{ matrix.vcpkg_triplet }}
+      VCPKG_DEFAULT_TRIPLET: x64-windows
       RUSTFLAGS: ""
 
     steps:
@@ -412,40 +230,36 @@ jobs:
           git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
           cd $env:VCPKG_ROOT
           .\bootstrap-vcpkg.bat
-          .\vcpkg.exe install curl lua nlohmann-json --triplet ${{ matrix.vcpkg_triplet }}
+          .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
         shell: pwsh
 
       - name: Setup Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          target: ${{ matrix.arch == 'x86' && 'i686-pc-windows-msvc' || 'x86_64-pc-windows-msvc' }}
 
       - name: Debug vcpkg installed files
         run: |
           Write-Host "VCPKG_ROOT = $env:VCPKG_ROOT"
-          Write-Host "VCPKG_TRIPLET = ${{ matrix.vcpkg_triplet }}"
-          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\${{ matrix.vcpkg_triplet }}\share" -Recurse -Depth 2 | Select-Object -First 200
-          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\${{ matrix.vcpkg_triplet }}\bin" -Recurse -Depth 1 | Select-Object -First 200
+          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\share" -Recurse -Depth 2 | Select-Object -First 200
+          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\bin" -Recurse -Depth 1 | Select-Object -First 200
         shell: pwsh
 
       - name: Configure CMake (MSVC, Visual Studio generator)
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A ${{ matrix.cmake_arch }} `
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" `
-            -DCMAKE_PREFIX_PATH="${{ env.VCPKG_ROOT }}\installed\${{ matrix.vcpkg_triplet }}\share" `
+            -DCMAKE_PREFIX_PATH="${{ env.VCPKG_ROOT }}\installed\x64-windows\share" `
             -DLua_FOUND=TRUE `
-            -DLUA_INCLUDE_DIR="${{ env.VCPKG_ROOT }}\installed\${{ matrix.vcpkg_triplet }}\include" `
-            -DLUA_LIBRARY="${{ env.VCPKG_ROOT }}\installed\${{ matrix.vcpkg_triplet }}\lib\lua.lib" `
-            -DLUA_LIBRARIES="${{ env.VCPKG_ROOT }}\installed\${{ matrix.vcpkg_triplet }}\lib\lua.lib" `
+            -DLUA_INCLUDE_DIR="${{ env.VCPKG_ROOT }}\installed\x64-windows\include" `
+            -DLUA_LIBRARY="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
+            -DLUA_LIBRARIES="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
             -DCMAKE_BUILD_TYPE=Release
         shell: pwsh
 
       - name: Build Project
         run: cmake --build build --config Release --parallel
         shell: pwsh
-        env:
-          CARGO_BUILD_TARGET: ${{ matrix.arch == 'x86' && 'i686-pc-windows-msvc' || 'x86_64-pc-windows-msvc' }}
 
       - name: Run tests
         run: |
@@ -456,7 +270,7 @@ jobs:
 
       - name: Copy Runtime DLLs
         run: |
-          $vcpkgBinDir = "${{ env.VCPKG_ROOT }}\installed\${{ matrix.vcpkg_triplet }}\bin"
+          $vcpkgBinDir = "${{ env.VCPKG_ROOT }}\installed\x64-windows\bin"
           $targetBinDir = "build\bin\Release"
 
           Write-Host "Copying DLLs from $vcpkgBinDir to $targetBinDir"
@@ -471,15 +285,6 @@ jobs:
               "zlib1.dll"
           )
 
-          # For x86 builds, adjust DLL names if needed
-          if ("${{ matrix.arch }}" -eq "x86") {
-              $dllsToCopy = $dllsToCopy | ForEach-Object { 
-                  if ($_ -eq "libcrypto-3-x64.dll") { "libcrypto-3.dll" }
-                  elseif ($_ -eq "libssl-3-x64.dll") { "libssl-3.dll" }
-                  else { $_ }
-              }
-          }
-
           foreach ($dll in $dllsToCopy) {
               $sourcePath = Join-Path $vcpkgBinDir $dll
               $destinationPath = Join-Path $targetBinDir $dll
@@ -492,9 +297,9 @@ jobs:
           }
         shell: pwsh
 
-      - name: Test phgit execution (Windows ${{ matrix.arch }})
+      - name: Test phgit execution (Windows x64)
         run: |
-          Write-Host "Testing phgit executable on Windows ${{ matrix.arch }}..."
+          Write-Host "Testing phgit executable on Windows x64..."
           $exePath = "build\bin\Release\phgit.exe"
           
           if (Test-Path $exePath) {
@@ -533,7 +338,7 @@ jobs:
                   Write-Host "phgit --version failed with exception: $($_.Exception.Message)"
               }
               
-              Write-Host "phgit execution test completed for Windows ${{ matrix.arch }}"
+              Write-Host "phgit execution test completed for Windows x64"
           } else {
               Write-Host "ERROR: phgit executable not found at $exePath!"
               Write-Host "Listing build directory contents:"
@@ -546,7 +351,7 @@ jobs:
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-build-artifacts-windows-${{ matrix.arch }}
+          name: phgit-build-artifacts-windows-x64
           path: |
             build/bin/
             src/plugins/
@@ -560,7 +365,7 @@ jobs:
           $pluginsDir = "src/plugins"
           $licenseFile = "LICENSE"
           $tagVersion = "${{ github.ref_name }}"
-          $zipFileName = "phgit-windows-${{ matrix.arch }}-$tagVersion.zip"
+          $zipFileName = "phgit-windows-x64-$tagVersion.zip"
 
           Write-Host "Preparing release package for version: $tagVersion"
           Write-Host "Output ZIP file: $zipFileName"
@@ -587,191 +392,5 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-release-windows-${{ matrix.arch }}-${{ github.ref_name }}
-          path: phgit-windows-${{ matrix.arch }}-*.zip
-
-  build-windows-arm64:
-    name: Build Windows (ARM64)
-    runs-on: windows-latest
-
-    env:
-      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
-      VCPKG_DEFAULT_TRIPLET: arm64-windows
-      RUSTFLAGS: ""
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install CMake
-        uses: jwlawson/actions-setup-cmake@v1
-        with:
-          cmake-version: '3.29.3'
-
-      - name: Install Ninja
-        run: choco install ninja -y
-
-      - name: Install LLVM/Clang
-        run: |
-          choco install llvm -y
-          # Add LLVM to PATH
-          echo "C:\Program Files\LLVM\bin" >> $env:GITHUB_PATH
-        shell: pwsh
-
-      - name: Install vcpkg and libraries
-        run: |
-          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
-          cd $env:VCPKG_ROOT
-          .\bootstrap-vcpkg.bat
-          .\vcpkg.exe install curl lua nlohmann-json --triplet arm64-windows
-        shell: pwsh
-
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          target: aarch64-pc-windows-msvc
-
-      - name: Debug vcpkg installed files
-        run: |
-          Write-Host "VCPKG_ROOT = $env:VCPKG_ROOT"
-          Write-Host "VCPKG_TRIPLET = arm64-windows"
-          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\arm64-windows\share" -Recurse -Depth 2 | Select-Object -First 200
-          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\arm64-windows\bin" -Recurse -Depth 1 | Select-Object -First 200
-        shell: pwsh
-
-      - name: Configure CMake (Clang for ARM64)
-        run: |
-          cmake -S . -B build -G "Ninja" `
-            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" `
-            -DCMAKE_PREFIX_PATH="${{ env.VCPKG_ROOT }}\installed\arm64-windows\share" `
-            -DCMAKE_C_COMPILER="clang.exe" `
-            -DCMAKE_CXX_COMPILER="clang++.exe" `
-            -DCMAKE_SYSTEM_NAME=Windows `
-            -DCMAKE_SYSTEM_PROCESSOR=ARM64 `
-            -DLua_FOUND=TRUE `
-            -DLUA_INCLUDE_DIR="${{ env.VCPKG_ROOT }}\installed\arm64-windows\include" `
-            -DLUA_LIBRARY="${{ env.VCPKG_ROOT }}\installed\arm64-windows\lib\lua.lib" `
-            -DLUA_LIBRARIES="${{ env.VCPKG_ROOT }}\installed\arm64-windows\lib\lua.lib" `
-            -DCMAKE_BUILD_TYPE=Release
-        shell: pwsh
-
-      - name: Build Project
-        run: cmake --build build --config Release --parallel
-        shell: pwsh
-        env:
-          CARGO_BUILD_TARGET: aarch64-pc-windows-msvc
-
-      - name: Run tests
-        run: |
-          cd build
-          ctest -C Release --output-on-failure
-        shell: pwsh
-        continue-on-error: true
-
-      - name: Copy Runtime DLLs
-        run: |
-          $vcpkgBinDir = "${{ env.VCPKG_ROOT }}\installed\arm64-windows\bin"
-          $targetBinDir = "build\bin"
-
-          Write-Host "Copying DLLs from $vcpkgBinDir to $targetBinDir"
-
-          New-Item -ItemType Directory -Force -Path $targetBinDir
-
-          $dllsToCopy = @(
-              "lua.dll",
-              "libcurl.dll",
-              "libcrypto-3-arm64.dll",
-              "libssl-3-arm64.dll",
-              "zlib1.dll"
-          )
-
-          foreach ($dll in $dllsToCopy) {
-              $sourcePath = Join-Path $vcpkgBinDir $dll
-              $destinationPath = Join-Path $targetBinDir $dll
-              if (Test-Path $sourcePath) {
-                  Copy-Item -Path $sourcePath -Destination $destinationPath -Force
-                  Write-Host "  Copied $dll"
-              } else {
-                  Write-Warning "  DLL not found: $sourcePath. This might indicate a missing dependency or an issue with vcpkg installation."
-              }
-          }
-        shell: pwsh
-
-      - name: Verify ARM64 binary
-        run: |
-          Write-Host "Verifying ARM64 binary compilation..."
-          $exePath = "build\bin\phgit.exe"
-          
-          if (Test-Path $exePath) {
-              Write-Host "Found phgit executable at $exePath"
-              Write-Host "ARM64 compilation completed successfully"
-              
-              # Use dumpbin to verify it's ARM64
-              try {
-                  $dumpbinOutput = & "dumpbin.exe" /headers $exePath 2>$null
-                  if ($dumpbinOutput -match "AA64") {
-                      Write-Host "✅ Confirmed: Binary is ARM64 architecture"
-                  } else {
-                      Write-Host "⚠️  Warning: Could not confirm ARM64 architecture from dumpbin output"
-                  }
-              } catch {
-                  Write-Host "Note: dumpbin not available to verify architecture"
-              }
-          } else {
-              Write-Host "ERROR: phgit executable not found at $exePath!"
-              Write-Host "Listing build directory contents:"
-              Get-ChildItem -Path "build" -Recurse -Filter "*phgit*" | ForEach-Object { Write-Host $_.FullName }
-              exit 1
-          }
-        shell: pwsh
-
-      - name: Upload CI Build Artifacts (not for tags)
-        if: "!startsWith(github.ref, 'refs/tags/')"
-        uses: actions/upload-artifact@v4
-        with:
-          name: phgit-build-artifacts-windows-arm64
-          path: |
-            build/bin/
-            src/plugins/
-            LICENSE
-
-      - name: Create Release Package
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          $releaseDir = "phgit-release"
-          $buildBinDir = "build/bin"
-          $pluginsDir = "src/plugins"
-          $licenseFile = "LICENSE"
-          $tagVersion = "${{ github.ref_name }}"
-          $zipFileName = "phgit-windows-arm64-$tagVersion.zip"
-
-          Write-Host "Preparing release package for version: $tagVersion"
-          Write-Host "Output ZIP file: $zipFileName"
-
-          New-Item -ItemType Directory -Force -Path $releaseDir
-
-          Write-Host "Copying executable and DLLs from $buildBinDir to $releaseDir"
-          Copy-Item -Path "$buildBinDir/*" -Destination $releaseDir -Recurse -Force
-
-          Write-Host "Copying plugins from $pluginsDir to $releaseDir/plugins"
-          New-Item -ItemType Directory -Force -Path "$releaseDir/plugins"
-          Copy-Item -Path "$pluginsDir/*" -Destination "$releaseDir/plugins" -Recurse -Force
-
-          Write-Host "Copying LICENSE file to $releaseDir"
-          Copy-Item -Path $licenseFile -Destination $releaseDir -Force
-
-          Write-Host "Creating ZIP archive: $zipFileName"
-          Compress-Archive -Path "$releaseDir/*" -DestinationPath $zipFileName -Force
-
-          Write-Host "Release package created successfully."
-        shell: pwsh
-
-      - name: Upload Release Package Artifact
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
-        with:
-          name: phgit-release-windows-arm64-${{ github.ref_name }}
-          path: phgit-windows-arm64-*.zip
+          name: phgit-release-windows-x64-${{ github.ref_name }}
+          path: phgit-windows-x64-*.zip
