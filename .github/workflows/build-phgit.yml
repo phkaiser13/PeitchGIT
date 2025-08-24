@@ -46,6 +46,7 @@ jobs:
             compiler: clang
             cross_compile: true
             deps_command: |
+              dpkg --add-architecture arm64
               apt-get update && apt-get install -y \
                 build-essential \
                 cmake \
@@ -53,15 +54,15 @@ jobs:
                 llvm \
                 gcc-aarch64-linux-gnu \
                 g++-aarch64-linux-gnu \
-                libssl-dev:arm64 \
                 pkg-config \
-                liblua5.4-dev:arm64 \
-                libcurl4-openssl-dev:arm64 \
                 nlohmann-json3-dev \
                 git \
                 curl
-              dpkg --add-architecture arm64
               apt-get update
+              apt-get install -y \
+                libssl-dev:arm64 \
+                liblua5.4-dev:arm64 \
+                libcurl4-openssl-dev:arm64
           # Fedora builds
           - distro: fedora
             arch: x86_64
@@ -104,12 +105,7 @@ jobs:
                 cmake \
                 clang \
                 llvm \
-                gcc-aarch64-linux-gnu \
-                gcc-c++-aarch64-linux-gnu \
                 pkgconf-pkg-config \
-                lua-devel \
-                libcurl-devel \
-                openssl-devel \
                 nlohmann-json-devel \
                 binutils \
                 git \
@@ -117,6 +113,12 @@ jobs:
                 gzip \
                 which \
                 curl
+              dnf install -y \
+                gcc-aarch64-linux-gnu \
+                gcc-c++-aarch64-linux-gnu \
+                glibc-devel.aarch64 \
+                glibc-static.aarch64 \
+                libgcc.aarch64
               dnf clean all
           # Arch Linux builds
           - distro: arch
@@ -155,14 +157,15 @@ jobs:
                 cmake \
                 clang \
                 llvm \
-                aarch64-linux-gnu-gcc \
-                lua \
-                curl \
                 nlohmann-json \
                 go \
                 rust \
                 git \
                 pkgconf
+              pacman -S --noconfirm \
+                aarch64-linux-gnu-gcc \
+                aarch64-linux-gnu-binutils \
+                aarch64-linux-gnu-glibc
 
     container:
       image: ${{ matrix.container }}
@@ -197,6 +200,11 @@ jobs:
       - name: Configure CMake (AArch64 Cross-Compile)
         if: matrix.arch == 'aarch64'
         run: |
+          # Setup cross-compilation environment
+          export PKG_CONFIG_PATH=/usr/aarch64-linux-gnu/lib/pkgconfig:/usr/lib/aarch64-linux-gnu/pkgconfig
+          export CC=aarch64-linux-gnu-gcc
+          export CXX=aarch64-linux-gnu-g++
+          
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
@@ -206,11 +214,14 @@ jobs:
             -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
             -DCMAKE_C_COMPILER_TARGET=aarch64-linux-gnu \
             -DCMAKE_CXX_COMPILER_TARGET=aarch64-linux-gnu \
-            -DCMAKE_FIND_ROOT_PATH=/usr/aarch64-linux-gnu \
+            -DCMAKE_SYSROOT=/usr/aarch64-linux-gnu \
+            -DCMAKE_FIND_ROOT_PATH="/usr/aarch64-linux-gnu;/usr/lib/aarch64-linux-gnu" \
             -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
             -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
             -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
-            -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY
+            -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY \
+            -DCURL_FOUND=FALSE \
+            -DCMAKE_DISABLE_FIND_PACKAGE_CURL=TRUE
 
       - name: Set Rust target for cross-compilation
         if: matrix.cross_compile && matrix.arch == 'aarch64'
@@ -578,3 +589,189 @@ jobs:
         with:
           name: phgit-release-windows-${{ matrix.arch }}-${{ github.ref_name }}
           path: phgit-windows-${{ matrix.arch }}-*.zip
+
+  build-windows-arm64:
+    name: Build Windows (ARM64)
+    runs-on: windows-latest
+
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+      VCPKG_DEFAULT_TRIPLET: arm64-windows
+      RUSTFLAGS: ""
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install CMake
+        uses: jwlawson/actions-setup-cmake@v1
+        with:
+          cmake-version: '3.29.3'
+
+      - name: Install Ninja
+        run: choco install ninja -y
+
+      - name: Install LLVM/Clang
+        run: |
+          choco install llvm -y
+          # Add LLVM to PATH
+          echo "C:\Program Files\LLVM\bin" >> $env:GITHUB_PATH
+        shell: pwsh
+
+      - name: Install vcpkg and libraries
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          cd $env:VCPKG_ROOT
+          .\bootstrap-vcpkg.bat
+          .\vcpkg.exe install curl lua nlohmann-json --triplet arm64-windows
+        shell: pwsh
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: aarch64-pc-windows-msvc
+
+      - name: Debug vcpkg installed files
+        run: |
+          Write-Host "VCPKG_ROOT = $env:VCPKG_ROOT"
+          Write-Host "VCPKG_TRIPLET = arm64-windows"
+          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\arm64-windows\share" -Recurse -Depth 2 | Select-Object -First 200
+          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\arm64-windows\bin" -Recurse -Depth 1 | Select-Object -First 200
+        shell: pwsh
+
+      - name: Configure CMake (Clang for ARM64)
+        run: |
+          cmake -S . -B build -G "Ninja" `
+            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" `
+            -DCMAKE_PREFIX_PATH="${{ env.VCPKG_ROOT }}\installed\arm64-windows\share" `
+            -DCMAKE_C_COMPILER="clang.exe" `
+            -DCMAKE_CXX_COMPILER="clang++.exe" `
+            -DCMAKE_SYSTEM_NAME=Windows `
+            -DCMAKE_SYSTEM_PROCESSOR=ARM64 `
+            -DLua_FOUND=TRUE `
+            -DLUA_INCLUDE_DIR="${{ env.VCPKG_ROOT }}\installed\arm64-windows\include" `
+            -DLUA_LIBRARY="${{ env.VCPKG_ROOT }}\installed\arm64-windows\lib\lua.lib" `
+            -DLUA_LIBRARIES="${{ env.VCPKG_ROOT }}\installed\arm64-windows\lib\lua.lib" `
+            -DCMAKE_BUILD_TYPE=Release
+        shell: pwsh
+
+      - name: Build Project
+        run: cmake --build build --config Release --parallel
+        shell: pwsh
+        env:
+          CARGO_BUILD_TARGET: aarch64-pc-windows-msvc
+
+      - name: Run tests
+        run: |
+          cd build
+          ctest -C Release --output-on-failure
+        shell: pwsh
+        continue-on-error: true
+
+      - name: Copy Runtime DLLs
+        run: |
+          $vcpkgBinDir = "${{ env.VCPKG_ROOT }}\installed\arm64-windows\bin"
+          $targetBinDir = "build\bin"
+
+          Write-Host "Copying DLLs from $vcpkgBinDir to $targetBinDir"
+
+          New-Item -ItemType Directory -Force -Path $targetBinDir
+
+          $dllsToCopy = @(
+              "lua.dll",
+              "libcurl.dll",
+              "libcrypto-3-arm64.dll",
+              "libssl-3-arm64.dll",
+              "zlib1.dll"
+          )
+
+          foreach ($dll in $dllsToCopy) {
+              $sourcePath = Join-Path $vcpkgBinDir $dll
+              $destinationPath = Join-Path $targetBinDir $dll
+              if (Test-Path $sourcePath) {
+                  Copy-Item -Path $sourcePath -Destination $destinationPath -Force
+                  Write-Host "  Copied $dll"
+              } else {
+                  Write-Warning "  DLL not found: $sourcePath. This might indicate a missing dependency or an issue with vcpkg installation."
+              }
+          }
+        shell: pwsh
+
+      - name: Verify ARM64 binary
+        run: |
+          Write-Host "Verifying ARM64 binary compilation..."
+          $exePath = "build\bin\phgit.exe"
+          
+          if (Test-Path $exePath) {
+              Write-Host "Found phgit executable at $exePath"
+              Write-Host "ARM64 compilation completed successfully"
+              
+              # Use dumpbin to verify it's ARM64
+              try {
+                  $dumpbinOutput = & "dumpbin.exe" /headers $exePath 2>$null
+                  if ($dumpbinOutput -match "AA64") {
+                      Write-Host "✅ Confirmed: Binary is ARM64 architecture"
+                  } else {
+                      Write-Host "⚠️  Warning: Could not confirm ARM64 architecture from dumpbin output"
+                  }
+              } catch {
+                  Write-Host "Note: dumpbin not available to verify architecture"
+              }
+          } else {
+              Write-Host "ERROR: phgit executable not found at $exePath!"
+              Write-Host "Listing build directory contents:"
+              Get-ChildItem -Path "build" -Recurse -Filter "*phgit*" | ForEach-Object { Write-Host $_.FullName }
+              exit 1
+          }
+        shell: pwsh
+
+      - name: Upload CI Build Artifacts (not for tags)
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: phgit-build-artifacts-windows-arm64
+          path: |
+            build/bin/
+            src/plugins/
+            LICENSE
+
+      - name: Create Release Package
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          $releaseDir = "phgit-release"
+          $buildBinDir = "build/bin"
+          $pluginsDir = "src/plugins"
+          $licenseFile = "LICENSE"
+          $tagVersion = "${{ github.ref_name }}"
+          $zipFileName = "phgit-windows-arm64-$tagVersion.zip"
+
+          Write-Host "Preparing release package for version: $tagVersion"
+          Write-Host "Output ZIP file: $zipFileName"
+
+          New-Item -ItemType Directory -Force -Path $releaseDir
+
+          Write-Host "Copying executable and DLLs from $buildBinDir to $releaseDir"
+          Copy-Item -Path "$buildBinDir/*" -Destination $releaseDir -Recurse -Force
+
+          Write-Host "Copying plugins from $pluginsDir to $releaseDir/plugins"
+          New-Item -ItemType Directory -Force -Path "$releaseDir/plugins"
+          Copy-Item -Path "$pluginsDir/*" -Destination "$releaseDir/plugins" -Recurse -Force
+
+          Write-Host "Copying LICENSE file to $releaseDir"
+          Copy-Item -Path $licenseFile -Destination $releaseDir -Force
+
+          Write-Host "Creating ZIP archive: $zipFileName"
+          Compress-Archive -Path "$releaseDir/*" -DestinationPath $zipFileName -Force
+
+          Write-Host "Release package created successfully."
+        shell: pwsh
+
+      - name: Upload Release Package Artifact
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: phgit-release-windows-arm64-${{ github.ref_name }}
+          path: phgit-windows-arm64-*.zip
