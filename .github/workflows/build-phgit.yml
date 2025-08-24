@@ -11,7 +11,7 @@ on:
 
 jobs:
   build-linux:
-    name: Build Linux (${{ matrix.distro }})
+    name: Build Linux (${{ matrix.distro }} - ${{ matrix.arch }})
     runs-on: ubuntu-latest
 
     strategy:
@@ -21,9 +21,10 @@ jobs:
           - distro: ubuntu
             container: ubuntu:latest
             package_manager: apt
+            arch: x64
             deps_command: |
               apt-get update && apt-get install -y \
-                build-essential \
+                clang \
                 cmake \
                 libssl-dev \
                 pkg-config \
@@ -32,13 +33,31 @@ jobs:
                 nlohmann-json3-dev \
                 git \
                 curl
+          - distro: ubuntu
+            container: ubuntu:latest
+            package_manager: apt
+            arch: x32
+            deps_command: |
+              dpkg --add-architecture i386
+              apt-get update && apt-get install -y \
+                clang \
+                cmake \
+                libssl-dev:i386 \
+                pkg-config \
+                liblua5.4-dev:i386 \
+                libcurl4-openssl-dev:i386 \
+                nlohmann-json3-dev \
+                git \
+                curl \
+                gcc-multilib
           - distro: fedora
             container: fedora:latest
             package_manager: dnf
+            arch: x64
             deps_command: |
               dnf -y update
               dnf install -y \
-                gcc-c++ \
+                clang \
                 make \
                 cmake \
                 pkgconf-pkg-config \
@@ -53,14 +72,40 @@ jobs:
                 which \
                 curl
               dnf clean all
+          - distro: fedora
+            container: fedora:latest
+            package_manager: dnf
+            arch: x32
+            deps_command: |
+              dnf -y update
+              dnf install -y \
+                clang \
+                make \
+                cmake \
+                pkgconf-pkg-config \
+                lua-devel.i686 \
+                libcurl-devel.i686 \
+                openssl-devel.i686 \
+                nlohmann-json-devel \
+                binutils \
+                git \
+                tar \
+                gzip \
+                which \
+                curl \
+                glibc-devel.i686 \
+                libgcc.i686
+              dnf clean all
           - distro: arch
             container: archlinux:latest
             package_manager: pacman
+            arch: x64
             deps_command: |
               pacman-key --init
               pacman-key --populate archlinux
               pacman -Syu --noconfirm --needed \
                 base-devel \
+                clang \
                 cmake \
                 lua \
                 curl \
@@ -77,7 +122,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install system dependencies (${{ matrix.distro }})
+      - name: Install system dependencies (${{ matrix.distro }} - ${{ matrix.arch }})
         run: ${{ matrix.deps_command }}
 
       - name: Setup Rust
@@ -88,13 +133,22 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Configure CMake
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+      - name: Configure CMake (${{ matrix.arch }})
+        run: |
+          if [ "${{ matrix.arch }}" = "x32" ]; then
+            export CC=clang
+            export CXX=clang++
+            export CFLAGS="-m32"
+            export CXXFLAGS="-m32"
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_FLAGS="-m32" -DCMAKE_CXX_FLAGS="-m32"
+          else
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+          fi
 
       - name: Compile Project
         run: cmake --build build --parallel
 
-      - name: Test phgit execution (Linux - ${{ matrix.distro }})
+      - name: Test phgit execution (Linux - ${{ matrix.distro }} - ${{ matrix.arch }})
         run: |
           echo "Testing phgit executable..."
           if [ -f build/phgit ]; then
@@ -102,12 +156,12 @@ jobs:
             # Test basic execution (--help or --version should work without errors)
             timeout 10s ./build/phgit --help || echo "phgit --help failed or timed out"
             timeout 10s ./build/phgit --version || echo "phgit --version failed or timed out"
-            echo "phgit execution test completed for ${{ matrix.distro }}"
+            echo "phgit execution test completed for ${{ matrix.distro }} - ${{ matrix.arch }}"
           elif [ -f build/bin/phgit ]; then
             echo "Found phgit executable at build/bin/phgit"
             timeout 10s ./build/bin/phgit --help || echo "phgit --help failed or timed out"
             timeout 10s ./build/bin/phgit --version || echo "phgit --version failed or timed out"
-            echo "phgit execution test completed for ${{ matrix.distro }}"
+            echo "phgit execution test completed for ${{ matrix.distro }} - ${{ matrix.arch }}"
           else
             echo "ERROR: phgit executable not found in expected locations!"
             echo "Listing build directory contents:"
@@ -115,8 +169,8 @@ jobs:
             exit 1
           fi
 
-      - name: Run unit tests (Fedora only)
-        if: matrix.distro == 'fedora' && always()
+      - name: Run unit tests (Fedora x64 only)
+        if: matrix.distro == 'fedora' && matrix.arch == 'x64' && always()
         run: |
           if [ -f build/CTestTestfile.cmake ]; then
             (cd build && ctest --output-on-failure)
@@ -128,15 +182,15 @@ jobs:
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-build-artifacts-${{ matrix.distro }}
+          name: phgit-build-artifacts-${{ matrix.distro }}-${{ matrix.arch }}
           path: |
             build/
             src/plugins/
             LICENSE
           retention-days: 3
 
-  build-macos:
-    name: Build macOS (${{ matrix.arch }})
+  build-darwin:
+    name: Build Darwin (${{ matrix.arch }})
 
     strategy:
       fail-fast: false
@@ -145,7 +199,7 @@ jobs:
           - os: macos-13
             arch: x86_64
           - os: macos-14
-            arch: arm64
+            arch: silicon
 
     runs-on: ${{ matrix.os }}
 
@@ -165,25 +219,25 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Configure CMake
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
 
       - name: Compile Project
         run: cmake --build build --parallel
 
-      - name: Test phgit execution (macOS - ${{ matrix.arch }})
+      - name: Test phgit execution (Darwin - ${{ matrix.arch }})
         run: |
-          echo "Testing phgit executable on macOS ${{ matrix.arch }}..."
+          echo "Testing phgit executable on Darwin ${{ matrix.arch }}..."
           if [ -f build/bin/phgit ]; then
             echo "Found phgit executable at build/bin/phgit"
             # Test basic execution
             timeout 10s ./build/bin/phgit --help || echo "phgit --help failed or timed out"
             timeout 10s ./build/bin/phgit --version || echo "phgit --version failed or timed out"
-            echo "phgit execution test completed for macOS ${{ matrix.arch }}"
+            echo "phgit execution test completed for Darwin ${{ matrix.arch }}"
           elif [ -f build/phgit ]; then
             echo "Found phgit executable at build/phgit"
             timeout 10s ./build/phgit --help || echo "phgit --help failed or timed out"
             timeout 10s ./build/phgit --version || echo "phgit --version failed or timed out"
-            echo "phgit execution test completed for macOS ${{ matrix.arch }}"
+            echo "phgit execution test completed for Darwin ${{ matrix.arch }}"
           else
             echo "ERROR: phgit executable not found in expected locations!"
             echo "Listing build directory contents:"
@@ -195,7 +249,7 @@ jobs:
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-build-artifacts-macos-${{ matrix.arch }}
+          name: phgit-build-artifacts-darwin-${{ matrix.arch }}
           path: |
             build/bin/
             src/plugins/
@@ -203,12 +257,23 @@ jobs:
           retention-days: 3
 
   build-windows:
-    name: Build Windows (x64)
+    name: Build Windows (${{ matrix.arch }})
     runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            cmake_arch: x64
+            vcpkg_triplet: x64-windows
+          - arch: x32
+            cmake_arch: Win32
+            vcpkg_triplet: x86-windows
 
     env:
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
-      VCPKG_DEFAULT_TRIPLET: x64-windows
+      VCPKG_DEFAULT_TRIPLET: ${{ matrix.vcpkg_triplet }}
       RUSTFLAGS: ""
 
     steps:
@@ -230,7 +295,7 @@ jobs:
           git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
           cd $env:VCPKG_ROOT
           .\bootstrap-vcpkg.bat
-          .\vcpkg.exe install curl lua nlohmann-json --triplet x64-windows
+          .\vcpkg.exe install curl lua nlohmann-json --triplet ${{ matrix.vcpkg_triplet }}
         shell: pwsh
 
       - name: Setup Rust toolchain
@@ -241,19 +306,19 @@ jobs:
       - name: Debug vcpkg installed files
         run: |
           Write-Host "VCPKG_ROOT = $env:VCPKG_ROOT"
-          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\share" -Recurse -Depth 2 | Select-Object -First 200
-          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\x64-windows\bin" -Recurse -Depth 1 | Select-Object -First 200
+          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\${{ matrix.vcpkg_triplet }}\share" -Recurse -Depth 2 | Select-Object -First 200
+          Get-ChildItem -Path "${{ env.VCPKG_ROOT }}\installed\${{ matrix.vcpkg_triplet }}\bin" -Recurse -Depth 1 | Select-Object -First 200
         shell: pwsh
 
       - name: Configure CMake (MSVC, Visual Studio generator)
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+          cmake -S . -B build -G "Visual Studio 17 2022" -A ${{ matrix.cmake_arch }} `
             -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}\scripts\buildsystems\vcpkg.cmake" `
-            -DCMAKE_PREFIX_PATH="${{ env.VCPKG_ROOT }}\installed\x64-windows\share" `
+            -DCMAKE_PREFIX_PATH="${{ env.VCPKG_ROOT }}\installed\${{ matrix.vcpkg_triplet }}\share" `
             -DLua_FOUND=TRUE `
-            -DLUA_INCLUDE_DIR="${{ env.VCPKG_ROOT }}\installed\x64-windows\include" `
-            -DLUA_LIBRARY="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
-            -DLUA_LIBRARIES="${{ env.VCPKG_ROOT }}\installed\x64-windows\lib\lua.lib" `
+            -DLUA_INCLUDE_DIR="${{ env.VCPKG_ROOT }}\installed\${{ matrix.vcpkg_triplet }}\include" `
+            -DLUA_LIBRARY="${{ env.VCPKG_ROOT }}\installed\${{ matrix.vcpkg_triplet }}\lib\lua.lib" `
+            -DLUA_LIBRARIES="${{ env.VCPKG_ROOT }}\installed\${{ matrix.vcpkg_triplet }}\lib\lua.lib" `
             -DCMAKE_BUILD_TYPE=Release
         shell: pwsh
 
@@ -270,7 +335,7 @@ jobs:
 
       - name: Copy Runtime DLLs
         run: |
-          $vcpkgBinDir = "${{ env.VCPKG_ROOT }}\installed\x64-windows\bin"
+          $vcpkgBinDir = "${{ env.VCPKG_ROOT }}\installed\${{ matrix.vcpkg_triplet }}\bin"
           $targetBinDir = "build\bin\Release"
 
           Write-Host "Copying DLLs from $vcpkgBinDir to $targetBinDir"
@@ -297,9 +362,9 @@ jobs:
           }
         shell: pwsh
 
-      - name: Test phgit execution (Windows x64)
+      - name: Test phgit execution (Windows ${{ matrix.arch }})
         run: |
-          Write-Host "Testing phgit executable on Windows x64..."
+          Write-Host "Testing phgit executable on Windows ${{ matrix.arch }}..."
           $exePath = "build\bin\Release\phgit.exe"
           
           if (Test-Path $exePath) {
@@ -338,7 +403,7 @@ jobs:
                   Write-Host "phgit --version failed with exception: $($_.Exception.Message)"
               }
               
-              Write-Host "phgit execution test completed for Windows x64"
+              Write-Host "phgit execution test completed for Windows ${{ matrix.arch }}"
           } else {
               Write-Host "ERROR: phgit executable not found at $exePath!"
               Write-Host "Listing build directory contents:"
@@ -351,7 +416,7 @@ jobs:
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-build-artifacts-windows-x64
+          name: phgit-build-artifacts-windows-${{ matrix.arch }}
           path: |
             build/bin/
             src/plugins/
@@ -365,7 +430,7 @@ jobs:
           $pluginsDir = "src/plugins"
           $licenseFile = "LICENSE"
           $tagVersion = "${{ github.ref_name }}"
-          $zipFileName = "phgit-windows-x64-$tagVersion.zip"
+          $zipFileName = "phgit-windows-${{ matrix.arch }}-$tagVersion.zip"
 
           Write-Host "Preparing release package for version: $tagVersion"
           Write-Host "Output ZIP file: $zipFileName"
@@ -392,5 +457,5 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-release-windows-x64-${{ github.ref_name }}
-          path: phgit-windows-x64-*.zip
+          name: phgit-release-windows-${{ matrix.arch }}-${{ github.ref_name }}
+          path: phgit-windows-${{ matrix.arch }}-*.zip
