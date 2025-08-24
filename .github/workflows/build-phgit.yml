@@ -137,17 +137,16 @@ jobs:
 
   build-Darwin:
     name: Build Darwin (${{ matrix.arch }})
-
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: Darwin
+          - os: macos-latest
             arch: x86_64
-          - os: Darwin
-            arch: Sillicon
-
+          - os: macos-latest
+            arch: Silicon
     runs-on: ${{ matrix.os }}
+
 
     steps:
       - name: Checkout code
