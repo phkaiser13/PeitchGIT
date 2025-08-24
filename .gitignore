@@ -42,6 +42,7 @@ $RECYCLE.BIN/
 .history/
 .vssettings
 .code-workspace
+.errorviz-version
 
 # JetBrains (CLion, IntelliJ family)
 .idea/
