@@ -229,20 +229,25 @@ endif()
 # This section remains unchanged, preserving your new Rust macro and build logic.
 
 macro(add_rust_module module_path library_name)
-set(OUTPUT_LIB_PATH ${MODULE_OUTPUT_PATH}/${CMAKE_SHARED_LIBRARY_PREFIX}${library_name}${CMAKE_SHARED_LIBRARY_SUFFIX})
-set(SOURCE_LIB_PATH ${CMAKE_BINARY_DIR}/cargo_target/release/${CMAKE_SHARED_LIBRARY_PREFIX}${library_name}${CMAKE_SHARED_LIBRARY_SUFFIX})
+    # Define o caminho de destino final no diretório de módulos
+    set(OUTPUT_LIB_PATH ${MODULE_OUTPUT_PATH}/${CMAKE_SHARED_LIBRARY_PREFIX}${library_name}${CMAKE_SHARED_LIBRARY_SUFFIX})
 
-add_custom_command(
-OUTPUT ${OUTPUT_LIB_PATH}
-COMMAND ${CMAKE_COMMAND} -E env "CARGO_TARGET_DIR=${CMAKE_BINARY_DIR}/cargo_target" cargo build --release --manifest-path ${CMAKE_SOURCE_DIR}/src/modules/${module_path}/Cargo.toml
-COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SOURCE_LIB_PATH} ${MODULE_OUTPUT_PATH}/
-WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/src/modules/${module_path}
-COMMENT "Compiling Rust module: ${library_name}"
-VERBATIM
-)
-add_custom_target(build_${library_name} ALL
-DEPENDS ${OUTPUT_LIB_PATH}
-)
+    # --- MUDANÇA PRINCIPAL AQUI ---
+    # Aponta para o diretório de depuração do Cargo
+    set(SOURCE_LIB_PATH ${CMAKE_BINARY_DIR}/cargo_target/debug/${CMAKE_SHARED_LIBRARY_PREFIX}${library_name}${CMAKE_SHARED_LIBRARY_SUFFIX})
+
+    add_custom_command(
+            OUTPUT ${OUTPUT_LIB_PATH}
+            # Remove a flag --release para compilar em modo de depuração
+            COMMAND ${CMAKE_COMMAND} -E env "CARGO_TARGET_DIR=${CMAKE_BINARY_DIR}/cargo_target" cargo build --manifest-path ${CMAKE_SOURCE_DIR}/src/modules/${module_path}/Cargo.toml
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SOURCE_LIB_PATH} ${MODULE_OUTPUT_PATH}/
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/src/modules/${module_path}
+            COMMENT "Compiling Rust module in DEBUG mode: ${library_name}"
+            VERBATIM
+    )
+    add_custom_target(build_${library_name} ALL
+            DEPENDS ${OUTPUT_LIB_PATH}
+    )
 endmacro()
 
 # --- Build All Modules ---
