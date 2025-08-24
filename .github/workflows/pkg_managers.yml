@@ -1,10 +1,10 @@
 name: Release -> Render & Publish Packaging
 
-# Trigger on published releases
+# Trigger on new tags
 on:
-  release:
-    types: [published]
-
+  push:
+    tags:
+      - '*'
 permissions:
   contents: write   # allow commits/pushes (for the repo where this workflow lives)
 
