@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
   <metadata>
     <id>phgit</id>
-    <version>@PHGIT_VERSION@</version>
+    <version>k8s-prerls-0.0.3-beta</version>
     <title>phgit (Peitch Git)</title>
     <authors>Pedro Henrique / phkaiser13</authors>
     <owners>Pedro Henrique / phkaiser13</owners>

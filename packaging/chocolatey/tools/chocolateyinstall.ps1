@@ -3,14 +3,14 @@
 #
 # Chocolatey installation script template for phgit.
 # Workflow must replace:
-#   - @PHGIT_VERSION@           -> package version (e.g. 1.2.3)
-#   - @PHGIT_INSTALLER_SHA256@  -> sha256 checksum of the Windows installer .exe
+#   - k8s-prerls-0.0.3-beta           -> package version (e.g. 1.2.3)
+#   -   -> sha256 checksum of the Windows installer .exe
 
 $ErrorActionPreference = 'Stop'
 
 # --- Package parameters (injected by CI/CD) ---
 # Example: 1.2.3
-$version = '@PHGIT_VERSION@'
+$version = 'k8s-prerls-0.0.3-beta'
 
 # installer file name and remote URL pattern
 # Workflow should ensure the installer named like: phgit-<version>-installer.exe exists in GitHub Releases
@@ -18,7 +18,7 @@ $installerFileName = "phgit-$($version)-installer.exe"
 $installerUrl = "https://github.com/phkaiser13/peitchgit/releases/download/v$($version)/$installerFileName"
 
 # checksum injected by the workflow (sha256)
-$checksum = '@PHGIT_INSTALLER_SHA256@'
+$checksum = ''
 $checksumType = 'sha256'
 $toolsDir = "$(Get-ToolsLocation)"
 

@@ -1,27 +1,20 @@
-/* Copyright (C) 2025 Pedro Henrique / phkaiser13
-* File: control
-* This file contains the main metadata for the 'phgit' Debian package. It defines
-* dependencies, package description, maintainer information, and other essential
-* details required by the dpkg and apt package management systems. It does not
-* directly reference maintainer scripts like 'postrm'; the debhelper build system
-* includes them automatically if they are present in the 'debian/' directory.
-* SPDX-License-Identifier: Apache-2.0 */
-
 Source: phgit
 Section: utils
 Priority: optional
-Maintainer: @PACKAGE_MAINTAINER@
-Build-Depends: debhelper (>= 11)
+Maintainer: Pedro Henrique / phkaiser13 <you@example.com>
+Build-Depends: debhelper (>= 11), cmake, pkg-config, libcurl4-openssl-dev, liblua5.3-dev, nlohmann-json3-dev, rustc, cargo
 Standards-Version: 4.1.4
-Homepage: @PACKAGE_HOMEPAGE@
+Homepage: https://github.com/phkaiser13/peitchgit
 
 Package: phgit
 Architecture: any
-Depends: git (>= 1:2.20.0), ${shlibs:Depends}, ${misc:Depends}
-Description: @PACKAGE_DESCRIPTION@
- A powerful Git helper tool designed to streamline development workflows by
- integrating seamlessly with Terraform for infrastructure as code management and
- HashiCorp Vault for secure secret handling.
+Depends: git (>= 1:2.20.0), libcurl4, liblua5.3-0, ${shlibs:Depends}, ${misc:Depends}
+Description: The Polyglot Assistant for Git & DevOps Workflows
+ A modern, extensible, and high-performance command-line tool designed to
+ unify and streamline your development lifecycle by integrating seamlessly
+ with Git, Terraform for infrastructure as code management, and HashiCorp
+ Vault for secure secret handling.
  .
  This package provides the 'phgit' command-line tool and all necessary
- components for its operation.
+ components for its operation, including modules and plugins for extended
+ functionality.

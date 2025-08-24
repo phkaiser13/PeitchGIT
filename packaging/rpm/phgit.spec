@@ -2,12 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # RPM spec template for phgit.
-# Workflow must replace @PHGIT_VERSION@ and/or @PHGIT_TARBALL_URL@ and can optionally fill @PHGIT_RELEASE_DATE@.
+# Workflow must replace k8s-prerls-0.0.3-beta and/or https://github.com/phkaiser13/peitchgit/archive/refs/tags/vk8s-prerls-0.0.3-beta.tar.gz and can optionally fill Sun, 24 Aug 2025 22:28:35 +0000.
 # Keep comments in English and prefer using RPM macros (e.g. %{version}) inside the spec body.
 
 Name:       phgit
 # Workflow should replace this placeholder with the release version (e.g. 1.2.3)
-Version:    @PHGIT_VERSION@
+Version:    k8s-prerls-0.0.3-beta
 Release:    1%{?dist}
 Summary:    The Polyglot Assistant for Git & DevOps Workflows
 
@@ -15,8 +15,8 @@ License:    Apache-2.0
 URL:        https://github.com/phkaiser13/peitchgit
 
 # Source tarball URL. The workflow can either set this directly, or use the default pattern below.
-# Default pattern (workflow can generate): https://github.com/phkaiser13/peitchgit/archive/refs/tags/v@PHGIT_VERSION@.tar.gz
-Source0:    @PHGIT_TARBALL_URL@
+# Default pattern (workflow can generate): https://github.com/phkaiser13/peitchgit/archive/refs/tags/vk8s-prerls-0.0.3-beta.tar.gz
+Source0:    https://github.com/phkaiser13/peitchgit/archive/refs/tags/vk8s-prerls-0.0.3-beta.tar.gz
 
 # Build-time dependencies
 BuildRequires:  gcc-c++
@@ -57,5 +57,5 @@ unify and streamline your development lifecycle.
 
 %changelog
 # The workflow may add a changelog entry here. Example placeholder below:
-* @PHGIT_RELEASE_DATE@ Pedro Henrique <you@example.com> - @PHGIT_VERSION@-1
+* Sun, 24 Aug 2025 22:28:35 +0000 Pedro Henrique <you@example.com> - k8s-prerls-0.0.3-beta-1
 - Initial RPM package.
