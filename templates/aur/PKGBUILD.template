@@ -1,15 +1,8 @@
 # Maintainer: Pedro Henrique / phkaiser13 <you@example.com>
 # SPDX-License-Identifier: Apache-2.0
 
-# PKGBUILD template for phgit.
-# NOTE: The release workflow must replace:
-#   - @PHGIT_VERSION@ with the release version (e.g. 1.2.3)
-#   - @PHGIT_SHA256@ with the sha256 of the release tarball
-
 pkgname='phgit'
 _pkgname='peitchgit'
-
-# Workflow will replace the pkgver placeholder.
 pkgver='@PHGIT_VERSION@'
 pkgrel=1
 pkgdesc="The Polyglot Assistant for Git & DevOps Workflows"
@@ -17,14 +10,13 @@ arch=('x86_64' 'aarch64')
 url="https://github.com/phkaiser13/peitchgit"
 license=('Apache-2.0')
 
-# runtime dependencies
+# Runtime dependencies
 depends=('curl' 'lua' 'nlohmann-json')
-# build-time dependencies
+# Build-time dependencies
 makedepends=('cmake' 'rust' 'pkgconf')
 
 # Source: use explicit filename::url to ensure reproducible source name
 source=("${_pkgname}-${pkgver}.tar.gz::https://github.com/phkaiser13/${_pkgname}/archive/refs/tags/v${pkgver}.tar.gz")
-# Workflow will replace this with the real SHA256
 sha256sums=('@PHGIT_SHA256@')
 
 build() {
