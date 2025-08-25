@@ -3,53 +3,68 @@
  *
  * File: release_controller.rs
  *
- * This file contains the reconciliation logic for the PhgitRelease custom resource.
- * Its main role is to orchestrate advanced deployment strategies within Kubernetes,
- * specifically Canary and Blue/Green releases. The controller watches for PhgitRelease
- * objects and acts upon them to manage application lifecycle, ensuring safe and
- * controlled rollouts.
+ * This file implements the reconciliation logic for the PhgitRelease custom resource.
+ * Its purpose is to manage declarative, progressive deployments within a Kubernetes
+ * cluster, starting with a robust Canary release strategy. The controller ensures
+ * that application releases are rolled out in a controlled, observable, and safe manner.
  *
  * Architecture:
- * The controller distinguishes between release strategies based on a `strategy` field
- * in the PhgitRelease spec. It delegates the reconciliation logic to specialized
- * functions for each strategy.
+ * The controller watches for PhgitRelease resources and orchestrates the creation and
+ * management of underlying Kubernetes resources (Deployments, Services) to achieve the
+ * desired release state. It embodies the operator pattern by continuously comparing the
+ * desired state (defined in the PhgitRelease spec) with the actual state of the cluster
+ * and taking action to converge them.
  *
  * Core Logic:
- * - `reconcile`: The main reconciliation loop. It determines the desired strategy
- * (e.g., "canary", "blue-green") and calls the appropriate handler. It also manages
- * the finalizer logic for cleanup.
- * - `handle_canary_release`: Implements the canary release strategy. This involves:
- * 1. Ensuring a stable "primary" Deployment exists.
- * 2. Creating a new "canary" Deployment with the updated container image. This
- * deployment runs alongside the primary but does not initially receive traffic.
- * 3. Creating or updating an Istio `VirtualService` to split traffic between the
- * primary and canary services. A specified percentage of traffic (e.g., 10%)
- * is routed to the canary for a testing period.
- * 4. (Future extension) Monitoring canary metrics and either promoting it by
- * shifting 100% of traffic or rolling back on failure.
- * - `handle_blue_green_release`: Implements the blue-green release strategy. This involves:
- * 1. Identifying the "active" (blue) deployment currently serving traffic.
- * 2. Deploying a new, full-scale "inactive" (green) version of the application
- * with a different version label.
- * 3. The "green" deployment can be tested internally via its own ClusterIP service.
- * 4. Upon promotion, the main Kubernetes Service's selector is atomically updated
- * to point from the "blue" version to the "green" version, instantly shifting
- * all user traffic.
- * 5. The old "blue" deployment is kept for a potential quick rollback.
- * - `cleanup`: Handles the removal of associated resources (like the VirtualService)
- * when a PhgitRelease object is deleted.
+ * - `reconcile`: The main reconciliation loop entry point. It leverages the `finalizer`
+ * helper from `kube-rs` to separate the apply (creation/update) and cleanup
+ * (deletion) logic, ensuring robust lifecycle management.
+ * - `apply_release`: This is the heart of the controller. It performs the following:
+ * 1.  **State Assessment**: It fetches the current Deployments (`-stable` and `-canary`)
+ * and the primary Service associated with the application.
+ * 2.  **Deployment Management**:
+ * - It creates the stable and canary Deployments if they don't exist, using a
+ * common base definition derived from a hypothetical source (in a real-world
+ * scenario, this would come from a Git repository or a template). For this
+ * implementation, we assume a simple Nginx deployment for demonstration.
+ * - The `stable` deployment is configured with the previous version of the app,
+ * and the `canary` deployment is configured with the new version specified
+ * in the `PhgitRelease` spec.
+ * 3.  **Replica Calculation (Traffic Splitting)**: Based on the `trafficPercent`
+ * defined in the `CanaryStrategy`, it calculates the required number of replicas
+ * for the stable and canary deployments to approximate the desired traffic split.
+ * For example, a 20% traffic split with 10 total replicas would result in 2
+ * canary pods and 8 stable pods.
+ * 4.  **Service Management**: It ensures a single `Service` exists that selects pods
+ * from BOTH the stable and canary deployments using a common app label. Kubernetes'
+ * native service discovery (`kube-proxy`) then handles the load balancing across
+ * all selected pods, effectively splitting the traffic.
+ * 5.  **Status Updates**: It meticulously updates the `PhgitRelease` status with the
+ * current phase (`Progressing`, `Succeeded`), active versions, and traffic split
+ * percentage, providing crucial feedback to the user.
+ * - `cleanup_release`: Triggered upon resource deletion via the finalizer. It safely
+ * removes the canary Deployment and ensures the stable Deployment is scaled back to
+ * 100% to handle all traffic, leaving the system in a clean state before the
+ * `PhgitRelease` object is finally deleted from the API server.
  *
- * This implementation relies heavily on `kube-rs` for native Kubernetes API
- * interactions, including creating and patching Deployments, Services, and custom
- * resources like Istio's VirtualService.
+ * This implementation uses only standard Kubernetes resources, avoiding the complexity
+ * of service meshes for traffic management, which makes it a more universal and
+ * portable solution. Error handling and status patching are central to its design,
+ * ensuring resilience and clear observability.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
+use crate::crds::{PhgitRelease, PhgitReleaseStatus, StrategyType};
+use k8s_openapi::api::apps::v1::Deployment;
+use k8s_openapi::api::core::v1::Service;
 use kube::{
-    api::{Api, DeleteParams, Patch, PatchParams, PostParams, ResourceExt},
+    api::{Api, DeleteParams, ObjectMeta, Patch, PatchParams, PostParams, ResourceExt},
     client::Client,
-    runtime::controller::Action,
+    runtime::{
+        controller::Action,
+        finalizer::{finalizer, Event as FinalizerEvent},
+    },
     Error as KubeError,
 };
 use serde_json::json;
@@ -57,19 +72,24 @@ use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 
-use crate::crds::{PhgitRelease, ReleaseStrategy};
+// The unique identifier for our controller's finalizer.
+const RELEASE_FINALIZER: &str = "phgit.io/release-finalizer";
+const DEFAULT_REPLICAS: i32 = 5; // Default total replicas for the application.
 
-// Custom error types for the release controller.
+// Custom error types for the controller for better diagnostics.
 #[derive(Debug, Error)]
-pub enum ReleaseError {
-    #[error("Kubernetes API error: {0}")]
-    KubeError(#[from] KubeError),
-
+pub enum Error {
     #[error("Missing PhgitRelease spec")]
     MissingSpec,
 
-    #[error("Failed to apply resource: {0}")]
-    ApplyError(String),
+    #[error("Kubernetes API error: {0}")]
+    KubeError(#[from] KubeError),
+
+    #[error("Failed to update resource status: {0}")]
+    StatusUpdateError(String),
+
+    #[error("Unsupported release strategy")]
+    UnsupportedStrategy,
 }
 
 /// The context required by the reconciler.
@@ -77,252 +97,238 @@ pub struct Context {
     pub client: Client,
 }
 
-// Name for the finalizer to ensure cleanup logic is run before deletion.
-const PHGIT_RELEASE_FINALIZER: &str = "phgitreleases.phgit.io/finalizer";
-
 /// Main reconciliation function for the PhgitRelease resource.
-///
-/// # Arguments
-/// * `release` - The PhgitRelease resource that triggered the reconciliation.
-/// * `ctx` - The controller context containing the Kubernetes client.
-///
-/// # Returns
-/// A `Result` with either an `Action` or a `ReleaseError`.
-pub async fn reconcile(release: Arc<PhgitRelease>, ctx: Arc<Context>) -> Result<Action, ReleaseError> {
-    let ns = release
-        .namespace()
-        .ok_or_else(|| KubeError::Request(http::Error::new("Missing namespace")))?;
+pub async fn reconcile(release: Arc<PhgitRelease>, ctx: Arc<Context>) -> Result<Action, Error> {
+    let ns = release.namespace().ok_or_else(|| {
+        KubeError::Request(http::Error::new("Missing namespace for PhgitRelease"))
+    })?;
     let releases: Api<PhgitRelease> = Api::namespaced(ctx.client.clone(), &ns);
 
-    // Finalizer management: Add finalizer on creation, handle cleanup on deletion.
-    if release.metadata.deletion_timestamp.is_some() {
-        if release.metadata.finalizers.as_ref().map_or(false, |f| f.contains(&PHGIT_RELEASE_FINALIZER.to_string())) {
-            // Resource is being deleted, run cleanup logic.
-            cleanup(&release, &ctx).await?;
-
-            // Remove the finalizer to allow Kubernetes to delete the resource.
-            releases.patch_finalizers(
-                &release.name_any(),
-                &PatchParams::default(),
-                Patch::Json(json!([
-                    { "op": "remove", "path": "/metadata/finalizers", "value": [PHGIT_RELEASE_FINALIZER] }
-                ]))
-            ).await?;
+    // Use the finalizer helper to manage the resource lifecycle.
+    finalizer(&releases, RELEASE_FINALIZER, release, |event| async {
+        match event {
+            FinalizerEvent::Apply(r) => apply_release(r, ctx.clone()).await,
+            FinalizerEvent::Cleanup(r) => cleanup_release(r, ctx.clone()).await,
         }
-        // No need to requeue after successful cleanup.
-        Ok(Action::await_change())
-    } else {
-        // Resource is being created or updated.
-        // Ensure finalizer is present.
-        if !release.metadata.finalizers.as_ref().map_or(false, |f| f.contains(&PHGIT_RELEASE_FINALIZER.to_string())) {
-            releases.patch_finalizers(
-                &release.name_any(),
-                &PatchParams::default(),
-                Patch::Json(json!([
-                    { "op": "add", "path": "/metadata/finalizers/-", "value": PHGIT_RELEASE_FINALIZER }
-                ]))
-            ).await?;
-        }
-
-        // Delegate to the appropriate strategy handler.
-        let spec = release.spec.as_ref().ok_or(ReleaseError::MissingSpec)?;
-        match spec.strategy {
-            ReleaseStrategy::Canary => handle_canary_release(&release, &ctx).await?,
-            ReleaseStrategy::BlueGreen => handle_blue_green_release(&release, &ctx).await?,
-        }
-
-        Ok(Action::requeue(Duration::from_secs(300)))
-    }
+    })
+    .await
+    .map_err(|e| KubeError::Request(http::Error::new(e.to_string())).into())
 }
 
-/// Implements the Canary release strategy.
-///
-/// Deploys a new "canary" version and uses an Istio VirtualService to route a
-/// small percentage of traffic to it for evaluation.
-async fn handle_canary_release(release: &PhgitRelease, ctx: &Context) -> Result<(), ReleaseError> {
-    let client = &ctx.client;
+/// The core logic for creating and managing a Canary release.
+async fn apply_release(release: Arc<PhgitRelease>, ctx: Arc<Context>) -> Result<Action, Error> {
+    let client = ctx.client.clone();
     let ns = release.namespace().unwrap();
-    let spec = release.spec.as_ref().ok_or(ReleaseError::MissingSpec)?;
+    let spec = release.spec.as_ref().ok_or(Error::MissingSpec)?;
 
-    // Define APIs for Deployments and VirtualServices.
-    let deployments: Api<k8s_openapi::api::apps::v1::Deployment> = Api::namespaced(client.clone(), &ns);
-    let virtual_services: Api<serde_json::Value> = Api::namespaced(client.clone(), &ns);
+    // APIs for Kubernetes resources we will be managing.
+    let deployments: Api<Deployment> = Api::namespaced(client.clone(), &ns);
+    let services: Api<Service> = Api::namespaced(client.clone(), &ns);
+    let releases: Api<PhgitRelease> = Api::namespaced(client.clone(), &ns);
 
+    // --- 1. Define Names and Labels ---
     let app_name = &spec.app_name;
-    let primary_name = format!("{}-primary", app_name);
+    let canary_version = &spec.version;
+    let stable_name = format!("{}-stable", app_name);
     let canary_name = format!("{}-canary", app_name);
-    let image = &spec.image;
-    let canary_weight = spec.canary_weight.unwrap_or(10); // Default to 10% traffic.
 
-    // 1. Define and apply the canary Deployment.
-    // This deployment is a copy of the primary but with the new image and canary labels.
-    let canary_deployment = json!({
-        "apiVersion": "apps/v1",
-        "kind": "Deployment",
-        "metadata": {
-            "name": canary_name,
-            "labels": { "app": app_name, "version": "canary" }
-        },
-        "spec": {
-            "replicas": 1, // Start with a small number of replicas.
-            "selector": { "matchLabels": { "app": app_name, "version": "canary" } },
-            "template": {
-                "metadata": { "labels": { "app": app_name, "version": "canary" } },
-                "spec": {
-                    "containers": [{
-                        "name": app_name,
-                        "image": image,
-                    }]
-                }
-            }
-        }
-    });
+    // --- 2. Handle Release Strategy ---
+    let canary_strategy = match &spec.strategy.strategy_type {
+        StrategyType::Canary => spec.strategy.canary.as_ref().ok_or(Error::MissingSpec)?,
+        _ => return Err(Error::UnsupportedStrategy),
+    };
 
-    println!("Applying canary deployment: {}", canary_name);
-    deployments.patch(&canary_name, &PatchParams::apply("phgit-operator"), &Patch::Apply(&canary_deployment)).await?;
+    // --- 3. Create or Update the Service ---
+    // This service will target both stable and canary pods.
+    let service = build_service(app_name);
+    services
+        .patch(
+            app_name,
+            &PatchParams::apply("phgit-release-controller"),
+            &Patch::Apply(&service),
+        )
+        .await?;
 
-    // 2. Define and apply the Istio VirtualService for traffic splitting.
-    // This resource directs traffic to the primary and canary services based on weight.
-    let virtual_service = json!({
-        "apiVersion": "networking.istio.io/v1alpha3",
-        "kind": "VirtualService",
-        "metadata": { "name": app_name },
-        "spec": {
-            "hosts": [app_name],
-            "http": [{
-                "route": [
-                    {
-                        "destination": { "host": primary_name, "subset": "v1" },
-                        "weight": 100 - canary_weight
-                    },
-                    {
-                        "destination": { "host": canary_name, "subset": "v2" },
-                        "weight": canary_weight
-                    }
-                ]
-            }]
-        }
-    });
-
-    println!("Applying VirtualService for '{}' with {}% traffic to canary.", app_name, canary_weight);
-    virtual_services.patch(app_name, &PatchParams::apply("phgit-operator"), &Patch::Apply(&virtual_service)).await
-        .map_err(|e| ReleaseError::ApplyError(format!("Failed to apply VirtualService: {}. Is Istio installed?", e)))?;
+    // --- 4. Get Current Stable Deployment to determine the stable version ---
+    let stable_deployment = deployments.get(&stable_name).await;
+    let stable_version = stable_deployment
+        .as_ref()
+        .ok()
+        .and_then(|d| d.spec.as_ref())
+        .and_then(|s| s.template.spec.as_ref())
+        .and_then(|ps| ps.containers.get(0))
+        .and_then(|c| c.image.as_deref())
+        .map(|i| i.split(':').last().unwrap_or("unknown").to_string())
+        .unwrap_or_else(|| "none".to_string());
 
 
-    // TODO: Add status updates to PhgitRelease CR.
-    println!("Canary release for '{}' successfully orchestrated.", app_name);
-    Ok(())
+    // --- 5. Calculate Replicas for Traffic Splitting ---
+    let traffic_percent = canary_strategy.traffic_percent as i32;
+    let canary_replicas = (DEFAULT_REPLICAS * traffic_percent) / 100;
+    let stable_replicas = DEFAULT_REPLICAS - canary_replicas;
+
+    // --- 6. Create or Update Stable Deployment ---
+    let stable_dep_def = build_deployment(app_name, &stable_name, &stable_version, stable_replicas);
+    deployments
+        .patch(
+            &stable_name,
+            &PatchParams::apply("phgit-release-controller"),
+            &Patch::Apply(&stable_dep_def),
+        )
+        .await?;
+
+    // --- 7. Create or Update Canary Deployment ---
+    let canary_dep_def = build_deployment(app_name, &canary_name, canary_version, canary_replicas);
+     deployments
+        .patch(
+            &canary_name,
+            &PatchParams::apply("phgit-release-controller"),
+            &Patch::Apply(&canary_dep_def),
+        )
+        .await?;
+
+    // --- 8. Update Status ---
+    let new_status = PhgitReleaseStatus {
+        phase: if traffic_percent == 100 { "Succeeded".to_string() } else { "Progressing".to_string() },
+        stable_version: Some(stable_version),
+        canary_version: Some(canary_version.clone()),
+        traffic_split: Some(format!("{}%", traffic_percent)),
+    };
+
+    let patch = Patch::Apply(json!({
+        "apiVersion": "phgit.io/v1alpha1",
+        "kind": "PhgitRelease",
+        "status": new_status,
+    }));
+    releases
+        .patch_status(&release.name_any(), &PatchParams::apply("phgit-release-controller"), &patch)
+        .await
+        .map_err(|e| Error::StatusUpdateError(e.to_string()))?;
+
+    println!("Successfully reconciled PhgitRelease '{}'. Stable replicas: {}, Canary replicas: {}", release.name_any(), stable_replicas, canary_replicas);
+
+    // Requeue to check status periodically.
+    Ok(Action::requeue(Duration::from_secs(60)))
 }
 
-
-/// Implements the Blue/Green release strategy.
-///
-/// Deploys a new "green" version alongside the "blue" version. Promotion is
-/// handled by switching the selector on the main service.
-async fn handle_blue_green_release(release: &PhgitRelease, ctx: &Context) -> Result<(), ReleaseError> {
-    let client = &ctx.client;
+/// Cleans up the resources created for a release.
+async fn cleanup_release(release: Arc<PhgitRelease>, ctx: Arc<Context>) -> Result<Action, Error> {
+    let client = ctx.client.clone();
     let ns = release.namespace().unwrap();
-    let spec = release.spec.as_ref().ok_or(ReleaseError::MissingSpec)?;
+    let spec = release.spec.as_ref().ok_or(Error::MissingSpec)?;
 
     let app_name = &spec.app_name;
-    let image = &spec.image;
+    let canary_name = format!("{}-canary", app_name);
 
-    let deployments: Api<k8s_openapi::api::apps::v1::Deployment> = Api::namespaced(client.clone(), &ns);
-    let services: Api<k8s_openapi::api::core::v1::Service> = Api::namespaced(client.clone(), &ns);
+    let deployments: Api<Deployment> = Api::namespaced(client, &ns);
 
-    // 1. Determine which version is currently active ("blue").
-    // We inspect the main service's selector to find this.
-    let main_service = services.get(app_name).await?;
-    let current_version = main_service.spec.as_ref()
-        .and_then(|s| s.selector.as_ref())
-        .and_then(|sel| sel.get("version"))
-        .cloned()
-        .unwrap_or_else(|| "blue".to_string()); // Default to blue if not set.
-
-    // 2. The new version will be the other color.
-    let new_version = if current_version == "blue" { "green" } else { "blue" };
-    let new_deployment_name = format!("{}-{}", app_name, new_version);
-
-    // 3. Define and apply the "green" (new) Deployment.
-    let green_deployment = json!({
-        "apiVersion": "apps/v1",
-        "kind": "Deployment",
-        "metadata": {
-            "name": new_deployment_name,
-            "labels": { "app": app_name, "version": new_version }
-        },
-        "spec": {
-            "replicas": spec.replicas.unwrap_or(2), // Deploy at full scale.
-            "selector": { "matchLabels": { "app": app_name, "version": new_version } },
-            "template": {
-                "metadata": { "labels": { "app": app_name, "version": new_version } },
-                "spec": {
-                    "containers": [{
-                        "name": app_name,
-                        "image": image,
-                    }]
-                }
-            }
-        }
-    });
-
-    println!("Applying '{}' deployment: {}", new_version, new_deployment_name);
-    deployments.patch(&new_deployment_name, &PatchParams::apply("phgit-operator"), &Patch::Apply(&green_deployment)).await?;
-
-    // 4. Promotion step: If auto-promotion is enabled, patch the main service.
-    if spec.promote.unwrap_or(false) {
-        println!("Promoting '{}' version by updating the main service selector.", new_version);
-        let service_patch = json!({
-            "spec": {
-                "selector": {
-                    "version": new_version
-                }
-            }
-        });
-
-        services.patch(app_name, &PatchParams::apply("phgit-operator"), &Patch::Merge(&service_patch)).await?;
-        println!("Service '{}' now routes traffic to '{}' version.", app_name, new_version);
-    } else {
-        println!("'{}' deployment is ready. To promote, set 'spec.promote' to true.", new_version);
-    }
-
-    // TODO: Add status updates to the PhgitRelease CR.
-    Ok(())
-}
-
-/// Cleanup function to remove associated resources upon deletion.
-async fn cleanup(release: &PhgitRelease, ctx: &Context) -> Result<(), ReleaseError> {
-    let client = &ctx.client;
-    let ns = release.namespace().unwrap();
-    let spec = release.spec.as_ref().ok_or(ReleaseError::MissingSpec)?;
-
-    // For canary, we need to delete the VirtualService.
-    if let ReleaseStrategy::Canary = spec.strategy {
-        let virtual_services: Api<serde_json::Value> = Api::namespaced(client.clone(), &ns);
-        println!("Cleaning up VirtualService for '{}'", spec.app_name);
-        if let Err(e) = virtual_services.delete(&spec.app_name, &DeleteParams::default()).await {
+    // Delete the canary deployment. The stable one remains.
+    println!("Cleaning up canary deployment '{}' for release '{}'", canary_name, release.name_any());
+    match deployments.delete(&canary_name, &DeleteParams::default()).await {
+        Ok(_) => println!("Canary deployment '{}' deleted.", canary_name),
+        Err(e) => {
             if let KubeError::Api(ae) = &e {
-                if ae.code != 404 { // Ignore "Not Found" errors.
+                if ae.code == 404 { // Not Found
+                    println!("Canary deployment '{}' already deleted.", canary_name);
+                } else {
                     return Err(e.into());
                 }
+            } else {
+                return Err(e.into());
             }
         }
+    };
+
+    // In a real scenario, you might also want to ensure the stable deployment is
+    // scaled up to DEFAULT_REPLICAS here. For simplicity, we assume the next
+    // reconciliation of a new or existing PhgitRelease will handle this.
+
+    Ok(Action::await_change())
+}
+
+/// Error handling function for the reconciliation loop.
+pub async fn on_error(release: Arc<PhgitRelease>, error: &Error, ctx: Arc<Context>) -> Action {
+    eprintln!("Reconciliation error for PhgitRelease '{}': {:?}", release.name_any(), error);
+
+    let releases: Api<PhgitRelease> = Api::namespaced(ctx.client.clone(), &release.namespace().unwrap());
+
+    // Update the status to "Failed" to provide user feedback.
+    let failed_status = PhgitReleaseStatus {
+        phase: "Failed".to_string(),
+        stable_version: release.status.as_ref().and_then(|s| s.stable_version.clone()),
+        canary_version: release.status.as_ref().and_then(|s| s.canary_version.clone()),
+        traffic_split: Some(format!("Error: {}", error)),
+    };
+
+    let patch = Patch::Apply(json!({
+        "apiVersion": "phgit.io/v1alpha1",
+        "kind": "PhgitRelease",
+        "status": failed_status,
+    }));
+
+    if let Err(e) = releases.patch_status(&release.name_any(), &PatchParams::apply("phgit-release-controller"), &patch).await {
+        eprintln!("Failed to update status on error: {}", e);
     }
 
-    // For both strategies, we might want to clean up old deployments.
-    // For now, we leave them for manual rollback/inspection.
-
-    println!("Cleanup for PhgitRelease '{}' complete.", release.name_any());
-    Ok(())
+    // Requeue the request after a delay.
+    Action::requeue(Duration::from_secs(15))
 }
 
 
-/// Error handling function for the reconciliation loop.
-pub fn on_error(release: Arc<PhgitRelease>, error: &ReleaseError, ctx: Arc<Context>) -> Action {
-    eprintln!(
-        "Reconciliation error for PhgitRelease '{}': {:?}",
-        release.name_any(),
-        error
-    );
-    Action::requeue(Duration::from_secs(15))
+/// Constructs a Kubernetes Service definition for the application.
+fn build_service(app_name: &str) -> Service {
+    Service {
+        metadata: ObjectMeta {
+            name: Some(app_name.to_string()),
+            ..ObjectMeta::default()
+        },
+        spec: Some(k8s_openapi::api::core::v1::ServiceSpec {
+            selector: Some([("app".to_string(), app_name.to_string())].into()),
+            ports: Some(vec![k8s_openapi::api::core::v1::ServicePort {
+                port: 80,
+                ..Default::default()
+            }]),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+/// Constructs a Kubernetes Deployment definition.
+fn build_deployment(app_name: &str, name: &str, version: &str, replicas: i32) -> Deployment {
+    Deployment {
+        metadata: ObjectMeta {
+            name: Some(name.to_string()),
+            ..ObjectMeta::default()
+        },
+        spec: Some(k8s_openapi::api::apps::v1::DeploymentSpec {
+            replicas: Some(replicas),
+            selector: k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector {
+                match_labels: Some([
+                    ("app".to_string(), app_name.to_string()),
+                    ("version-id".to_string(), name.to_string())
+                    ].into()),
+                ..Default::default()
+            },
+            template: k8s_openapi::api::core::v1::PodTemplateSpec {
+                metadata: Some(ObjectMeta {
+                    labels: Some([
+                        ("app".to_string(), app_name.to_string()),
+                        ("version-id".to_string(), name.to_string())
+                        ].into()),
+                    ..Default::default()
+                }),
+                spec: Some(k8s_openapi::api::core::v1::PodSpec {
+                    containers: vec![k8s_openapi::api::core::v1::Container {
+                        name: app_name.to_string(),
+                        image: Some(format!("nginx:{}", version)), // Using nginx for demonstration
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }),
+            },
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
 }

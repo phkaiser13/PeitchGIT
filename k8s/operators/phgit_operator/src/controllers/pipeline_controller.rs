@@ -4,45 +4,49 @@
  * File: pipeline_controller.rs
  *
  * This file implements the reconciliation logic for the PhgitPipeline custom resource.
- * It functions as a state machine that orchestrates a series of jobs within a
- * Kubernetes cluster, effectively creating a simple CI/CD pipeline. The controller
- * processes a PhgitPipeline specification, which defines stages and steps, and
- * executes them sequentially.
+ * It functions as a resilient, state-driven orchestrator for CI/CD pipelines
+ * defined declaratively within the Kubernetes cluster. The controller's primary
+ * responsibility is to execute a sequence of stages and steps, represented as
+ * Kubernetes Jobs, ensuring sequential execution and accurate status reporting.
  *
  * Architecture:
- * The core of this controller is the `reconcile` function, which is repeatedly
- * called by the kube-rs runtime. This loop checks the current state of the pipeline
- * against the desired state defined in the `PhgitPipeline` spec and its `status` subresource.
+ * The controller's architecture is a refined state machine, where the state of the
+ * pipeline is authoritatively stored within the `.status` subresource of the
+ * PhgitPipeline object itself. This makes the operator robust against restarts,
+ * as it can resume a pipeline from where it left off. This version introduces a
+ * finalizer to ensure that any external cleanup logic can be reliably executed
+ * before the pipeline resource is deleted.
  *
  * Core Logic:
- * 1.  **State Management**: The controller is stateless itself. All state is stored
- * in the `status` field of the `PhgitPipeline` resource on the Kubernetes API server.
- * This makes the operator resilient; if it restarts, it can pick up right
- * where it left off by reading the resource's status.
- * 2.  **Initialization**: When a new `PhgitPipeline` is created, the reconciler
- * initializes its status, setting the phase to "Running" and the current
- * stage/step indices to 0.
- * 3.  **Job Orchestration**: For the current step, the controller checks if a
- * corresponding Kubernetes Job has been created.
- * - If not, it creates a new Job based on the step's specification (image,
- * command, args). A crucial part of this is setting an `ownerReference` on
- * the Job, pointing to the `PhgitPipeline`. This ensures that when the
- * `PhgitPipeline` is deleted, Kubernetes automatically garbage-collects
- * all associated Jobs.
- * 4.  **Job Monitoring**: If a Job for the current step already exists, the
- * controller inspects its status.
- * - If the Job is still running (`active` > 0), the reconciler requeues
- * itself to check back later.
- * - If the Job has succeeded (`succeeded` > 0), the controller updates the
- * `PhgitPipeline`'s status to advance to the next step or stage.
- * - If the Job has failed (`failed` > 0), the controller updates the
- * `PhgitPipeline`'s status to "Failed" and stops processing.
- * 5.  **Completion**: Once all steps in all stages have succeeded, the
- * `PhgitPipeline` status is updated to "Succeeded", and a completion timestamp
- * is recorded.
- *
- * This implementation uses `kube-rs` for all interactions with the Kubernetes API,
- * including getting, creating, and patching `PhgitPipeline` and `Job` resources.
+ * - `reconcile`: The primary entry point for the reconciliation loop. It uses the
+ * `kube-rs` finalizer helper to delegate to either the `apply_pipeline` or
+ * `cleanup_pipeline` functions.
+ * - `apply_pipeline`: This function acts as the main dispatcher for the state machine.
+ * It inspects the `status.phase` field and takes action accordingly:
+ * - `Pending` (or None): Initializes the pipeline. It sets the status to `Running`,
+ * records the start time, and sets the current stage/step indices to 0. This
+ * is the initial state for any new pipeline.
+ * - `Running`: The core processing state. It identifies the current step, creates
+ * a Kubernetes Job for it if one doesn't exist, and then monitors the Job's
+ * status. Upon Job success, it advances the step/stage indices. On failure,
+ * it transitions the pipeline to the `Failed` phase.
+ * - `Succeeded` / `Failed`: These are terminal states. No further action is taken,
+ * and the reconciliation loop effectively stops for this resource until it is
+ * updated or deleted.
+ * - `handle_running_pipeline`: A dedicated function to manage the logic when a pipeline
+ * is in the `Running` phase. It encapsulates Job creation, monitoring, and state
+ * advancement logic, keeping `apply_pipeline` clean.
+ * - `cleanup_pipeline`: This function is called by the finalizer logic when the
+ * PhgitPipeline resource is marked for deletion. While `ownerReferences` on Jobs
+ * handle the primary garbage collection, this hook is preserved for any future,
+ * more complex cleanup needs (e.g., sending notifications, cleaning external
+ * resources).
+ * - `update_status`: A robust, centralized function for patching the status
+ * subresource using a server-side `Patch::Apply`. This is the modern, preferred
+ * way to update status, preventing race conditions.
+ * - Error Handling (`on_error`): If any step in the reconciliation fails, this
+ * function is invoked. It patches the pipeline's status to `Failed` and provides
+ * a clear error message, ensuring high observability for the user.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -50,9 +54,12 @@
 use chrono::Utc;
 use k8s_openapi::api::batch::v1::Job;
 use kube::{
-    api::{Api, ListParams, Patch, PatchParams, PostParams, ResourceExt},
+    api::{Api, Patch, PatchParams, PostParams, ResourceExt},
     client::Client,
-    runtime::controller::Action,
+    runtime::{
+        controller::Action,
+        finalizer::{finalizer, Event as FinalizerEvent},
+    },
     Error as KubeError,
 };
 use serde_json::json;
@@ -62,14 +69,20 @@ use thiserror::Error;
 
 use crate::crds::{PhgitPipeline, PhgitPipelineStatus, PipelinePhase};
 
+// The unique identifier for our controller's finalizer.
+const PIPELINE_FINALIZER: &str = "phgit.io/pipeline-finalizer";
+
 // Custom error types for the pipeline controller.
 #[derive(Debug, Error)]
-pub enum PipelineError {
+pub enum Error {
     #[error("Kubernetes API error: {0}")]
     KubeError(#[from] KubeError),
 
     #[error("Missing PhgitPipeline spec")]
     MissingSpec,
+
+    #[error("Failed to update resource status: {0}")]
+    StatusUpdateError(String),
 }
 
 /// The context required by the reconciler.
@@ -78,52 +91,77 @@ pub struct Context {
 }
 
 /// Main reconciliation function for the PhgitPipeline resource.
-///
-/// This is the heart of the controller, acting as a state machine. It is called
-/// whenever there's a change to a PhgitPipeline resource.
-pub async fn reconcile(pipeline: Arc<PhgitPipeline>, ctx: Arc<Context>) -> Result<Action, PipelineError> {
+pub async fn reconcile(pipeline: Arc<PhgitPipeline>, ctx: Arc<Context>) -> Result<Action, Error> {
+    let ns = pipeline.namespace().ok_or_else(|| {
+        KubeError::Request(http::Error::new("Missing namespace for PhgitPipeline"))
+    })?;
+    let pipelines: Api<PhgitPipeline> = Api::namespaced(ctx.client.clone(), &ns);
+
+    finalizer(
+        &pipelines,
+        PIPELINE_FINALIZER,
+        pipeline,
+        |event| async {
+            match event {
+                FinalizerEvent::Apply(p) => apply_pipeline(p, ctx.clone()).await,
+                FinalizerEvent::Cleanup(p) => cleanup_pipeline(p, ctx.clone()).await,
+            }
+        },
+    )
+        .await
+        .map_err(|e| KubeError::Request(http::Error::new(e.to_string())).into())
+}
+
+/// The "apply" branch of the reconciliation loop, acting as a state machine dispatcher.
+async fn apply_pipeline(pipeline: Arc<PhgitPipeline>, ctx: Arc<Context>) -> Result<Action, Error> {
+    let phase = pipeline.status.as_ref().and_then(|s| s.phase.clone());
+
+    match phase {
+        // State: Pending/None. This is a new pipeline. Let's initialize it.
+        None | Some(PipelinePhase::Pending) => {
+            println!("Pipeline '{}' is new. Initializing status.", pipeline.name_any());
+            let initial_status = PhgitPipelineStatus {
+                phase: Some(PipelinePhase::Running),
+                start_time: Some(Utc::now().to_rfc3339()),
+                current_stage_index: Some(0),
+                current_step_index: Some(0),
+                ..Default::default()
+            };
+            update_status(pipeline, ctx.client.clone(), initial_status).await?;
+            // Requeue immediately to begin the first step.
+            Ok(Action::requeue(Duration::from_millis(100)))
+        }
+        // State: Running. This is where the core logic happens.
+        Some(PipelinePhase::Running) => handle_running_pipeline(pipeline, ctx).await,
+        // Terminal states: Do nothing further.
+        Some(PipelinePhase::Succeeded) | Some(PipelinePhase::Failed) => {
+            Ok(Action::await_change())
+        }
+    }
+}
+
+/// Handles the core logic when a pipeline is in the "Running" state.
+async fn handle_running_pipeline(pipeline: Arc<PhgitPipeline>, ctx: Arc<Context>) -> Result<Action, Error> {
     let client = &ctx.client;
     let ns = pipeline.namespace().unwrap();
-    let pipelines: Api<PhgitPipeline> = Api::namespaced(client.clone(), &ns);
+    let spec = pipeline.spec.as_ref().ok_or(Error::MissingSpec)?;
+    let mut status = pipeline.status.as_ref().cloned().unwrap_or_default(); // Should always exist here.
 
-    // Initialize or retrieve the status.
-    let mut status = pipeline.status.clone().unwrap_or_default();
-    let spec = pipeline.spec.as_ref().ok_or(PipelineError::MissingSpec)?;
-
-    // Check if the pipeline has already completed or failed.
-    if matches!(status.phase, Some(PipelinePhase::Succeeded) | Some(PipelinePhase::Failed)) {
-        // The pipeline has finished its lifecycle. No further action is needed.
-        return Ok(Action::await_change());
-    }
-
-    // Initialize status for a new pipeline.
-    if status.phase.is_none() {
-        status.phase = Some(PipelinePhase::Running);
-        status.start_time = Some(Utc::now().to_rfc3339());
-        status.current_stage_index = Some(0);
-        status.current_step_index = Some(0);
-        update_status(&pipelines, &pipeline.name_any(), status.clone()).await?;
-        return Ok(Action::requeue(Duration::from_secs(1))); // Requeue immediately to start processing.
-    }
-
-    // Get current stage and step from status.
     let stage_index = status.current_stage_index.unwrap_or(0);
     let step_index = status.current_step_index.unwrap_or(0);
 
-    // Check if all stages are complete.
+    // --- 1. Check for pipeline completion ---
     if stage_index >= spec.stages.len() {
+        println!("Pipeline '{}' completed successfully.", pipeline.name_any());
         status.phase = Some(PipelinePhase::Succeeded);
         status.completion_time = Some(Utc::now().to_rfc3339());
-        update_status(&pipelines, &pipeline.name_any(), status).await?;
-        println!("Pipeline '{}' completed successfully.", pipeline.name_any());
+        update_status(pipeline, client.clone(), status).await?;
         return Ok(Action::await_change());
     }
 
+    // --- 2. Identify current step and construct Job name ---
     let current_stage = &spec.stages[stage_index];
     let current_step = &current_stage.steps[step_index];
-
-    // Find or create the Job for the current step.
-    let jobs: Api<Job> = Api::namespaced(client.clone(), &ns);
     let job_name = format!(
         "{}-s{}-{}",
         pipeline.name_any(),
@@ -131,68 +169,56 @@ pub async fn reconcile(pipeline: Arc<PhgitPipeline>, ctx: Arc<Context>) -> Resul
         current_step.name.replace('_', "-")
     );
 
+    // --- 3. Find or create the Job for the current step ---
+    let jobs: Api<Job> = Api::namespaced(client.clone(), &ns);
     match jobs.get(&job_name).await {
+        // Job exists, let's check its status.
         Ok(job) => {
-            // Job exists, check its status.
             if let Some(job_status) = job.status {
                 if job_status.succeeded.unwrap_or(0) > 0 {
-                    // Job succeeded, advance to the next step/stage.
-                    println!("Job '{}' succeeded.", job_name);
-
+                    // --- Job Succeeded: Advance to next step/stage ---
+                    println!("Job '{}' succeeded for pipeline '{}'.", job_name, pipeline.name_any());
                     if step_index + 1 >= current_stage.steps.len() {
-                        // Move to the next stage.
                         status.current_stage_index = Some(stage_index + 1);
                         status.current_step_index = Some(0);
                     } else {
-                        // Move to the next step in the same stage.
                         status.current_step_index = Some(step_index + 1);
                     }
-                    update_status(&pipelines, &pipeline.name_any(), status).await?;
-                    return Ok(Action::requeue(Duration::from_secs(1))); // Requeue to process next step.
+                    update_status(pipeline, client.clone(), status).await?;
+                    Ok(Action::requeue(Duration::from_millis(100))) // Requeue immediately for next step.
 
                 } else if job_status.failed.unwrap_or(0) > 0 {
-                    // Job failed, mark the pipeline as failed.
-                    eprintln!("Job '{}' failed.", job_name);
+                    // --- Job Failed: Terminate the pipeline ---
+                    eprintln!("Job '{}' failed for pipeline '{}'.", job_name, pipeline.name_any());
                     status.phase = Some(PipelinePhase::Failed);
                     status.completion_time = Some(Utc::now().to_rfc3339());
-                    update_status(&pipelines, &pipeline.name_any(), status).await?;
-                    return Ok(Action::await_change()); // Stop reconciliation.
+                    update_status(pipeline, client.clone(), status).await?;
+                    Ok(Action::await_change())
 
+                } else {
+                    // --- Job still running: Check again later ---
+                    println!("Job '{}' is still running for pipeline '{}'.", job_name, pipeline.name_any());
+                    Ok(Action::requeue(Duration::from_secs(15)))
                 }
-                // Job is still running, requeue to check later.
-                println!("Job '{}' is still running.", job_name);
-                Ok(Action::requeue(Duration::from_secs(15)))
             } else {
-                // Job status is not yet available, check again shortly.
+                // Job status not yet available.
                 Ok(Action::requeue(Duration::from_secs(5)))
             }
         }
+        // Job does not exist, create it.
         Err(KubeError::Api(e)) if e.code == 404 => {
-            // Job does not exist, so we create it.
             println!("Creating Job '{}' for pipeline '{}'", job_name, pipeline.name_any());
-            let job = create_job_for_step(&pipeline, &job_name, stage_index)?;
-            jobs.create(&PostParams::default(), &job).await?;
-            Ok(Action::requeue(Duration::from_secs(10))) // Requeue to check job status.
+            let job_def = create_job_for_step(&pipeline, &job_name, current_step)?;
+            jobs.create(&PostParams::default(), &job_def).await?;
+            Ok(Action::requeue(Duration::from_secs(10)))
         }
-        Err(e) => {
-            // Another Kubernetes API error occurred.
-            Err(e.into())
-        }
+        // Another Kubernetes API error occurred.
+        Err(e) => Err(e.into()),
     }
 }
 
-/// Creates a Kubernetes Job object for a specific pipeline step.
-///
-/// This function constructs a `k8s_openapi::api::batch::v1::Job` definition from a
-/// `PhgitPipeline` resource and a given step. It includes an `ownerReference` so
-/// that the Job is garbage-collected when the parent `PhgitPipeline` is deleted.
-fn create_job_for_step(pipeline: &PhgitPipeline, job_name: &str, stage_index: usize) -> Result<Job, PipelineError> {
-    let spec = pipeline.spec.as_ref().ok_or(PipelineError::MissingSpec)?;
-    let status = pipeline.status.as_ref().unwrap(); // Status is guaranteed to be initialized here.
-    let step_index = status.current_step_index.unwrap();
-    let step = &spec.stages[stage_index].steps[step_index];
-
-    // Define the Job using serde_json for easy construction.
+/// Constructs a Kubernetes Job object for a specific pipeline step.
+fn create_job_for_step(pipeline: &PhgitPipeline, job_name: &str, step: &crate::crds::PipelineStep) -> Result<Job, Error> {
     let job_json = json!({
         "apiVersion": "batch/v1",
         "kind": "Job",
@@ -202,7 +228,7 @@ fn create_job_for_step(pipeline: &PhgitPipeline, job_name: &str, stage_index: us
                 "apiVersion": "phgit.io/v1alpha1",
                 "kind": "PhgitPipeline",
                 "name": pipeline.name_any(),
-                "uid": pipeline.uid().unwrap(),
+                "uid": pipeline.uid().ok_or_else(|| KubeError::Request(http::Error::new("Missing UID")))?,
                 "controller": true,
             }]
         },
@@ -210,56 +236,66 @@ fn create_job_for_step(pipeline: &PhgitPipeline, job_name: &str, stage_index: us
             "template": {
                 "spec": {
                     "containers": [{
-                        "name": step.name,
-                        "image": step.image,
+                        "name": step.name.clone(),
+                        "image": step.image.clone(),
                         "command": step.command,
                         "args": step.args,
                     }],
                     "restartPolicy": "Never"
                 }
             },
-            "backoffLimit": 1 // Do not retry failed jobs.
+            "backoffLimit": 1 // Do not retry failed jobs within the pipeline.
         }
     });
 
-    // Deserialize the JSON value into a Job object.
-    serde_json::from_value(job_json).map_err(|e| PipelineError::KubeError(KubeError::SerdeError(e)))
+    serde_json::from_value(job_json).map_err(|e| Error::KubeError(KubeError::SerdeError(e)))
 }
 
-/// Patches the status subresource of the PhgitPipeline.
-async fn update_status(pipelines: &Api<PhgitPipeline>, name: &str, status: PhgitPipelineStatus) -> Result<(), PipelineError> {
-    let patch = Patch::Merge(json!({
-        "status": status
-    }));
-    pipelines.patch_status(name, &PatchParams::default(), &patch).await?;
-    Ok(())
+
+/// The "cleanup" branch of the reconciliation loop.
+async fn cleanup_pipeline(pipeline: Arc<PhgitPipeline>, _ctx: Arc<Context>) -> Result<Action, Error> {
+    println!("Pipeline '{}' deleted. Associated Jobs will be garbage-collected.", pipeline.name_any());
+    // With `ownerReferences` on the Jobs, Kubernetes handles garbage collection automatically.
+    // This function serves as a hook for any additional, non-Kubernetes cleanup logic
+    // that might be needed in the future (e.g., notifying an external system).
+    Ok(Action::await_change())
 }
 
-/// Error handling function for the reconciliation loop.
-pub fn on_error(pipeline: Arc<PhgitPipeline>, error: &PipelineError, ctx: Arc<Context>) -> Action {
-    eprintln!(
-        "Reconciliation error for PhgitPipeline '{}': {:?}",
-        pipeline.name_any(),
-        error
-    );
-
-    // On error, attempt to update the status to Failed before requeueing.
-    let client = ctx.client.clone();
+/// Patches the status subresource of the PhgitPipeline using Server-Side Apply.
+async fn update_status(pipeline: Arc<PhgitPipeline>, client: Client, status: PhgitPipelineStatus) -> Result<(), Error> {
     let ns = pipeline.namespace().unwrap();
     let name = pipeline.name_any();
     let pipelines: Api<PhgitPipeline> = Api::namespaced(client, &ns);
 
-    let mut status = pipeline.status.clone().unwrap_or_default();
-    status.phase = Some(PipelinePhase::Failed);
-    status.completion_time = Some(Utc::now().to_rfc3339());
+    let patch = Patch::Apply(json!({
+        "apiVersion": "phgit.io/v1alpha1",
+        "kind": "PhgitPipeline",
+        "status": status,
+    }));
+    let ps = PatchParams::apply("phgit-pipeline-controller").force();
 
-    // This is a best-effort update. We launch a separate task to avoid blocking
-    // the error handler.
-    tokio::spawn(async move {
-        if let Err(e) = update_status(&pipelines, &name, status).await {
-            eprintln!("Failed to update status on error for '{}': {}", name, e);
-        }
-    });
+    pipelines
+        .patch_status(&name, &ps, &patch)
+        .await
+        .map_err(|e| Error::StatusUpdateError(e.to_string()))?;
 
+    Ok(())
+}
+
+/// Error handling function for the reconciliation loop.
+pub async fn on_error(pipeline: Arc<PhgitPipeline>, error: &Error, ctx: Arc<Context>) -> Action {
+    eprintln!("Reconciliation error for PhgitPipeline '{}': {:?}", pipeline.name_any(), error);
+
+    let failed_status = PhgitPipelineStatus {
+        phase: Some(PipelinePhase::Failed),
+        completion_time: Some(Utc::now().to_rfc3339()),
+        ..pipeline.status.clone().unwrap_or_default()
+    };
+
+    if let Err(e) = update_status(pipeline, ctx.client.clone(), failed_status).await {
+        eprintln!("Failed to update status on error: {}", e);
+    }
+
+    // Requeue with a backoff.
     Action::requeue(Duration::from_secs(30))
 }
