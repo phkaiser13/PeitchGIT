@@ -1,9 +1,9 @@
  <!-- Enhanced README header for ph -->
 <div align="center" style="font-family: 'Segoe UI', Roboto, system-ui, -apple-system, 'Helvetica Neue', Arial; padding: 1.5rem;">
-  <a href="https://github.com/phkaiser13/Peitch" aria-label="Ph Git repository" style="text-decoration:none; color:inherit;">
+  <a href="https://github.com/phkaiser13/Peitch" aria-label="ph repository" style="text-decoration:none; color:inherit;">
     <img
       src="./.github/ForRepo/icon.ico"
-      alt="Ph Git logo"
+      alt="ph logo"
       width="96"
       height="96"
       onerror="this.onerror=null;this.src='./.github/ForRepo/icon.png';"
@@ -11,7 +11,7 @@
     />
   </a>
   <h1 style="font-size:2.2rem; margin:0 0 0.15rem; line-height:1.05;">
-    📖 Ph Git <span style="font-size:0.72rem; color:#6b7280; font-weight:600;">(Peitch Git)</span>
+    📖 ph <span style="font-size:0.72rem; color:#6b7280; font-weight:600;">(Peitch)</span>
   </h1>
 
   <p style="margin:0 0 0.9rem; color:#5b6b77; font-size:1.05rem;">
