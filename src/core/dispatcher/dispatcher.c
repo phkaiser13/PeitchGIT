@@ -14,15 +14,10 @@
  * statement on the `command` enum from the `CliArguments` struct. Each case in the switch
  * corresponds to a specific command the user can issue (e.g., 'apply', 'diff', 'sync').
  *
- * Initially, the command handlers within each case are placeholders. This modular structure
- * allows for incremental development. As functionality is built out in the respective modules
- * (like `git_ops`, `sync_engine`, `k8s_preview`), the placeholder comments will be replaced
- * with concrete function calls. For Rust modules, these calls will go through the Foreign
- * Function Interface (FFI) defined in `rust_ffi.h`.
- *
- * Error handling is centralized. A default case in the switch handles unknown commands,
- * ensuring graceful failure. Each command handler is expected to return a status code,
- * which is then propagated up to the main function to set the application's exit code.
+ * This version replaces the placeholder for the 'policy-check' command with a direct,
+ * validated call to the Rust `policy_engine` module via the FFI. This demonstrates the
+ * polyglot architecture in action, leveraging Rust for its safety and robust process
+ * management capabilities.
  *
  * Role in the System:
  * This dispatcher is the engine of the application. It translates user intent, captured by the CLI,
@@ -106,10 +101,19 @@ int dispatch_command(const CliArguments *args)
 
     case CMD_POLICY_CHECK:
         printf("Executing POLICY-CHECK command...\n");
-        // Placeholder: This would invoke the OPA policy checking logic, potentially
-        // managed by a Rust module that wraps the OPA engine.
-        // e.g., return rust_ffi_check_policies(args->path, args->policy_dir);
-        break;
+
+        // --- FFI Call to Rust Policy Engine ---
+        // First, validate that the required arguments (policy and manifest paths) were provided.
+        // The CLI parser should have populated these fields.
+        if (args->policy_dir == NULL || args->path == NULL) {
+            fprintf(stderr, "Error: Both --policy-path and a manifest path are required for policy-check.\n");
+            return 1; // Return an error code indicating missing arguments.
+        }
+
+        // Call the Rust function through the FFI.
+        // The return value directly indicates success (0) or failure (non-zero).
+        // This is the bridge from our C core to the Rust-based module.
+        return run_policy_check(args->policy_dir, args->path);
 
     case CMD_UNKNOWN:
         // This case handles any command that is not recognized by the CLI parser.

@@ -1,0 +1,61 @@
+#/*
+#* Copyright (C) 2025 Pedro Henrique / phkaiser13
+#*
+#* File: src/modules/policy_engine/Cargo.toml
+#*
+#* [
+#* This Cargo.toml file defines a new Rust crate named `policy_engine`. This crate is a
+#* core component of the system, responsible for handling the logic of validating configuration
+#* files (e.g., Kubernetes manifests) against a set of Rego policies.
+#*
+#* Architecture:
+#* The crate is designed as a C-callable dynamic library (`cdylib`), enabling it to be loaded
+#* and called from the main C application via a Foreign Function Interface (FFI). This polyglot
+#* architecture leverages Rust's strengths in safety, concurrency, and its rich ecosystem for
+#* specific, high-reliability tasks, while integrating seamlessly with the existing C core.
+#*
+#* The primary function exposed by this library will be to execute an external policy check tool
+#* (like Conftest) as a subprocess. This approach is chosen for its robustness and decoupling,
+#* as it avoids linking directly against OPA libraries, which might have complex dependencies.
+#*
+#* Dependencies:
+#* - `serde` and `serde_json`: Used for robustly handling the structured output (JSON) from the
+#* policy checking tool. This allows for detailed and accurate reporting of policy violations.
+#* - `anyhow`: A library for streamlined and developer-friendly error handling. It simplifies
+#* propagating errors from various sources (I/O, subprocess execution, JSON parsing) back to
+#* the C layer through a consistent status code.
+#*
+#* Role in the System:
+#* The `policy_engine` crate is the heart of the `policy-check` command. It encapsulates all the
+#* complexity of interacting with the underlying policy engine, presenting a simple, clean C API
+#* to the `dispatcher` module. This abstraction is key to maintaining a modular and maintainable codebase.
+#* ]
+#*
+#* SPDX-License-Identifier: Apache-2.0
+#*/
+
+[package]
+name = "policy_engine"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+crate-type = ["cdylib"] # Specifies that this crate should be compiled as a C-compatible dynamic library.
+
+[dependencies]
+# A popular and ergonomic error handling library. It simplifies returning and propagating
+# errors, which is especially useful in an FFI context where we need to translate complex
+# Rust errors into simple C-compatible status codes.
+anyhow = "1.0"
+
+# Serde is a framework for serializing and deserializing Rust data structures efficiently.
+# We use it here with the "derive" feature to automatically generate serialization/deserialization
+# code for our structs.
+serde = { version = "1.0", features = ["derive"] }
+
+# This crate provides the JSON data format implementation for Serde. It will be used to
+# parse the JSON output from the Conftest policy checker, allowing us to inspect the
+# results of the policy evaluation in a structured way.
+serde_json = "1.0"

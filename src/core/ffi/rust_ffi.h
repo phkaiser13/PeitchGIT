@@ -4,35 +4,24 @@
  * File: src/core/ffi/rust_ffi.h
  *
  * [
- * This header file defines the public API for the Foreign Function Interface (FFI)
- * layer that bridges the C core of PeitchGIT with the Rust-based functional modules.
- * Its primary role is to provide a clean, high-level C interface for invoking
- * Rust code, abstracting away the complexities of dynamic library loading and
- * function calling conventions.
+ * This header file defines the Foreign Function Interface (FFI) contract between the core C
+ * application and the Rust modules. It contains the function prototypes for all Rust functions
+ * that are exposed to the C side. This creates a clean, well-defined boundary between the two
+ * languages, allowing them to interoperate effectively.
  *
  * Architecture:
- * The FFI layer is designed to be a set of simple, command-oriented functions. Each
- * function corresponds to a specific Rust module (e.g., `k8s_preview`, `release_orchestrator`)
- * that exposes functionality to the C core. The `cli_parser` module will use these
- * functions to dispatch commands after parsing them.
+ * Each function declared here corresponds to a Rust function annotated with `#[no_mangle]`
+ * and `extern "C"`. The use of fixed-width integer types (e.g., `int32_t`) and standard C
+ * types (`const char *`) is intentional to ensure ABI compatibility across different platforms
+ * and compiler versions. This header is the single source of truth for the C code regarding
+ * the available Rust functionality.
  *
- * Communication Protocol:
- * The data is passed between C and Rust using a standardized contract:
- * - C to Rust: A null-terminated UTF-8 string containing a JSON object. This JSON
- * object carries all the necessary configuration and parameters for the command.
- * - Rust to C: The Rust modules will return a status code (integer). A value of 0
- * indicates success, while any non-zero value signifies an error. Detailed results
- * or error messages will be handled via stdout/stderr or a future callback mechanism.
- *
- * Memory Management:
- * The C side is responsible for managing the memory of the JSON string passed to Rust.
- * Rust functions are designed to only read this string. If a Rust function needed to
- * return a string to C, it would be responsible for allocating it in a C-compatible
- * manner, and C would be responsible for freeing it. However, the current contract
- * simplifies this by using integer status codes for returns.
- *
- * This file declares the function `ffi_call_preview_module`, which serves as the
- * template for all future FFI function declarations.
+ * Role in the System:
+ * This FFI layer is crucial for our polyglot architecture. It allows us to leverage Rust's
+ * strengths in safety, performance, and its rich ecosystem for specific tasks (like policy
+ * checking, Git operations, etc.), while keeping the main application orchestration in C.
+ * The `dispatcher.c` module is the primary consumer of this header, using it to call into
+ * the Rust business logic.
  * ]
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -41,44 +30,50 @@
 #ifndef RUST_FFI_H
 #define RUST_FFI_H
 
-/**
- * @brief Invokes the main entry point of the Rust 'k8s_preview' module.
- *
- * @param json_config A constant, null-terminated string containing the command
- * configuration in JSON format. The format must match the contract expected
- * by the Rust module.
- * @return An integer status code. Returns 0 on success, and a non-zero value
- * on failure. The specific non-zero code may indicate the type of error.
- *
- * This function serves as the C-side entry point for all 'preview' related
- * commands. It dynamically loads the `k8s_preview` shared library, locates the
- * exported `invoke` function, passes the `json_config` to it, and returns the
- * result. All complexities of the FFI call are handled internally by the
- * implementation in `rust_ffi.c`.
- */
-int ffi_call_preview_module(const char *json_config);
+#include <stdint.h> // Required for fixed-width integer types like int32_t
+
+// --- FFI Function Prototypes ---
 
 /**
- * @brief Invokes the main entry point of the Rust 'release_orchestrator' module.
+ * @brief A placeholder test function to verify the FFI setup.
  *
- * @param json_config A constant, null-terminated string containing the command
- * configuration in JSON format.
- * @return An integer status code, 0 for success, non-zero for failure.
- *
- * (Note: This is a placeholder for future implementation and follows the same
- * architectural pattern as `ffi_call_preview_module`.)
+ * This function is typically used during initial development to ensure that the C application
+ * can correctly link against and call into the Rust library.
  */
-// int ffi_call_release_module(const char *json_config);
+void rust_hello_world(void);
 
 /**
- * @brief Invokes the main entry point of the Rust 'kube' interaction module.
+ * @brief Runs a policy check using the Rust `policy_engine` module.
  *
- * @param json_config A constant, null-terminated string containing the command
- * configuration in JSON format.
- * @return An integer status code, 0 for success, non-zero for failure.
+ * This function invokes the `conftest` tool via a Rust wrapper to validate Kubernetes
+ * manifest files against a set of Rego policies. It abstracts away the complexities of
+ * subprocess management and output parsing from the C caller.
  *
- * (Note: This is a placeholder for future implementation.)
+ * @param policy_path A null-terminated C string representing the path to the directory
+ * containing the .rego policy files.
+ * @param manifest_path A null-terminated C string representing the path to the Kubernetes
+ * manifest file or directory to be checked.
+ *
+ * @return An `int32_t` status code:
+ * - 0: All policy checks passed successfully.
+ * - 1: A policy violation was found, or an error occurred during execution (e.g.,
+ * `conftest` not found, file paths are invalid, JSON output parsing failed).
+ * Detailed error messages will be printed to stderr by the Rust module.
+ *
+ * Pre-conditions:
+ * - `policy_path` and `manifest_path` must be valid, null-terminated C strings.
+ * - The `conftest` executable must be present in the system's PATH.
+ *
+ * Post-conditions:
+ * - Policy validation is performed.
+ * - Diagnostic output is printed to stdout/stderr.
+ * - A status code indicating the outcome is returned.
  */
-// int ffi_call_kube_module(const char *json_config);
+int32_t run_policy_check(const char *policy_path, const char *manifest_path);
+
+// Add other Rust FFI function declarations here as the application grows.
+// For example:
+// int32_t git_ops_sync(const char *repo_url, const char *local_path);
+// int32_t k8s_apply_manifest(const char *manifest_path, bool dry_run);
 
 #endif // RUST_FFI_H
