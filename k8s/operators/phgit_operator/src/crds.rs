@@ -5,21 +5,29 @@
  *
  * This file defines the Rust data structures that correspond to our Custom
  * Resource Definitions (CRDs). By using the `kube::CustomResource` derive macro,
- * we create a strongly-typed representation of our custom APIs.
+ * we create a strongly-typed representation of our custom APIs, enabling safe
+ * and idiomatic interaction with the Kubernetes API server.
  *
  * Architecture:
- * - Each struct (e.g., `PhgitPreview`) represents a single Kind in Kubernetes.
+ * - Each top-level struct decorated with `#[derive(CustomResource)]` (e.g.,
+ * `PhgitPreview`) represents a single API Kind in Kubernetes.
  * - The `#[kube(...)]` attribute provides the necessary metadata to map the Rust
- * struct to the corresponding CRD in the cluster (group, version, kind). This
- * metadata MUST exactly match the definitions in the YAML CRD files.
- * - The `Spec` and `Status` inner structs mirror the `spec` and `status` fields
- * of the Kubernetes object. This is a standard pattern that separates the
- * user's desired state (`spec`) from the operator's observed state (`status`).
- * - `serde` attributes (like `#[serde(rename = "prNumber")]`) are used to map
- * between the idiomatic Rust `snake_case` field names and the idiomatic
- * Kubernetes `camelCase` YAML field names.
- * - `schemars` is used to generate an OpenAPI v3 schema, which enables server-side
- * validation by the Kubernetes API server.
+ * struct to its corresponding CRD in the cluster (group, version, kind). This
+ * metadata MUST exactly match the definitions in the YAML CRD files to ensure
+ * correct serialization and deserialization.
+ * - The standard Kubernetes object structure is followed by separating the user's
+ * desired state (`spec`) from the operator's observed state (`status`).
+ * - The `Spec` struct (e.g., `PhgitPreviewSpec`) holds the configuration provided
+ * by the user.
+ * - The `Status` struct (e.g., `PhgitPreviewStatus`) is managed exclusively by the
+ * controller to report the current state of the resource. It is crucial for
+ * user feedback and observability.
+ * - `serde` attributes are used to map between idiomatic Rust `snake_case` field
+ * names and the idiomatic Kubernetes `camelCase` YAML field names.
+ * - `schemars` is leveraged to automatically generate an OpenAPI v3 schema from the
+ * Rust types. This schema is embedded into the CRD manifest, enabling powerful
+ * server-side validation, typed `kubectl` commands, and better client library
+ * integration.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -28,71 +36,101 @@ use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+// --- PhgitPreview Custom Resource Definition ---
+
 /// # PhgitPreview
 /// Represents the desired state for an ephemeral preview environment.
-/// Creating a `PhgitPreview` resource in a namespace will trigger the operator
-/// to provision and deploy a temporary environment based on a pull request.
+/// Creating a `PhgitPreview` resource will trigger the `preview_controller`
+/// to provision and deploy a temporary environment from a Git repository branch.
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
 #[kube(
     group = "phgit.io",
     version = "v1alpha1",
     kind = "PhgitPreview",
-    namespaced
+    namespaced,
+    status = "PhgitPreviewStatus",
+    printcolumn = r#"{"name":"Status", "type":"string", "jsonPath":".status.conditions[-1:].type"}"#,
+    printcolumn = r#"{"name":"Namespace", "type":"string", "jsonPath":".status.namespace"}"#,
+    printcolumn = r#"{"name":"Age", "type":"date", "jsonPath":".metadata.creationTimestamp"}"#,
+    shortname = "pgprv"
 )]
-#[kube(status = "PhgitPreviewStatus")]
-#[kube(shortname = "pgprv")]
 pub struct PhgitPreviewSpec {
-    #[serde(rename = "prNumber")]
-    #[schemars(range(minimum = 1))]
-    pub pr_number: u32,
+    /// The URL of the Git repository containing the application manifests.
     #[serde(rename = "repoUrl")]
-    #[schemars(url)]
     pub repo_url: String,
-    #[serde(rename = "commitSha")]
-    #[schemars(length(min = 40, max = 40), pattern = "^[0-9a-fA-F]{40}$")]
-    pub commit_sha: String,
-    #[serde(rename = "ttlHours", default = "default_ttl")]
-    #[schemars(range(minimum = 1))]
-    pub ttl_hours: u32,
-    #[serde(rename = "manifestPath", default = "default_manifest_path")]
-    #[schemars(length(min = 1))]
+
+    /// The branch, tag, or commit hash to deploy.
+    pub branch: String,
+
+    /// The path within the repository where Kubernetes manifests (YAML/YML) are located.
+    #[serde(rename = "manifestPath")]
     pub manifest_path: String,
+
+    /// A descriptive name for the application being previewed.
+    #[serde(rename = "appName")]
+    pub app_name: String,
 }
 
-// Default value for ttl_hours if not specified in the manifest.
-fn default_ttl() -> u32 { 24 }
-// Default value for manifest_path if not specified in the manifest.
-fn default_manifest_path() -> String { "./k8s".to_string() }
-
-/// The observed state of the PhgitPreview resource, managed by the operator.
-#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]
+/// The observed state of the PhgitPreview resource, managed by the controller.
+/// This status provides crucial feedback to users about the state of their
+/// preview environment.
+#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
 pub struct PhgitPreviewStatus {
-    pub phase: String,
-    pub url: Option<String>,
-    #[serde(rename = "expiresAt")]
-    pub expires_at: Option<String>,
-    pub message: Option<String>,
+    /// The unique namespace created for this preview environment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
+
+    /// A list of conditions providing detailed, time-stamped status updates
+    /// throughout the resource's lifecycle (e.g., Creating, Deployed, Failed).
+    pub conditions: Vec<StatusCondition>,
 }
+
+/// Represents a single condition in the status of a resource.
+/// This structure is a common pattern in Kubernetes for detailed status reporting.
+#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]
+pub struct StatusCondition {
+    /// The type of the condition (e.g., "Creating", "Deployed", "Terminating", "Failed").
+    #[serde(rename = "type")]
+    pub type_: String,
+    
+    /// A human-readable message providing details about the condition.
+    pub message: String,
+    // Note: In a production-grade operator, you would also include fields like
+    // `lastTransitionTime` and `status` ("True", "False", "Unknown").
+}
+
+impl StatusCondition {
+    /// A helper function to create a new `StatusCondition` instance.
+    /// This improves code readability and consistency in the controller logic.
+    pub fn new(type_: String, message: String) -> Self {
+        Self { type_, message }
+    }
+}
+
+
+// --- PhgitRelease Custom Resource Definition ---
 
 /// # PhgitRelease
 /// Represents a declarative release process for an application.
-/// Creating a `PhgitRelease` resource will trigger the operator to perform a
-/// progressive deployment strategy (e.g., Canary or Blue-Green).
+/// Creating a `PhgitRelease` resource will trigger the `release_controller`
+/// to perform a progressive deployment strategy (e.g., Canary or Blue-Green).
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
 #[kube(
     group = "phgit.io",
     version = "v1alpha1",
     kind = "PhgitRelease",
-    namespaced
+    namespaced,
+    status = "PhgitReleaseStatus",
+    shortname = "pgrls"
 )]
-#[kube(status = "PhgitReleaseStatus")]
-#[kube(shortname = "pgrls")]
 pub struct PhgitReleaseSpec {
     #[serde(rename = "appName")]
     #[schemars(length(min = 1))]
     pub app_name: String,
+
     #[schemars(length(min = 1))]
     pub version: String,
+
     pub strategy: ReleaseStrategy,
 }
 
@@ -143,6 +181,9 @@ pub struct PhgitReleaseStatus {
     pub traffic_split: Option<String>,
 }
 
+
+// --- PhgitPipeline Custom Resource Definition ---
+
 /// # PhgitPipeline
 /// Represents a declarative CI/CD pipeline.
 /// Creating a `PhgitPipeline` resource defines a pipeline that the operator
@@ -152,10 +193,10 @@ pub struct PhgitReleaseStatus {
     group = "phgit.io",
     version = "v1alpha1",
     kind = "PhgitPipeline",
-    namespaced
+    namespaced,
+    status = "PhgitPipelineStatus",
+    shortname = "pgpipe"
 )]
-#[kube(status = "PhgitPipelineStatus")]
-#[kube(shortname = "pgpipe")]
 pub struct PhgitPipelineSpec {
     // The definition for PhgitPipelineSpec will go here, mirroring the CRD YAML.
     // This will include triggers, stages, and steps.
