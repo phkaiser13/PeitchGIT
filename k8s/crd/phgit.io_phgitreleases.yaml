@@ -1,0 +1,123 @@
+#
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
+#
+# File: phgit.io_phgitreleases.yaml
+#
+# This file defines the Custom Resource Definition (CRD) for the PhgitRelease
+# resource. This CRD provides a high-level, declarative API for managing
+# complex release strategies like Canary and Blue-Green deployments.
+#
+# Architecture:
+# - It establishes the 'PhgitRelease' kind within the 'phgit.io' API group.
+# - The `spec` is designed to be abstract and user-friendly. A user specifies
+#   *what* they want (e.g., a Canary release of version 1.2.0 with 10% traffic)
+#   without needing to know the low-level details of manipulating Istio
+#   VirtualServices or other service mesh resources.
+# - The Phgit Operator will translate this high-level intent into the necessary
+#   low-level Kubernetes resource manipulations.
+# - The `status` field provides a detailed, real-time view of the release's
+#   progress, including which versions are active, the current traffic split,
+#   and any conditions or errors encountered during the rollout.
+# - This CRD forms the core of the Release Orchestrator functionality.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: phgitreleases.phgit.io
+spec:
+  group: phgit.io
+  scope: Namespaced
+  names:
+    plural: phgitreleases
+    singular: phgitrelease
+    kind: PhgitRelease
+    shortNames:
+      - pgrls
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - appName
+                - version
+                - strategy
+              properties:
+                appName:
+                  type: string
+                  description: "The name of the application being released (e.g., the name of the Kubernetes Deployment)."
+                version:
+                  type: string
+                  description: "The new version tag to be rolled out."
+                strategy:
+                  type: object
+                  required:
+                    - type
+                  properties:
+                    type:
+                      type: string
+                      enum: ["Canary", "BlueGreen"]
+                      description: "The type of release strategy to execute."
+                    canary:
+                      type: object
+                      description: "Configuration for a Canary release. Required if type is 'Canary'."
+                      properties:
+                        trafficPercent:
+                          type: integer
+                          description: "The percentage of traffic to route to the new version."
+                          minimum: 0
+                          maximum: 100
+                        autoIncrement:
+                          type: boolean
+                          description: "Whether to automatically increment traffic over time."
+                          default: false
+                    blueGreen:
+                      type: object
+                      description: "Configuration for a Blue-Green release. Required if type is 'BlueGreen'."
+                      properties:
+                        previewUrl:
+                          type: string
+                          description: "An internal URL to access the 'green' deployment before promoting it."
+                        autoPromote:
+                          type: boolean
+                          description: "Whether to automatically promote the 'green' deployment after health checks pass."
+                          default: false
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: ["Progressing", "Paused", "Succeeded", "Failed"]
+                  description: "The current phase of the release."
+                stableVersion:
+                  type: string
+                  description: "The version currently considered stable and receiving the majority of traffic."
+                canaryVersion:
+                  type: string
+                  description: "The new version being tested as part of a canary release."
+                trafficSplit:
+                  type: string
+                  description: "A human-readable representation of the current traffic distribution (e.g., 'stable: 90%, canary: 10%')."
+                conditions:
+                  type: array
+                  description: "A list of conditions observing the state of the release, following Kubernetes conventions."
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      lastUpdateTime:
+                        type: string
+                        format: date-time
+                      message:
+                        type: string

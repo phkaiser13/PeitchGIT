@@ -1,0 +1,53 @@
+#
+# Copyright (C) 2025 Pedro Henrique / phkaiser13
+#
+# File: prometheus-adapter-config.yaml
+#
+# This ConfigMap provides the configuration for the Prometheus Adapter. The
+# adapter's role is to query Prometheus for specific metrics and expose them
+# through the Kubernetes custom metrics API, making them available to the HPA.
+#
+# Architecture:
+# - This configuration defines a rule that maps a Prometheus metric to an
+#   external metric in Kubernetes.
+# - `seriesQuery`: This specifies the PromQL query used to discover the raw
+#   time series in Prometheus. We are looking for a metric named
+#   `phgit_build_queue_length_total`.
+# - `name`: This section defines how the Prometheus metric name is transformed
+#   into the Kubernetes custom metric name. We map it directly to
+#   `build-queue-length`.
+# - `metricsQuery`: This is a template for the final PromQL query that the HPA
+#   will use. The `<<.Series>>` and `<<.LabelMatchers>>` are placeholders that
+#   Kubernetes fills in. The result of this query is the single integer value
+#   that the HPA uses for its scaling decisions.
+# - This declarative mapping is a powerful way to decouple the application's
+#   instrumentation (Prometheus metrics) from the cluster's scaling logic (HPA).
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: adapter-config
+  namespace: monitoring # Assumes the adapter runs in a 'monitoring' namespace.
+data:
+  config.yaml: |
+    # Rules for exposing metrics through the external.metrics.k8s.io API group.
+    # These are metrics that are not tied to a specific Kubernetes object.
+    external:
+      - seriesQuery: '{__name__=~"^phgit_build_queue_length_total$"}'
+        # Since our build queue is global and not tied to a specific k8s object,
+        # we do not need to match on Kubernetes resources.
+        resources:
+          # We specify 'template' to provide a fallback if no specific labels
+          # are found on the Prometheus metric.
+          template: <<.Resource>>
+        # This renames the Prometheus metric for the Kubernetes API.
+        # `__name__` is captured from the seriesQuery.
+        name:
+          matches: "^(.*)_total$"
+          as: "build-queue-length" # This is the name the HPA will request.
+        # This is the final PromQL query template. It sums the values of all
+        # matching series to get a single number for the total queue length.
+        metricsQuery: sum(<<.Series>>{<<.LabelMatchers>>}) by (<<.GroupBy>>)
