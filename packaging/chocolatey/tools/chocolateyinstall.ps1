@@ -3,14 +3,14 @@
 #
 # Chocolatey installation script template for ph.
 # Workflow must replace:
-#   - k8s-prerls-0.0.3-beta           -> package version (e.g. 1.2.3)
+#   - 3.2.3-beta           -> package version (e.g. 1.2.3)
 #   -   -> sha256 checksum of the Windows installer .exe
 
 $ErrorActionPreference = 'Stop'
 
 # --- Package parameters (injected by CI/CD) ---
 # Example: 1.2.3
-$version = 'k8s-prerls-0.0.3-beta'
+$version = '3.2.3-beta'
 
 # installer file name and remote URL pattern
 # Workflow should ensure the installer named like: ph-<version>-installer.exe exists in GitHub Releases

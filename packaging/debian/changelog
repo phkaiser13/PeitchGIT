@@ -1,10 +1,10 @@
-ph (k8s-prerls-0.0.3-beta-1) unstable; urgency=medium
+ph (3.2.3-beta-1) unstable; urgency=medium
 
-  * New upstream release k8s-prerls-0.0.3-beta
+  * New upstream release 3.2.3-beta
   * Updated dependencies and build requirements
   * Improved performance and stability
 
- -- Pedro Henrique / phkaiser13 <you@example.com>  Sun, 24 Aug 2025 22:28:35 +0000
+ -- Pedro Henrique / phkaiser13 <you@example.com>  Mon, 25 Aug 2025 18:33:22 +0000
 
 ph (1.0.0-1) unstable; urgency=low
 
