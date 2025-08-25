@@ -195,6 +195,14 @@ file(GLOB_RECURSE CORE_SOURCES
 )
 add_executable(phgit ${CORE_SOURCES})
 
+# ==============================================================================
+# Link platform-specific libraries
+# ==============================================================================
+if(UNIX AND NOT APPLE)
+    # For Linux, link the dynamic linking library (-ldl) required for FFI.
+    target_link_libraries(phgit PRIVATE dl)
+endif()
+
 # --- FIX: Correctly add all necessary include directories to the target ---
 # This is the second part of the fix. Modern imported targets (like Lua::Lua)
 # automatically add their include directories when you link them. However, for
@@ -270,43 +278,23 @@ nlohmann_json::nlohmann_json
 set_target_properties(ci_cd_visualizer PROPERTIES
 LIBRARY_OUTPUT_DIRECTORY "${MODULE_OUTPUT_PATH}"
 )
-# # ==========================================================================================
-# # Installer Engine Subproject
-# # ==========================================================================================
 
-# # This section integrates the C++ installer engine located in the 'installer' subdirectory.
-# # It uses an option to allow developers to enable or disable its build as needed.
-# # When enabled, it builds the 'phgit-installer' executable and its dependencies.
+# ==============================================================================
+# Build Rust FFI Modules using Cargo
+# ==============================================================================
+# This custom target will execute 'cargo build' on the k8s_preview module.
+# The C core executable (`phgit`) is made dependent on this target, ensuring
+# that the Rust modules are always compiled before the C code.
 
-# option(PHGIT_BUILD_INSTALLER "Build the phgit installer engine" ON)
+# Path to the Rust module
+set(RUST_PREVIEW_MODULE_DIR ${CMAKE_SOURCE_DIR}/src/modules/k8s_preview)
 
-# if(PHGIT_BUILD_INSTALLER)
-#    message(STATUS "Installer engine build is enabled. Adding subdirectory.")
-#    # This command tells CMake to enter the 'installer' directory and process its
-#    # CMakeLists.txt file. All targets defined there (like the 'installer' executable)
-#    # will become part of this main build.
-#   add_subdirectory(installer)
-# else()
-#    message(STATUS "Installer engine build is disabled.")
-# endif()
+add_custom_target(
+    build_rust_modules ALL
+    COMMAND cargo build --release --manifest-path ${RUST_PREVIEW_MODULE_DIR}/Cargo.toml
+    WORKING_DIRECTORY ${RUST_PREVIEW_MODULE_DIR}
+    COMMENT "Building Rust FFI modules..."
+)
 
-# # --- Installation Rules ---
-# install(TARGETS phgit DESTINATION bin)
-# install(
-#    DIRECTORY ${MODULE_OUTPUT_PATH}/
-#    DESTINATION bin/modules
-#    FILES_MATCHING PATTERN "*.so" PATTERN "*.dll" PATTERN "*.dylib"
-# )
-
-# # --- ADDING THIS PART ---
-# # Installation rules for the installer engine
-# if(PHGIT_BUILD_INSTALLER)
-#     # Install the installer executable itself into the main bin directory
-#     install(TARGETS installer DESTINATION bin)
-
-#     # IMPORTANT: Install the configuration file alongside the installer executable
-#     install(
-#         FILES ${CMAKE_SOURCE_DIR}/installer/config.json
-#         DESTINATION bin
-#     )
-# endif()
+# Make the main executable depend on the Rust modules
+add_dependencies(phgit build_rust_modules)
