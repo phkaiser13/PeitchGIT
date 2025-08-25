@@ -3,8 +3,8 @@
 
 class ph < Formula
   desc "The Polyglot Assistant for Git & DevOps Workflows"
-  homepage "https://github.com/phkaiser13/peitchgit"
-  url "https://github.com/phkaiser13/peitchgit/archive/refs/tags/v@ph_VERSION@.tar.gz"
+  homepage "https://github.com/phkaiser13/Peitch"
+  url "https://github.com/phkaiser13/Peitch/archive/refs/tags/v@ph_VERSION@.tar.gz"
   sha256 "@ph_SHA256@"
   license "Apache-2.0"
 

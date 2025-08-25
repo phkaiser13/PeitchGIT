@@ -5,7 +5,7 @@
  *
  * [
  * This header file defines the core components of the Command Line Interface (CLI)
- * parser for PeitchGIT. Its primary purpose is to establish the public API for parsing
+ * parser for Peitch. Its primary purpose is to establish the public API for parsing
  * user commands, dispatching them to the appropriate handlers, and managing the data
  * structures required for command execution.
  *
@@ -51,7 +51,7 @@
 
 /**
  * @enum CommandType
- * @brief Enumerates the primary commands available in the PeitchGIT CLI.
+ * @brief Enumerates the primary commands available in the Peitch CLI.
  *
  * This enumeration represents the first-level commands that the user can invoke.
  * The dispatcher will use these values to determine the primary action to be taken.

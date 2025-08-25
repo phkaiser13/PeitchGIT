@@ -2,7 +2,7 @@
   "name": "ph",
   "version": "@ph_VERSION@",
   "description": "The Polyglot Assistant for Git & DevOps Workflows",
-  "homepage": "https://github.com/phkaiser13/peitchgit",
+  "homepage": "https://github.com/phkaiser13/Peitch",
   "license": "Apache-2.0",
   "dependencies": [
     "curl",

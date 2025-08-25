@@ -51,7 +51,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
-          TAR_URL="https://github.com/phkaiser13/peitchgit/archive/refs/tags/v${VERSION}.tar.gz"
+          TAR_URL="https://github.com/phkaiser13/Peitch/archive/refs/tags/v${VERSION}.tar.gz"
           echo "Tarball URL: ${TAR_URL}"
           TMP="$(mktemp)"
           curl -L --fail -sS "${TAR_URL}" -o "${TMP}"
@@ -77,7 +77,7 @@ jobs:
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
           INSTALLER_NAME="ph-${VERSION}-installer.exe"
-          INSTALLER_URL="https://github.com/phkaiser13/peitchgit/releases/download/v${VERSION}/${INSTALLER_NAME}"
+          INSTALLER_URL="https://github.com/phkaiser13/Peitch/releases/download/v${VERSION}/${INSTALLER_NAME}"
           echo "Attempting to download installer: ${INSTALLER_URL}"
           TMP_INSTALLER="$(mktemp)"
           if curl -L --fail -sS "${INSTALLER_URL}" -o "${TMP_INSTALLER}"; then
@@ -102,7 +102,7 @@ jobs:
           TARBALL_SHA256="${{ steps.checksums.outputs.ph_tarb_sha256 }}"
           TARBALL_SHA512="${{ steps.checksums.outputs.ph_tarb_sha512 }}"
           INSTALLER_SHA256="${{ steps.installer.outputs.installer_sha256 }}"
-          TAR_URL="https://github.com/phkaiser13/peitchgit/archive/refs/tags/v${VERSION}.tar.gz"
+          TAR_URL="https://github.com/phkaiser13/Peitch/archive/refs/tags/v${VERSION}.tar.gz"
           TODAY="$(date -R)"
 
           echo "🔄 Rendering shared templates into packaging/ ..."
@@ -375,7 +375,7 @@ jobs:
           echo "  🍺 ${{ env.HOME_TAP_REPO }} (Homebrew)"
           echo "  📚 ${{ env.VCPKG_REPO }} (vcpkg)"
           echo "  🏛️ ${{ env.AUR_PACKAGES_REPO }} (AUR)"
-          echo "  📁 phkaiser13/peitchgit (packaging/)"
+          echo "  📁 phkaiser13/Peitch (packaging/)"
           echo ""
           echo "📋 Generated packaging files:"
           echo "  🍫 packaging/chocolatey/ (Chocolatey)"

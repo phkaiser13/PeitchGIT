@@ -6,7 +6,7 @@ include(vcpkg_common_functions)
 # Download the source from GitHub
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
-    REPO phkaiser13/peitchgit
+    REPO phkaiser13/Peitch
     REF "v@ph_VERSION@"
     SHA512 "@ph_SHA512@"
     HEAD_REF main

@@ -4,7 +4,7 @@ Priority: optional
 Maintainer: Pedro Henrique / phkaiser13 <you@example.com>
 Build-Depends: debhelper (>= 11), cmake, pkg-config, libcurl4-openssl-dev, liblua5.3-dev, nlohmann-json3-dev, rustc, cargo
 Standards-Version: 4.1.4
-Homepage: https://github.com/phkaiser13/peitchgit
+Homepage: https://github.com/phkaiser13/Peitch
 
 Package: ph
 Architecture: any

@@ -112,7 +112,7 @@ impl IstioClient {
         );
 
         // Use Server-Side Apply to create or update the DestinationRule.
-        let ssapply = PatchParams::apply("peitchgit.release_orchestrator");
+        let ssapply = PatchParams::apply("Peitch.release_orchestrator");
         dr_api
             .patch(&split.app_name, &ssapply, &Patch::Apply(&dr))
             .await
@@ -145,7 +145,7 @@ impl IstioClient {
         );
 
         // Use Server-Side Apply to create or update the VirtualService.
-        let ssapply = PatchParams::apply("peitchgit.release_orchestrator");
+        let ssapply = PatchParams::apply("Peitch.release_orchestrator");
         vs_api
             .patch(&split.app_name, &ssapply, &Patch::Apply(&vs))
             .await

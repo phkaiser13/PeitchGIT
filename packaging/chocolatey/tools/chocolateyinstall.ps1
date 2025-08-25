@@ -15,7 +15,7 @@ $version = 'k8s-prerls-0.0.3-beta'
 # installer file name and remote URL pattern
 # Workflow should ensure the installer named like: ph-<version>-installer.exe exists in GitHub Releases
 $installerFileName = "ph-$($version)-installer.exe"
-$installerUrl = "https://github.com/phkaiser13/peitchgit/releases/download/v$($version)/$installerFileName"
+$installerUrl = "https://github.com/phkaiser13/Peitch/releases/download/v$($version)/$installerFileName"
 
 # checksum injected by the workflow (sha256)
 $checksum = ''

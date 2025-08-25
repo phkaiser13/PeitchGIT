@@ -33,7 +33,7 @@ Unicode true
 !define PRODUCT_NAME "ph"
 !define PRODUCT_VERSION "k8s-prerls-0.0.3-beta"
 !define PRODUCT_PUBLISHER "Pedro Henrique / phkaiser13"
-!define PRODUCT_WEBSITE "https://github.com/phkaiser13/peitchgit"
+!define PRODUCT_WEBSITE "https://github.com/phkaiser13/Peitch"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
 !define USER_CONFIG_DIR "$APPDATA\${PRODUCT_NAME}"
 

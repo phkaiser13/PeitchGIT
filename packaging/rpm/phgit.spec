@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # RPM spec template for ph.
-# Workflow must replace k8s-prerls-0.0.3-beta and/or https://github.com/phkaiser13/peitchgit/archive/refs/tags/vk8s-prerls-0.0.3-beta.tar.gz and can optionally fill Sun, 24 Aug 2025 22:28:35 +0000.
+# Workflow must replace k8s-prerls-0.0.3-beta and/or https://github.com/phkaiser13/Peitch/archive/refs/tags/vk8s-prerls-0.0.3-beta.tar.gz and can optionally fill Sun, 24 Aug 2025 22:28:35 +0000.
 # Keep comments in English and prefer using RPM macros (e.g. %{version}) inside the spec body.
 
 Name:       ph
@@ -12,11 +12,11 @@ Release:    1%{?dist}
 Summary:    The Polyglot Assistant for Git & DevOps Workflows
 
 License:    Apache-2.0
-URL:        https://github.com/phkaiser13/peitchgit
+URL:        https://github.com/phkaiser13/Peitch
 
 # Source tarball URL. The workflow can either set this directly, or use the default pattern below.
-# Default pattern (workflow can generate): https://github.com/phkaiser13/peitchgit/archive/refs/tags/vk8s-prerls-0.0.3-beta.tar.gz
-Source0:    https://github.com/phkaiser13/peitchgit/archive/refs/tags/vk8s-prerls-0.0.3-beta.tar.gz
+# Default pattern (workflow can generate): https://github.com/phkaiser13/Peitch/archive/refs/tags/vk8s-prerls-0.0.3-beta.tar.gz
+Source0:    https://github.com/phkaiser13/Peitch/archive/refs/tags/vk8s-prerls-0.0.3-beta.tar.gz
 
 # Build-time dependencies
 BuildRequires:  gcc-c++
@@ -37,8 +37,8 @@ unify and streamline your development lifecycle.
 
 %prep
 # autosetup will unpack Source0 and chdir into the unpacked dir.
-# We assume the tarball extracts to peitchgit-<version>
-%autosetup -n peitchgit-%{version}
+# We assume the tarball extracts to Peitch-<version>
+%autosetup -n Peitch-%{version}
 
 %build
 # Use the bundled CMake macros provided by rpmbuild

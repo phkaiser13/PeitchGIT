@@ -4,7 +4,7 @@
  * File: src/core/ffi/rust_ffi.c
  *
  * [
- * This file implements the Foreign Function Interface (FFI) layer for PeitchGIT.
+ * This file implements the Foreign Function Interface (FFI) layer for Peitch.
  * Its core responsibility is to dynamically load shared libraries generated from
  * the Rust modules, resolve the exported function symbols, execute them with the
  * appropriate parameters (a JSON configuration string), and manage the lifecycle

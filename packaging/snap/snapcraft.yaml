@@ -15,7 +15,7 @@ base: core22
 parts:
   ph:
     plugin: cmake
-    source: https://github.com/phkaiser13/peitchgit/archive/refs/tags/vk8s-prerls-0.0.3-beta.tar.gz
+    source: https://github.com/phkaiser13/Peitch/archive/refs/tags/vk8s-prerls-0.0.3-beta.tar.gz
     cmake-parameters:
       - -DCMAKE_BUILD_TYPE=Release
       - -DBUILD_TESTING=OFF

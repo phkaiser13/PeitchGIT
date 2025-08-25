@@ -147,7 +147,7 @@ async fn run_sync_internal(request: SyncRequest) -> Result<()> {
     // 5. Apply the Secret to the cluster using Server-Side Apply.
     // This is an idempotent operation: it will create the secret if it doesn't
     // exist, or update it if it does, without causing ownership conflicts.
-    let ssapply = PatchParams::apply("peitchgit.secret_manager");
+    let ssapply = PatchParams::apply("Peitch.secret_manager");
     api.patch(&request.secret_name, &ssapply, &Patch::Apply(&secret_manifest))
         .await
         .with_context(|| format!("Failed to apply Kubernetes Secret '{}'", request.secret_name))?;

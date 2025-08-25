@@ -3,7 +3,7 @@
 #* This file is the Cargo manifest for the `multi_cluster_orchestrator` module.
 #* It is designed to manage operations across a fleet of Kubernetes clusters
 #* concurrently. The module is built as a C-dynamic library (`cdylib`) to be
-#* loaded by the PeitchGIT C core.
+#* loaded by the Peitch C core.
 #*
 #* The dependencies are chosen for performance and robustness:
 #* - `kube`: The core Kubernetes client, providing access to the API.
@@ -25,9 +25,9 @@ name = "multi_cluster_orchestrator"
 version = "0.1.0"
 edition = "2021"
 authors = ["Pedro Henrique / phkaiser13"]
-description = "A PeitchGIT module for orchestrating tasks across multiple Kubernetes clusters."
+description = "A Peitch module for orchestrating tasks across multiple Kubernetes clusters."
 license = "Apache-2.0"
-repository = "https://github.com/phkaiser13/peitchgit" # Example repository
+repository = "https://github.com/phkaiser13/Peitch" # Example repository
 
 [lib]
 # This configuration is critical for the FFI interface with the C core.

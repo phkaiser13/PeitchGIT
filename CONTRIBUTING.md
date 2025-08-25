@@ -30,6 +30,6 @@ We follow a standard Forking Workflow for contributions.
 
 ## Opening an Issue
 
-If you find a bug or have a feature request, please [open an issue](https://github.com/phkaiser13/peitchgit/issues). We have templates for both bug reports and feature requests to make the process smoother. Please provide as much detail as possible.
+If you find a bug or have a feature request, please [open an issue](https://github.com/phkaiser13/Peitch/issues). We have templates for both bug reports and feature requests to make the process smoother. Please provide as much detail as possible.
 
 Thank you again for your interest in contributing!

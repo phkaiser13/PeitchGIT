@@ -2,12 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 pkgname='ph'
-_pkgname='peitchgit'
+_pkgname='Peitch'
 pkgver='@ph_VERSION@'
 pkgrel=1
 pkgdesc="The Polyglot Assistant for Git & DevOps Workflows"
 arch=('x86_64' 'aarch64')
-url="https://github.com/phkaiser13/peitchgit"
+url="https://github.com/phkaiser13/Peitch"
 license=('Apache-2.0')
 
 # Runtime dependencies

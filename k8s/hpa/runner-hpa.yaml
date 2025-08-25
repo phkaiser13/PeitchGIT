@@ -4,7 +4,7 @@
 # File: runner-hpa.yaml
 #
 # This manifest defines a HorizontalPodAutoscaler (HPA) to automatically scale
-# the pool of PeitchGIT runners. This is a critical component for building a
+# the pool of Peitch runners. This is a critical component for building a
 # cost-effective and responsive CI/CD platform.
 #
 # Architecture:

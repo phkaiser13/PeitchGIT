@@ -4,7 +4,7 @@
 # File: clusters.yaml
 #
 # This configuration file defines the inventory of Kubernetes clusters that the
-# PeitchGIT system can target for deployments and other orchestration tasks. It
+# Peitch system can target for deployments and other orchestration tasks. It
 # serves as the central registry for the multi-cluster orchestration module.
 #
 # Architecture:
@@ -14,7 +14,7 @@
 #   which allows for programmatic selection and policy application.
 # - Crucially, it abstracts away the sensitive connection details (like CA certs
 #   and auth tokens) by referencing Kubernetes secrets. It is assumed that these
-#   secrets exist within the primary "management" cluster from which PeitchGIT
+#   secrets exist within the primary "management" cluster from which Peitch
 #   operates. This is a security best practice that avoids storing raw credentials
 #   in version control.
 # - The 'policies' field is designed for future integration with policy-as-code

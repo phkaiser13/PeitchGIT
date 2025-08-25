@@ -61,8 +61,8 @@ jobs:
       # and email to be able to create commits.
       - name: "Configure Git user"
         run: |
-          git config user.name "PeitchGIT Sync Bot"
-          git config user.email "bot@peitchgit.local"
+          git config user.name "Peitch Sync Bot"
+          git config user.email "bot@Peitch.local"
 
       - name: "Run Drift Detection"
         env:

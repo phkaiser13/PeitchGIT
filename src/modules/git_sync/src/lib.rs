@@ -119,7 +119,7 @@ async fn run_sync_internal(config: SyncConfig) -> Result<()> {
                 git_ops::create_reconciliation_pr(
                     temp_dir.path(),
                     &drift_report,
-                    "PeitchGIT: Reconcile Kubernetes cluster drift",
+                    "Peitch: Reconcile Kubernetes cluster drift",
                 )?;
             } else if config.dry_run {
                 println!("Dry run is enabled. No action will be taken.");

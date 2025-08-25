@@ -11,7 +11,7 @@ Using a package manager is the easiest way to get `ph` up and running.
 If you are on macOS and use Homebrew, you can install `ph` from our official tap:
 
 ```bash
-brew install phkaiser13/peitchgit/ph
+brew install phkaiser13/Peitch/ph
 ```
 
 ### Chocolatey (Windows)
@@ -68,8 +68,8 @@ Once the prerequisites are installed, you can clone the repository and build the
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/phkaiser13/peitchgit.git
-    cd peitchgit
+    git clone https://github.com/phkaiser13/Peitch.git
+    cd Peitch
     ```
 
 2.  **Build the project:**

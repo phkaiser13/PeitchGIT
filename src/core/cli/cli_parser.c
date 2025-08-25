@@ -5,7 +5,7 @@
  *
  * [
  * This file provides the implementation for the Command Line Interface (CLI) parser
- * of PeitchGIT. It is responsible for the entire lifecycle of a command execution,
+ * of Peitch. It is responsible for the entire lifecycle of a command execution,
  * from parsing the raw command-line arguments to dispatching the command to the
  * appropriate backend logic, which includes the Foreign Function Interface (FFI)
  * calls to the Rust modules.
@@ -82,14 +82,14 @@ static void initialize_args(CommandLineArgs *args)
 }
 
 /**
- * @brief Prints the main help message for the PeitchGIT CLI.
+ * @brief Prints the main help message for the Peitch CLI.
  *
  * This function provides the user with a summary of available commands and their
  * basic usage. It is designed to be the primary source of user assistance.
  */
 static void print_help(void)
 {
-	printf("PeitchGIT - The next-generation GitOps tool.\n\n");
+	printf("Peitch - The next-generation GitOps tool.\n\n");
 	printf("Usage: ph <command> [<subcommand>] [options]\n\n");
 	printf("Available Commands:\n");
 	printf("  preview <create|destroy|list>  Manage preview environments.\n");

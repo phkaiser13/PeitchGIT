@@ -155,7 +155,7 @@ impl ClusterManager {
 
     /// Private helper to apply manifests to a single cluster.
     async fn execute_apply(client: Client, manifests: &str) -> Result<String> {
-        let ssapply = PatchParams::apply("peitchgit.multi_cluster_orchestrator");
+        let ssapply = PatchParams::apply("Peitch.multi_cluster_orchestrator");
         let mut applied_resources = Vec::new();
 
         for doc in serde_yaml::Deserializer::from_str(manifests) {

@@ -100,7 +100,7 @@ impl ServiceMeshClient for LinkerdClient {
         );
 
         // Use Server-Side Apply to create or update the TrafficSplit resource.
-        let ssapply = PatchParams::apply("peitchgit.release_orchestrator");
+        let ssapply = PatchParams::apply("Peitch.release_orchestrator");
         ts_api
             .patch(resource_name, &ssapply, &Patch::Apply(&ts))
             .await

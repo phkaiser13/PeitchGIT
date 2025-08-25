@@ -1,6 +1,6 @@
  <!-- Enhanced README header for ph -->
 <div align="center" style="font-family: 'Segoe UI', Roboto, system-ui, -apple-system, 'Helvetica Neue', Arial; padding: 1.5rem;">
-  <a href="https://github.com/phkaiser13/peitchgit" aria-label="Ph Git repository" style="text-decoration:none; color:inherit;">
+  <a href="https://github.com/phkaiser13/Peitch" aria-label="Ph Git repository" style="text-decoration:none; color:inherit;">
     <img
       src="./.github/ForRepo/icon.ico"
       alt="Ph Git logo"
@@ -22,16 +22,16 @@
     Unified, extensible and built for blazing-fast automation.
   </p>
   <div style="display:inline-flex; gap:10px; flex-wrap:wrap; justify-content:center;">
-    <a href="https://github.com/phkaiser13/peitchgit/releases/latest" aria-label="Latest release">
-      <img src="https://img.shields.io/github/v/release/phkaiser13/peitchgit?style=for-the-badge" alt="Latest Release" />
+    <a href="https://github.com/phkaiser13/Peitch/releases/latest" aria-label="Latest release">
+      <img src="https://img.shields.io/github/v/release/phkaiser13/Peitch?style=for-the-badge" alt="Latest Release" />
     </a>
-    <a href="https://github.com/phkaiser13/peitchgit/blob/main/LICENSE" aria-label="License">
+    <a href="https://github.com/phkaiser13/Peitch/blob/main/LICENSE" aria-label="License">
       <img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=for-the-badge" alt="License" />
     </a>
-    <a href="https://github.com/phkaiser13/peitchgit/actions" aria-label="Build status">
-      <img src="https://img.shields.io/github/actions/workflow/status/phkaiser13/peitchgit/build-ph.yml?branch=main&logo=github&style=for-the-badge" alt="Build Status" />
+    <a href="https://github.com/phkaiser13/Peitch/actions" aria-label="Build status">
+      <img src="https://img.shields.io/github/actions/workflow/status/phkaiser13/Peitch/build-ph.yml?branch=main&logo=github&style=for-the-badge" alt="Build Status" />
     </a>
-    <a href="https://github.com/phkaiser13/peitchgit/graphs/contributors" aria-label="Contributors">
+    <a href="https://github.com/phkaiser13/Peitch/graphs/contributors" aria-label="Contributors">
       <img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=for-the-badge" alt="Contributions Welcome" />
     </a>
   </div>
@@ -133,8 +133,8 @@ The project uses CMake, but a simple `Makefile` wrapper provides convenient comm
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/phkaiser13/peitchgit.git
-cd peitchgit
+git clone https://github.com/phkaiser13/Peitch.git
+cd Peitch
 
 # 2. Build the project
 make

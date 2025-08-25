@@ -53,10 +53,10 @@ pub async fn create_namespace(client: &Client, name: &str, ttl_hours: u32) -> Re
     let ns_api: Api<Namespace> = Api::all(client.clone());
 
     let mut labels = BTreeMap::new();
-    labels.insert("managed-by".to_string(), "peitchgit".to_string());
+    labels.insert("managed-by".to_string(), "Peitch".to_string());
 
     let mut annotations = BTreeMap::new();
-    annotations.insert("peitchgit.io/ttl-hours".to_string(), ttl_hours.to_string());
+    annotations.insert("Peitch.io/ttl-hours".to_string(), ttl_hours.to_string());
 
     let namespace = Namespace {
         metadata: ObjectMeta {
