@@ -10,6 +10,7 @@
 // Declare the specific provisioner implementation modules.
 pub mod kind;
 pub mod k3s;
+pub mod common;
 
 use crate::cli::Provider;
 use anyhow::{anyhow, Result};

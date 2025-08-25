@@ -1,87 +1,80 @@
-/* Copyright (C) 2025 Pedro Henrique / phkaiser13
-* File: src/modules/k8s_local_dev/src/provisioners/kind.rs
-* This file provides the concrete implementation of the `Provisioner` trait for
-* 'kind' (Kubernetes in Docker). It translates the abstract methods of the trait
-* into specific command-line invocations of the `kind` executable. It handles
-* process execution, argument construction, and error reporting for all
-* interactions with `kind`.
-* SPDX-License-Identifier: Apache-2.0 */
+/*
+ * Copyright (C) 2025 Pedro Henrique / phkaiser13
+ *
+ * File: src/modules/k8s_local_dev/src/provisioners/kind.rs
+ *
+ * This file implements the provisioning logic for 'kind' (Kubernetes in Docker).
+ * It acts as a high-level wrapper around the `kind` command-line tool, translating
+ * the user's requests from our unified CLI into specific `kind` commands.
+ *
+ * Architecture:
+ * This module exposes two primary public functions: `create_cluster` and `delete_cluster`.
+ * Both functions follow a similar pattern:
+ * 1. Command Construction: A `tokio::process::Command` is built to execute the `kind` binary.
+ * The appropriate subcommand (`create cluster` or `delete cluster`) and arguments
+ * (`--name`, `--config`) are appended based on the function's parameters.
+ * 2. Execution Delegation: The constructed command is then passed to the robust
+ * `common::execute_command` utility function. This delegates the complex tasks of
+ * asynchronous execution, I/O streaming, and error handling to the shared module.
+ * 3. Prerequisite Checks: The code implicitly relies on the `kind` executable being
+ * present in the system's PATH. The `execute_command` function is designed to
+ * produce a user-friendly error message if the binary is not found.
+ *
+ * By abstracting the `kind`-specific commands into this module, we keep the main
+ * CLI logic clean and focused on dispatching, while also separating the implementation
+ * details of `kind` from other provisioners like `k3s`. This modularity makes it
+ * easy to update `kind`-related commands in the future without affecting other parts
+ * of the application.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
-use super::Provisioner;
-use anyhow::{anyhow, Context, Result};
-use async_trait::async_trait;
-use std::process::Stdio;
+use super::common::execute_command;
+use anyhow::{Context, Result};
+use std::path::Path;
 use tokio::process::Command;
 
-/// Represents the 'kind' provisioner.
-/// This is a stateless struct; its logic is contained in the `Provisioner` trait implementation.
-pub struct KindProvisioner;
-
-/// A helper function to execute an external command and handle its output.
+/// Creates a new Kubernetes cluster using `kind`.
+///
+/// This function constructs and executes the `kind create cluster` command.
 ///
 /// # Arguments
-/// * `program` - The command to execute (e.g., "kind").
-/// * `args` - A slice of string arguments for the command.
-async fn run_command(program: &str, args: &[&str]) -> Result<()> {
-    println!("> {} {}", program, args.join(" "));
+/// * `name` - The name to assign to the new `kind` cluster.
+/// * `config_path` - An optional path to a `kind` configuration YAML file.
+///
+/// # Returns
+/// An `anyhow::Result<()>` indicating the success or failure of the operation.
+pub async fn create_cluster(name: &str, config_path: Option<&Path>) -> Result<()> {
+    let mut command = Command::new("kind");
+    command.arg("create").arg("cluster").arg("--name").arg(name);
 
-    // Check if the command exists first.
-    which::which(program).with_context(|| {
-        format!(
-            "The required command '{}' was not found in your PATH. Please install it.",
-            program
-        )
-    })?;
-
-    let mut cmd = Command::new(program);
-    cmd.args(args)
-        .stdout(Stdio::inherit()) // Stream stdout directly to the user's terminal.
-        .stderr(Stdio::inherit()); // Stream stderr directly to the user's terminal.
-
-    let status = cmd
-        .status()
-        .await
-        .with_context(|| format!("Failed to execute command: '{}'", program))?;
-
-    if !status.success() {
-        return Err(anyhow!(
-            "Command '{} {}' failed with exit code: {}",
-            program,
-            args.join(" "),
-            status.code().unwrap_or(1)
-        ));
+    // If a configuration file is provided, add it to the command arguments.
+    // The `--config` flag allows for advanced cluster setup, such as multi-node clusters
+    // or custom container images.
+    if let Some(path) = config_path {
+        command.arg("--config").arg(path);
+        println!("Using configuration file: {}", path.display());
     }
 
-    Ok(())
+    execute_command(&mut command)
+        .await
+        .context("Failed to execute 'kind create cluster' command.")
 }
 
-#[async_trait]
-impl Provisioner for KindProvisioner {
-    /// Creates a 'kind' cluster by running `kind create cluster`.
-    async fn create(&self, name: &str, k8s_version: &str) -> Result<()> {
-        println!("Creating 'kind' cluster '{}' with Kubernetes v{}...", name, k8s_version);
-        let image = format!("kindest/node:v{}", k8s_version);
-        run_command(
-            "kind",
-            &["create", "cluster", "--name", name, "--image", &image],
-        )
-            .await
-            .context("Failed to create 'kind' cluster")
-    }
+/// Deletes an existing Kubernetes cluster managed by `kind`.
+///
+/// This function constructs and executes the `kind delete cluster` command.
+///
+/// # Arguments
+/// * `name` - The name of the `kind` cluster to delete.
+///
+/// # Returns
+/// An `anyhow::Result<()>` indicating the success or failure of the operation.
+pub async fn delete_cluster(name: &str) -> Result<()> {
+    let mut command = Command::new("kind");
+    command.arg("delete").arg("cluster").arg("--name").arg(name);
 
-    /// Deletes a 'kind' cluster by running `kind delete cluster`.
-    async fn delete(&self, name: &str) -> Result<()> {
-        println!("Deleting 'kind' cluster '{}'...", name);
-        run_command("kind", &["delete", "cluster", "--name", name])
-            .await
-            .context("Failed to delete 'kind' cluster")
-    }
-
-    /// Lists 'kind' clusters by running `kind get clusters`.
-    async fn list(&self) -> Result<()> {
-        println!("Listing 'kind' clusters...");
-        run_command("kind", &["get", "clusters"])
-            .await
-            .context("Failed to list 'kind' clusters")
-    }
+    execute_command(&mut command)
+        .await
+        .context("Failed to execute 'kind delete cluster' command.")
 }

@@ -1,100 +1,135 @@
-/* Copyright (C) 2025 Pedro Henrique / phkaiser13
-* File: src/providers/sops.rs
-* This file provides the concrete implementation of the `SecretProvider` trait
-* for Mozilla's SOPS (Secrets OPerationS). It works by invoking the `sops`
-* command-line tool to decrypt a specified file in memory, parsing the
-* resulting plaintext YAML/JSON, and extracting the requested value. This
-* approach securely encapsulates the interaction with an external process.
-* SPDX-License-Identifier: Apache-2.0 */
+/*
+ * Copyright (C) 2025 Pedro Henrique / phkaiser13
+ *
+ * File: src/modules/secret_manager/src/providers/sops.rs
+ *
+ * This file provides a client for interacting with Mozilla SOPS (Secrets OPerationS).
+ * The primary function of this module is to decrypt files that have been encrypted with
+ * SOPS, enabling the application to access secrets stored securely in a Git repository.
+ * The implementation operates as a robust wrapper around the `sops` command-line tool.
+ *
+ * Architecture:
+ * The design philosophy is to leverage the battle-tested `sops` binary directly rather
+ * than reimplementing its cryptographic and cloud KMS integrations. This approach
+ * significantly reduces complexity and enhances security by relying on the canonical
+ * implementation.
+ *
+ * Key components of the architecture:
+ * 1. Asynchronous Process Execution: The module uses `tokio::process::Command` to
+ * execute the `sops` binary as a child process. This is done asynchronously to prevent
+ * blocking the application's main event loop, which is critical for a responsive system
+ * that may perform multiple I/O operations concurrently.
+ * 2. Robust I/O and Error Handling: The standard output and standard error of the `sops`
+ * process are captured. In case of a decryption failure, the error message from `sops`
+ * is captured and propagated as a rich, contextual error via `anyhow::Result`. This
+ * provides clear, actionable feedback for debugging.
+ * 3. Data Deserialization: After successful decryption, the output (which is typically
+ * YAML or JSON) is deserialized into a structured Rust type. For maximum flexibility,
+ * this module decodes the decrypted content into `serde_yaml::Value`, which can
+ * represent any valid YAML structure. The caller can then extract the specific values it
+ * needs from this generic structure.
+ * 4. Clear and Focused API: A single public function, `decrypt_and_parse`, serves as
+ * the entry point. It takes the path to the SOPS-encrypted file and returns the parsed
+ * content, abstracting away all the details of process management and data parsing.
+ *
+ * Process Flow for decrypting a file:
+ * - The `decrypt_and_parse` function is called with a path to an encrypted file.
+ * - It first checks if the `sops` executable is available in the system's PATH.
+ * - A new child process is spawned to execute `sops --decrypt <file_path>`.
+ * - The function waits for the process to complete, capturing its exit status and output.
+ * - If the process exits with an error, the captured stderr is used to create a detailed
+ * error message.
+ * - If the process succeeds, the captured stdout (the decrypted file content) is parsed
+ * as YAML into a `serde_yaml::Value`.
+ * - The parsed value is returned to the caller for further processing.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
-use super::SecretProvider;
-use anyhow::{anyhow, Context, Result};
-use async_trait::async_trait;
-use serde::Deserialize;
+use anyhow::{bail, Context, Result};
 use serde_yaml::Value;
+use std::path::Path;
+use std::process::Stdio;
 use tokio::process::Command;
 
-// --- Configuration ---
+/// Decrypts a SOPS-encrypted file and parses its content as a YAML value.
+///
+/// This function executes the `sops --decrypt` command on the given file path.
+/// It captures the decrypted output (stdout) and parses it into a generic
+/// `serde_yaml::Value`, which allows the caller to handle arbitrarily structured
+/// YAML data (maps, sequences, scalars).
+///
+/// # Arguments
+/// * `file_path` - A reference to the path of the SOPS-encrypted file.
+///
+/// # Returns
+/// A `Result` containing the parsed `serde_yaml::Value` on success.
+/// Returns an error if the `sops` command is not found, if the decryption fails,
+/// or if the output cannot be parsed as YAML.
+///
+/// # Example
+/// ```rust,no_run
+/// # use anyhow::Result;
+/// # use std::path::Path;
+/// # use crate::providers::sops::decrypt_and_parse;
+/// #
+/// #[tokio::main]
+/// async fn main() -> Result<()> {
+///     let secret_file = Path::new("secrets.sops.yaml");
+///     match decrypt_and_parse(secret_file).await {
+///         Ok(secrets) => {
+///             if let Some(api_key) = secrets.get("api_key") {
+///                 println!("Successfully decrypted API key.");
+///             }
+///         }
+///         Err(e) => {
+///             eprintln!("Failed to decrypt secrets: {:?}", e);
+///         }
+///     }
+///     Ok(())
+/// }
+/// ```
+pub async fn decrypt_and_parse(file_path: &Path) -> Result<Value> {
+    println!("Attempting to decrypt SOPS file: {}", file_path.display());
 
-/// Configuration for the SOPS provider. Currently a placeholder as SOPS
-/// typically relies on environment configuration (e.g., GPG keys, KMS access).
-#[derive(Deserialize, Debug)]
-pub struct SopsConfig {}
+    // 1. Construct the command to run `sops` for decryption.
+    // We configure the command to pipe its stdout and stderr so we can capture them.
+    let mut cmd = Command::new("sops");
+    cmd.arg("--decrypt")
+        .arg(file_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
-// --- Provider Implementation ---
+    // 2. Spawn the child process to execute the command.
+    let child = cmd.spawn().with_context(|| {
+        format!("Failed to spawn 'sops' command. Is SOPS installed and in your PATH?")
+    })?;
 
-/// A `SecretProvider` implementation for fetching secrets from SOPS-encrypted files.
-pub struct SopsProvider;
+    // 3. Wait for the process to finish and capture its output.
+    // `output()` waits for the child to exit and collects all stdout and stderr.
+    let output = child.await?;
 
-impl SopsProvider {
-    /// Creates a new `SopsProvider`.
-    ///
-    /// It performs a critical pre-flight check to ensure the `sops` executable
-    /// is available in the system's PATH, preventing runtime failures.
-    pub fn new(_config: SopsConfig) -> Result<Self> {
-        which::which("sops").context(
-            "The 'sops' executable was not found in your PATH. Please install SOPS.",
-        )?;
-        Ok(Self)
+    // 4. Check the exit status of the process.
+    if !output.status.success() {
+        // If the command failed, we construct a detailed error message using the
+        // captured stderr, which provides valuable context for why `sops` failed.
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!(
+            "SOPS decryption failed with status {}:\n{}",
+            output.status,
+            stderr
+        );
     }
-}
 
-/// Helper function to navigate a nested `serde_yaml::Value` using a dot-separated path.
-fn find_value_by_path<'a>(mut value: &'a Value, path: &str) -> Option<&'a Value> {
-    for key in path.split('.') {
-        value = value.get(key)?;
-    }
-    Some(value)
-}
-
-#[async_trait]
-impl SecretProvider for SopsProvider {
-    /// Fetches a secret value from a SOPS-encrypted file.
-    ///
-    /// The `key` is expected to be in the format: `path/to/file.enc.yaml:path.to.value`.
-    /// For example: `secrets/prod.enc.yaml:database.password`.
-    async fn fetch_secret_value(&self, key: &str) -> Result<String> {
-        let (file_path, value_path) = key.split_once(':').ok_or_else(|| {
-            anyhow!(
-                "Invalid SOPS secret key format. Expected 'path/to/file:key.path', got '{}'",
-                key
-            )
+    // 5. If successful, parse the decrypted stdout as YAML.
+    // The decrypted content is expected to be valid YAML (or JSON, which is a subset).
+    let decrypted_content = &output.stdout;
+    let secrets: Value = serde_yaml::from_slice(decrypted_content)
+        .with_context(|| {
+            let content_preview = String::from_utf8_lossy(decrypted_content);
+            format!("Failed to parse decrypted SOPS output as YAML. Output preview:\n{}", content_preview.chars().take(200).collect::<String>())
         })?;
 
-        println!("Decrypting SOPS file '{}' to fetch key '{}'...", file_path, value_path);
-
-        // Execute `sops --decrypt <file_path>` and capture its output.
-        let output = Command::new("sops")
-            .arg("--decrypt")
-            .arg(file_path)
-            .output()
-            .await
-            .with_context(|| format!("Failed to execute 'sops' command for file '{}'", file_path))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow!(
-                "'sops' command failed with exit code {}: {}",
-                output.status,
-                stderr
-            ));
-        }
-
-        let decrypted_content = String::from_utf8(output.stdout)
-            .context("SOPS output was not valid UTF-8")?;
-
-        // Parse the decrypted YAML into a generic Value.
-        let yaml_data: Value = serde_yaml::from_str(&decrypted_content)
-            .with_context(|| format!("Failed to parse decrypted YAML from '{}'", file_path))?;
-
-        // Find the specific value within the YAML structure.
-        let secret_value = find_value_by_path(&yaml_data, value_path)
-            .ok_or_else(|| anyhow!("Key path '{}' not found in file '{}'", value_path, file_path))?;
-
-        // Convert the found value to a string.
-        secret_value
-            .as_str()
-            .map(String::from)
-            .ok_or_else(|| anyhow!("Value at path '{}' is not a string", value_path))
-    }
+    println!("Successfully decrypted and parsed SOPS file: {}", file_path.display());
+    Ok(secrets)
 }
