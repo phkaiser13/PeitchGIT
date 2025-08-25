@@ -1,6 +1,6 @@
 ---
 name: "Feature request"
-description: "Propose a new feature or improvement for phgit."
+description: "Propose a new feature or improvement for ph."
 title: "[FEATURE] "
 labels: ["enhancement", "needs-discussion"]
 assignees: []
@@ -29,7 +29,7 @@ body:
       description: "Describe the desired behavior in clear, actionable terms. Include mock commands, API shape, CLI flags, or UI flows if relevant."
       placeholder: |
         Example:
-        - CLI: `phgit feature <subcommand> --flag`
+        - CLI: `ph feature <subcommand> --flag`
         - Expected output / behavior
 
   - type: textarea
@@ -60,7 +60,7 @@ body:
       label: "Acceptance criteria"
       description: "What must be true for this feature to be considered complete? Provide measurable criteria."
       placeholder: |
-        - `phgit <command>` adds X flag and returns Y output
+        - `ph <command>` adds X flag and returns Y output
         - Tests covering behavior A and B are added
         - Documentation and changelog entry included
 

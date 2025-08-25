@@ -3,16 +3,16 @@
  *
  * File: release_controller.rs
  *
- * This file implements the reconciliation logic for the PhgitRelease custom resource.
+ * This file implements the reconciliation logic for the phRelease custom resource.
  * Its purpose is to manage declarative, progressive deployments within a Kubernetes
  * cluster, starting with a robust Canary release strategy. The controller ensures
  * that application releases are rolled out in a controlled, observable, and safe manner.
  *
  * Architecture:
- * The controller watches for PhgitRelease resources and orchestrates the creation and
+ * The controller watches for phRelease resources and orchestrates the creation and
  * management of underlying Kubernetes resources (Deployments, Services) to achieve the
  * desired release state. It embodies the operator pattern by continuously comparing the
- * desired state (defined in the PhgitRelease spec) with the actual state of the cluster
+ * desired state (defined in the phRelease spec) with the actual state of the cluster
  * and taking action to converge them.
  *
  * Core Logic:
@@ -29,7 +29,7 @@
  * implementation, we assume a simple Nginx deployment for demonstration.
  * - The `stable` deployment is configured with the previous version of the app,
  * and the `canary` deployment is configured with the new version specified
- * in the `PhgitRelease` spec.
+ * in the `phRelease` spec.
  * 3.  **Replica Calculation (Traffic Splitting)**: Based on the `trafficPercent`
  * defined in the `CanaryStrategy`, it calculates the required number of replicas
  * for the stable and canary deployments to approximate the desired traffic split.
@@ -39,13 +39,13 @@
  * from BOTH the stable and canary deployments using a common app label. Kubernetes'
  * native service discovery (`kube-proxy`) then handles the load balancing across
  * all selected pods, effectively splitting the traffic.
- * 5.  **Status Updates**: It meticulously updates the `PhgitRelease` status with the
+ * 5.  **Status Updates**: It meticulously updates the `phRelease` status with the
  * current phase (`Progressing`, `Succeeded`), active versions, and traffic split
  * percentage, providing crucial feedback to the user.
  * - `cleanup_release`: Triggered upon resource deletion via the finalizer. It safely
  * removes the canary Deployment and ensures the stable Deployment is scaled back to
  * 100% to handle all traffic, leaving the system in a clean state before the
- * `PhgitRelease` object is finally deleted from the API server.
+ * `phRelease` object is finally deleted from the API server.
  *
  * This implementation uses only standard Kubernetes resources, avoiding the complexity
  * of service meshes for traffic management, which makes it a more universal and
@@ -55,7 +55,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use crate::crds::{PhgitRelease, PhgitReleaseStatus, StrategyType};
+use crate::crds::{phRelease, phReleaseStatus, StrategyType};
 use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::core::v1::Service;
 use kube::{
@@ -73,13 +73,13 @@ use std::time::Duration;
 use thiserror::Error;
 
 // The unique identifier for our controller's finalizer.
-const RELEASE_FINALIZER: &str = "phgit.io/release-finalizer";
+const RELEASE_FINALIZER: &str = "ph.io/release-finalizer";
 const DEFAULT_REPLICAS: i32 = 5; // Default total replicas for the application.
 
 // Custom error types for the controller for better diagnostics.
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Missing PhgitRelease spec")]
+    #[error("Missing phRelease spec")]
     MissingSpec,
 
     #[error("Kubernetes API error: {0}")]
@@ -97,12 +97,12 @@ pub struct Context {
     pub client: Client,
 }
 
-/// Main reconciliation function for the PhgitRelease resource.
-pub async fn reconcile(release: Arc<PhgitRelease>, ctx: Arc<Context>) -> Result<Action, Error> {
+/// Main reconciliation function for the phRelease resource.
+pub async fn reconcile(release: Arc<phRelease>, ctx: Arc<Context>) -> Result<Action, Error> {
     let ns = release.namespace().ok_or_else(|| {
-        KubeError::Request(http::Error::new("Missing namespace for PhgitRelease"))
+        KubeError::Request(http::Error::new("Missing namespace for phRelease"))
     })?;
-    let releases: Api<PhgitRelease> = Api::namespaced(ctx.client.clone(), &ns);
+    let releases: Api<phRelease> = Api::namespaced(ctx.client.clone(), &ns);
 
     // Use the finalizer helper to manage the resource lifecycle.
     finalizer(&releases, RELEASE_FINALIZER, release, |event| async {
@@ -116,7 +116,7 @@ pub async fn reconcile(release: Arc<PhgitRelease>, ctx: Arc<Context>) -> Result<
 }
 
 /// The core logic for creating and managing a Canary release.
-async fn apply_release(release: Arc<PhgitRelease>, ctx: Arc<Context>) -> Result<Action, Error> {
+async fn apply_release(release: Arc<phRelease>, ctx: Arc<Context>) -> Result<Action, Error> {
     let client = ctx.client.clone();
     let ns = release.namespace().unwrap();
     let spec = release.spec.as_ref().ok_or(Error::MissingSpec)?;
@@ -124,7 +124,7 @@ async fn apply_release(release: Arc<PhgitRelease>, ctx: Arc<Context>) -> Result<
     // APIs for Kubernetes resources we will be managing.
     let deployments: Api<Deployment> = Api::namespaced(client.clone(), &ns);
     let services: Api<Service> = Api::namespaced(client.clone(), &ns);
-    let releases: Api<PhgitRelease> = Api::namespaced(client.clone(), &ns);
+    let releases: Api<phRelease> = Api::namespaced(client.clone(), &ns);
 
     // --- 1. Define Names and Labels ---
     let app_name = &spec.app_name;
@@ -144,7 +144,7 @@ async fn apply_release(release: Arc<PhgitRelease>, ctx: Arc<Context>) -> Result<
     services
         .patch(
             app_name,
-            &PatchParams::apply("phgit-release-controller"),
+            &PatchParams::apply("ph-release-controller"),
             &Patch::Apply(&service),
         )
         .await?;
@@ -172,7 +172,7 @@ async fn apply_release(release: Arc<PhgitRelease>, ctx: Arc<Context>) -> Result<
     deployments
         .patch(
             &stable_name,
-            &PatchParams::apply("phgit-release-controller"),
+            &PatchParams::apply("ph-release-controller"),
             &Patch::Apply(&stable_dep_def),
         )
         .await?;
@@ -182,13 +182,13 @@ async fn apply_release(release: Arc<PhgitRelease>, ctx: Arc<Context>) -> Result<
      deployments
         .patch(
             &canary_name,
-            &PatchParams::apply("phgit-release-controller"),
+            &PatchParams::apply("ph-release-controller"),
             &Patch::Apply(&canary_dep_def),
         )
         .await?;
 
     // --- 8. Update Status ---
-    let new_status = PhgitReleaseStatus {
+    let new_status = phReleaseStatus {
         phase: if traffic_percent == 100 { "Succeeded".to_string() } else { "Progressing".to_string() },
         stable_version: Some(stable_version),
         canary_version: Some(canary_version.clone()),
@@ -196,23 +196,23 @@ async fn apply_release(release: Arc<PhgitRelease>, ctx: Arc<Context>) -> Result<
     };
 
     let patch = Patch::Apply(json!({
-        "apiVersion": "phgit.io/v1alpha1",
-        "kind": "PhgitRelease",
+        "apiVersion": "ph.io/v1alpha1",
+        "kind": "phRelease",
         "status": new_status,
     }));
     releases
-        .patch_status(&release.name_any(), &PatchParams::apply("phgit-release-controller"), &patch)
+        .patch_status(&release.name_any(), &PatchParams::apply("ph-release-controller"), &patch)
         .await
         .map_err(|e| Error::StatusUpdateError(e.to_string()))?;
 
-    println!("Successfully reconciled PhgitRelease '{}'. Stable replicas: {}, Canary replicas: {}", release.name_any(), stable_replicas, canary_replicas);
+    println!("Successfully reconciled phRelease '{}'. Stable replicas: {}, Canary replicas: {}", release.name_any(), stable_replicas, canary_replicas);
 
     // Requeue to check status periodically.
     Ok(Action::requeue(Duration::from_secs(60)))
 }
 
 /// Cleans up the resources created for a release.
-async fn cleanup_release(release: Arc<PhgitRelease>, ctx: Arc<Context>) -> Result<Action, Error> {
+async fn cleanup_release(release: Arc<phRelease>, ctx: Arc<Context>) -> Result<Action, Error> {
     let client = ctx.client.clone();
     let ns = release.namespace().unwrap();
     let spec = release.spec.as_ref().ok_or(Error::MissingSpec)?;
@@ -241,19 +241,19 @@ async fn cleanup_release(release: Arc<PhgitRelease>, ctx: Arc<Context>) -> Resul
 
     // In a real scenario, you might also want to ensure the stable deployment is
     // scaled up to DEFAULT_REPLICAS here. For simplicity, we assume the next
-    // reconciliation of a new or existing PhgitRelease will handle this.
+    // reconciliation of a new or existing phRelease will handle this.
 
     Ok(Action::await_change())
 }
 
 /// Error handling function for the reconciliation loop.
-pub async fn on_error(release: Arc<PhgitRelease>, error: &Error, ctx: Arc<Context>) -> Action {
-    eprintln!("Reconciliation error for PhgitRelease '{}': {:?}", release.name_any(), error);
+pub async fn on_error(release: Arc<phRelease>, error: &Error, ctx: Arc<Context>) -> Action {
+    eprintln!("Reconciliation error for phRelease '{}': {:?}", release.name_any(), error);
 
-    let releases: Api<PhgitRelease> = Api::namespaced(ctx.client.clone(), &release.namespace().unwrap());
+    let releases: Api<phRelease> = Api::namespaced(ctx.client.clone(), &release.namespace().unwrap());
 
     // Update the status to "Failed" to provide user feedback.
-    let failed_status = PhgitReleaseStatus {
+    let failed_status = phReleaseStatus {
         phase: "Failed".to_string(),
         stable_version: release.status.as_ref().and_then(|s| s.stable_version.clone()),
         canary_version: release.status.as_ref().and_then(|s| s.canary_version.clone()),
@@ -261,12 +261,12 @@ pub async fn on_error(release: Arc<PhgitRelease>, error: &Error, ctx: Arc<Contex
     };
 
     let patch = Patch::Apply(json!({
-        "apiVersion": "phgit.io/v1alpha1",
-        "kind": "PhgitRelease",
+        "apiVersion": "ph.io/v1alpha1",
+        "kind": "phRelease",
         "status": failed_status,
     }));
 
-    if let Err(e) = releases.patch_status(&release.name_any(), &PatchParams::apply("phgit-release-controller"), &patch).await {
+    if let Err(e) = releases.patch_status(&release.name_any(), &PatchParams::apply("ph-release-controller"), &patch).await {
         eprintln!("Failed to update status on error: {}", e);
     }
 

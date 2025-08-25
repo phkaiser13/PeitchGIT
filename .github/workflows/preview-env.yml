@@ -103,7 +103,7 @@ jobs:
           
           # Execute the compiled Rust binary, which will handle the logic.
           echo "Executing k8s_preview module..."
-          ./target/release/phgit_k8s_preview
+          ./target/release/ph_k8s_preview
           
           # Clean up the temporary kubeconfig file.
           rm "$KUBECONFIG_FILE"
@@ -149,6 +149,6 @@ jobs:
           export KUBECONFIG="$KUBECONFIG_FILE"
 
           echo "Executing k8s_preview module for teardown..."
-          ./target/release/phgit_k8s_preview
+          ./target/release/ph_k8s_preview
           
           rm "$KUBECONFIG_FILE"

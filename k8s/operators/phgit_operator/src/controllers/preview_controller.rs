@@ -3,16 +3,16 @@
  *
  * File: preview_controller.rs
  *
- * This file implements the reconciliation logic for the PhgitPreview custom resource.
+ * This file implements the reconciliation logic for the phPreview custom resource.
  * Its primary purpose is to manage ephemeral preview environments within a Kubernetes
- * cluster. The controller watches for PhgitPreview objects and, upon creation or update,
+ * cluster. The controller watches for phPreview objects and, upon creation or update,
  * triggers the deployment of application manifests from a specified Git repository into a
  * temporary, isolated namespace.
  *
  * Architecture:
  * The controller follows the standard Kubernetes operator pattern, driven by a reconcile
  * loop that seeks to bring the cluster's actual state in line with the desired state
- * defined by the PhgitPreview resource. This updated version incorporates a robust
+ * defined by the phPreview resource. This updated version incorporates a robust
  * finalizer mechanism to ensure graceful cleanup and detailed status updates to provide
  * clear feedback on the resource's state.
  *
@@ -20,7 +20,7 @@
  * - `reconcile`: The main entry point for the reconciliation loop. It orchestrates the
  * entire process, from adding finalizers to triggering the creation or deletion of
  * preview environments.
- * - Finalizer Management: On resource creation, it adds a custom finalizer (`phgit.io/finalizer`).
+ * - Finalizer Management: On resource creation, it adds a custom finalizer (`ph.io/finalizer`).
  * This prevents the resource from being deleted from the Kubernetes API until the
  * controller has successfully performed all cleanup logic.
  * - Deletion Handling: When a resource is marked for deletion (i.e., `deletion_timestamp`
@@ -32,13 +32,13 @@
  * 2. Clones the specified Git repository at a given revision.
  * 3. Locates Kubernetes manifest files (YAML) within the cloned repository.
  * 4. Parses and applies each manifest to the newly created namespace.
- * 5. Patches the `PhgitPreview` resource's status subresource to reflect the outcome,
+ * 5. Patches the `phPreview` resource's status subresource to reflect the outcome,
  * setting conditions like `Deployed` and recording the `namespace` and `url`.
  * - `cleanup_preview`: This function handles the teardown of the preview environment. It is
  * responsible for deleting the entire namespace, which garbage-collects all associated
  * resources.
  * - Status Updates: The controller now provides detailed status updates via the
- * `.status` subresource of the `PhgitPreview` CRD. It reports the current phase
+ * `.status` subresource of the `phPreview` CRD. It reports the current phase
  * (e.g., `Creating`, `Deployed`, `Failed`, `Terminating`) and the name of the
  * managed namespace. This feedback is critical for user observability.
  *
@@ -64,10 +64,10 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio::process::Command;
 
-use crate::crds::{PhgitPreview, PhgitPreviewStatus, StatusCondition};
+use crate::crds::{phPreview, phPreviewStatus, StatusCondition};
 
 // The unique identifier for our controller's finalizer.
-const PREVIEW_FINALIZER: &str = "phgit.io/finalizer";
+const PREVIEW_FINALIZER: &str = "ph.io/finalizer";
 
 // Custom error types for the controller for better diagnostics and status reporting.
 #[derive(Debug, Error)]
@@ -87,7 +87,7 @@ pub enum PreviewError {
     #[error("Kubernetes API error: {0}")]
     KubeError(#[from] KubeError),
 
-    #[error("Missing PhgitPreview spec")]
+    #[error("Missing phPreview spec")]
     MissingSpec,
 }
 
@@ -101,12 +101,12 @@ pub struct Context {
 /// making them easily identifiable and manageable.
 ///
 /// # Arguments
-/// * `preview` - A reference to the PhgitPreview resource.
+/// * `preview` - A reference to the phPreview resource.
 ///
 /// # Returns
 /// A `Result` containing the namespace name string or a `PreviewError` if crucial
 /// metadata (like UID) is missing.
-fn generate_namespace_name(preview: &PhgitPreview) -> Result<String, PreviewError> {
+fn generate_namespace_name(preview: &phPreview) -> Result<String, PreviewError> {
     let spec = preview.spec.as_ref().ok_or(PreviewError::MissingSpec)?;
     let uid = preview
         .uid()
@@ -123,32 +123,32 @@ fn generate_namespace_name(preview: &PhgitPreview) -> Result<String, PreviewErro
     ))
 }
 
-/// Updates the status subresource of the PhgitPreview custom resource.
+/// Updates the status subresource of the phPreview custom resource.
 ///
 /// This is a critical function for providing feedback to the user. It patches the
 /// `.status` field of the resource to reflect the current state of the reconciliation.
 ///
 /// # Arguments
-/// * `preview` - The PhgitPreview resource instance.
+/// * `preview` - The phPreview resource instance.
 /// * `client` - The Kubernetes API client.
 /// * `status` - The new status to be applied.
 async fn update_status(
-    preview: Arc<PhgitPreview>,
+    preview: Arc<phPreview>,
     client: Client,
-    status: PhgitPreviewStatus,
+    status: phPreviewStatus,
 ) -> Result<(), PreviewError> {
     let ns = preview.namespace().unwrap(); // We expect namespace to be present.
     let name = preview.name_any();
-    let previews: Api<PhgitPreview> = Api::namespaced(client, &ns);
+    let previews: Api<phPreview> = Api::namespaced(client, &ns);
 
     // Use a server-side apply patch to update the status. This is the
     // recommended approach for updating subresources.
     let patch = Patch::Apply(serde_json::json!({
-        "apiVersion": "phgit.io/v1alpha1",
-        "kind": "PhgitPreview",
+        "apiVersion": "ph.io/v1alpha1",
+        "kind": "phPreview",
         "status": status,
     }));
-    let ps = PatchParams::apply("phgit-preview-controller").force();
+    let ps = PatchParams::apply("ph-preview-controller").force();
 
     previews
         .patch_status(&name, &ps, &patch)
@@ -158,21 +158,21 @@ async fn update_status(
     Ok(())
 }
 
-/// Main reconciliation function for the PhgitPreview resource.
+/// Main reconciliation function for the phPreview resource.
 /// This function is the entry point of the controller's reconciliation loop.
 /// It uses the `kube_rs::runtime::finalizer` helper to manage cleanup logic.
 ///
 /// # Arguments
-/// * `preview` - An Arc-wrapped PhgitPreview resource that triggered the reconciliation.
+/// * `preview` - An Arc-wrapped phPreview resource that triggered the reconciliation.
 /// * `ctx` - An Arc-wrapped Context containing the Kubernetes client.
 ///
 /// # Returns
 /// A `Result` with either an `Action` to be taken by the controller runtime or a `PreviewError`.
-pub async fn reconcile(preview: Arc<PhgitPreview>, ctx: Arc<Context>) -> Result<Action, PreviewError> {
+pub async fn reconcile(preview: Arc<phPreview>, ctx: Arc<Context>) -> Result<Action, PreviewError> {
     let ns = preview
         .namespace()
         .ok_or_else(|| KubeError::Request(http::Error::new("Missing namespace")))?;
-    let previews: Api<PhgitPreview> = Api::namespaced(ctx.client.clone(), &ns);
+    let previews: Api<phPreview> = Api::namespaced(ctx.client.clone(), &ns);
 
     // The `finalizer` function from `kube-rs` simplifies finalizer logic.
     // It examines the resource and determines whether to run the apply or cleanup logic.
@@ -200,15 +200,15 @@ pub async fn reconcile(preview: Arc<PhgitPreview>, ctx: Arc<Context>) -> Result<
 /// and robustly updates the resource's status.
 ///
 /// # Arguments
-/// * `preview` - The PhgitPreview resource instance.
+/// * `preview` - The phPreview resource instance.
 /// * `ctx` - The controller context with the Kubernetes client.
-async fn apply_preview(preview: Arc<PhgitPreview>, ctx: Arc<Context>) -> Result<Action, PreviewError> {
+async fn apply_preview(preview: Arc<phPreview>, ctx: Arc<Context>) -> Result<Action, PreviewError> {
     let client = ctx.client.clone();
     let ns_name = generate_namespace_name(&preview)?;
 
     // --- 1. Update Status to "Creating" ---
     // Immediately update the status to indicate that the reconciliation has started.
-    let initial_status = PhgitPreviewStatus {
+    let initial_status = phPreviewStatus {
         namespace: Some(ns_name.clone()),
         conditions: vec![StatusCondition::new(
             "Creating".to_string(),
@@ -247,7 +247,7 @@ async fn apply_preview(preview: Arc<PhgitPreview>, ctx: Arc<Context>) -> Result<
     // --- 3. Clone the Git repository ---
     // A temporary directory is used to house the cloned repository contents.
     let temp_dir = tempfile::Builder::new()
-        .prefix("phgit-preview-")
+        .prefix("ph-preview-")
         .tempdir()
         .map_err(|e| PreviewError::GitCloneError(e.to_string()))?;
     let repo_path = temp_dir.path().to_str().unwrap();
@@ -327,7 +327,7 @@ async fn apply_preview(preview: Arc<PhgitPreview>, ctx: Arc<Context>) -> Result<
     // --- 5. Update Status to "Deployed" ---
     // On success, we patch the status to reflect the successful deployment.
     println!("Preview environment for '{}' created successfully in namespace '{}'.", preview.name_any(), ns_name);
-    let final_status = PhgitPreviewStatus {
+    let final_status = phPreviewStatus {
         namespace: Some(ns_name),
         conditions: vec![StatusCondition::new(
             "Deployed".to_string(),
@@ -342,18 +342,18 @@ async fn apply_preview(preview: Arc<PhgitPreview>, ctx: Arc<Context>) -> Result<
 
 /// Cleans up the resources created for a preview environment.
 ///
-/// This function is triggered by the finalizer logic when a PhgitPreview resource
+/// This function is triggered by the finalizer logic when a phPreview resource
 /// is marked for deletion. It ensures the complete removal of the preview namespace.
 ///
 /// # Arguments
-/// * `preview` - The PhgitPreview resource being deleted.
+/// * `preview` - The phPreview resource being deleted.
 /// * `ctx` - The controller context with the Kubernetes client.
-async fn cleanup_preview(preview: Arc<PhgitPreview>, ctx: Arc<Context>) -> Result<Action, PreviewError> {
+async fn cleanup_preview(preview: Arc<phPreview>, ctx: Arc<Context>) -> Result<Action, PreviewError> {
     let client = ctx.client.clone();
     let ns_name = generate_namespace_name(&preview)?;
 
     // --- 1. Update Status to "Terminating" ---
-    let status = PhgitPreviewStatus {
+    let status = phPreviewStatus {
         namespace: Some(ns_name.clone()),
         conditions: vec![StatusCondition::new(
             "Terminating".to_string(),
@@ -399,17 +399,17 @@ async fn cleanup_preview(preview: Arc<PhgitPreview>, ctx: Arc<Context>) -> Resul
 /// returns an error. It updates the resource status with the error message.
 ///
 /// # Arguments
-/// * `preview` - The PhgitPreview resource that caused the error.
+/// * `preview` - The phPreview resource that caused the error.
 /// * `error` - The `PreviewError` that occurred.
 /// * `ctx` - The controller context.
 ///
 /// # Returns
 /// An `Action` to instruct the controller runtime on how to proceed.
-pub async fn on_error(preview: Arc<PhgitPreview>, error: &PreviewError, ctx: Arc<Context>) -> Action {
-    eprintln!("Reconciliation error for PhgitPreview '{}': {:?}", preview.name_any(), error);
+pub async fn on_error(preview: Arc<phPreview>, error: &PreviewError, ctx: Arc<Context>) -> Action {
+    eprintln!("Reconciliation error for phPreview '{}': {:?}", preview.name_any(), error);
 
     // When an error occurs, update the status to "Failed" with a descriptive message.
-    let failed_status = PhgitPreviewStatus {
+    let failed_status = phPreviewStatus {
         namespace: preview.status.as_ref().and_then(|s| s.namespace.clone()),
         conditions: vec![StatusCondition::new(
             "Failed".to_string(),

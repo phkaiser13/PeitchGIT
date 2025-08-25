@@ -7,8 +7,8 @@ include(vcpkg_common_functions)
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO phkaiser13/peitchgit
-    REF "v@PHGIT_VERSION@"
-    SHA512 "@PHGIT_SHA512@"
+    REF "v@ph_VERSION@"
+    SHA512 "@ph_SHA512@"
     HEAD_REF main
 )
 
@@ -27,8 +27,8 @@ vcpkg_cmake_install()
 
 # Move the executable into the tools folder
 file(INSTALL
-    "${CURRENT_PACKAGES_DIR}/bin/phgit${VCPKG_HOST_EXECUTABLE_SUFFIX}"
-    DESTINATION "${CURRENT_PACKAGES_DIR}/tools/phgit"
+    "${CURRENT_PACKAGES_DIR}/bin/ph${VCPKG_HOST_EXECUTABLE_SUFFIX}"
+    DESTINATION "${CURRENT_PACKAGES_DIR}/tools/ph"
 )
 file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/bin" "${CURRENT_PACKAGES_DIR}/debug")
 

@@ -56,7 +56,7 @@ impl SyncEngine {
         // State is stored in a hidden file to avoid cluttering the user's working directory.
         let state_path = Path::new(source_path)
             .join(".git")
-            .join("phgit_sync_state.json");
+            .join("ph_sync_state.json");
 
         let state = if state_path.exists() {
             let state_json = std::fs::read_to_string(&state_path)?;

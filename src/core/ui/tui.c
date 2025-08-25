@@ -212,7 +212,7 @@ static size_t compute_name_column_width(const MenuItem* items, size_t count) {
 static void display_menu(const MenuItem* items, size_t count) {
     platform_clear_screen();
     printf("========================================\n");
-    printf("  phgit - The Polyglot Git Helper\n");
+    printf("  ph - The Polyglot Git Helper\n");
     printf("========================================\n\n");
     printf("Please select a command:\n\n");
 
@@ -327,7 +327,7 @@ void tui_show_main_menu(void) {
         if (choice > 0 && (size_t)choice <= item_count) {
             /* safe because choice is within item_count */
             const MenuItem* selected = &menu_items[choice - 1];
-            const char* argv[] = { "phgit", selected->name ? selected->name : "", NULL };
+            const char* argv[] = { "ph", selected->name ? selected->name : "", NULL };
 
             printf("\nExecuting '%s'...\n", selected->name ? selected->name : "<unknown>");
             printf("----------------------------------------\n");
@@ -346,7 +346,7 @@ void tui_show_main_menu(void) {
         free_menu_items(menu_items, item_count);
     }
 
-    printf("\nExiting phgit. Goodbye!\n");
+    printf("\nExiting ph. Goodbye!\n");
 }
 
 void tui_print_error(const char* message) {

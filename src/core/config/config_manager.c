@@ -109,7 +109,7 @@ void config_cleanup(void) {
 /**
  * @see config_manager.h
  */
-phgitStatus config_load(const char* filename) {
+phStatus config_load(const char* filename) {
     // Ensure the previous configuration is cleared before loading a new one.
     config_cleanup();
 
@@ -118,7 +118,7 @@ phgitStatus config_load(const char* filename) {
         // It's not an error if the config file doesn't exist.
         // The application will just use default values.
         logger_log(LOG_LEVEL_INFO, "CONFIG", "Configuration file not found. Using defaults.");
-        return phgit_SUCCESS;
+        return ph_SUCCESS;
     }
 
     char line[1024];
@@ -152,7 +152,7 @@ phgitStatus config_load(const char* filename) {
 
     fclose(file);
     logger_log(LOG_LEVEL_INFO, "CONFIG", "Configuration loaded successfully.");
-    return phgit_SUCCESS;
+    return ph_SUCCESS;
 }
 
 /**
@@ -182,9 +182,9 @@ char* config_get_value(const char* key) {
 /**
  * @see config_manager.h
  */
-phgitStatus config_set_value(const char* key, const char* value) {
+phStatus config_set_value(const char* key, const char* value) {
     if (!key || !value) {
-        return phgit_ERROR_INVALID_ARGS;
+        return ph_ERROR_INVALID_ARGS;
     }
 
     unsigned long hash = hash_string(key);
@@ -198,11 +198,11 @@ phgitStatus config_set_value(const char* key, const char* value) {
             char* new_value = strdup(value);
             if (!new_value) {
                 logger_log(LOG_LEVEL_FATAL, "CONFIG", "Memory allocation failed for config value update.");
-                return phgit_ERROR_GENERAL;
+                return ph_ERROR_GENERAL;
             }
             free(current->value); // Free the old value
             current->value = new_value; // Assign the new one
-            return phgit_SUCCESS;
+            return ph_SUCCESS;
         }
         current = current->next;
     }
@@ -211,7 +211,7 @@ phgitStatus config_set_value(const char* key, const char* value) {
     ConfigNode* new_node = (ConfigNode*)malloc(sizeof(ConfigNode));
     if (!new_node) {
         logger_log(LOG_LEVEL_FATAL, "CONFIG", "Memory allocation failed for new config node.");
-        return phgit_ERROR_GENERAL;
+        return ph_ERROR_GENERAL;
     }
 
     new_node->key = strdup(key);
@@ -223,12 +223,12 @@ phgitStatus config_set_value(const char* key, const char* value) {
         free(new_node->key);   // free() on NULL is safe
         free(new_node->value); // free() on NULL is safe
         free(new_node);
-        return phgit_ERROR_GENERAL;
+        return ph_ERROR_GENERAL;
     }
 
     // Prepend the new node to the list at the calculated index.
     new_node->next = g_config_table[index];
     g_config_table[index] = new_node;
 
-    return phgit_SUCCESS;
+    return ph_SUCCESS;
 }

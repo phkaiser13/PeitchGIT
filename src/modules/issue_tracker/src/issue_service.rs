@@ -75,7 +75,7 @@ impl IssueTrackerService for GitHubApiService {
         let response = self.client
             .get(&url)
             // It's good practice to set a User-Agent.
-            .header("User-Agent", "phgit-issue-tracker-module/1.0")
+            .header("User-Agent", "ph-issue-tracker-module/1.0")
             .send()
             .await?
             .error_for_status()?; // This will error on 4xx/5xx responses.

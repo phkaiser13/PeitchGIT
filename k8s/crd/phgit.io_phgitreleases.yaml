@@ -1,19 +1,19 @@
 #
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
 #
-# File: phgit.io_phgitreleases.yaml
+# File: ph.io_phreleases.yaml
 #
-# This file defines the Custom Resource Definition (CRD) for the PhgitRelease
+# This file defines the Custom Resource Definition (CRD) for the phRelease
 # resource. This CRD provides a high-level, declarative API for managing
 # complex release strategies like Canary and Blue-Green deployments.
 #
 # Architecture:
-# - It establishes the 'PhgitRelease' kind within the 'phgit.io' API group.
+# - It establishes the 'phRelease' kind within the 'ph.io' API group.
 # - The `spec` is designed to be abstract and user-friendly. A user specifies
 #   *what* they want (e.g., a Canary release of version 1.2.0 with 10% traffic)
 #   without needing to know the low-level details of manipulating Istio
 #   VirtualServices or other service mesh resources.
-# - The Phgit Operator will translate this high-level intent into the necessary
+# - The ph Operator will translate this high-level intent into the necessary
 #   low-level Kubernetes resource manipulations.
 # - The `status` field provides a detailed, real-time view of the release's
 #   progress, including which versions are active, the current traffic split,
@@ -26,14 +26,14 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: phgitreleases.phgit.io
+  name: phreleases.ph.io
 spec:
-  group: phgit.io
+  group: ph.io
   scope: Namespaced
   names:
-    plural: phgitreleases
-    singular: phgitrelease
-    kind: PhgitRelease
+    plural: phreleases
+    singular: phrelease
+    kind: phRelease
     shortNames:
       - pgrls
   versions:

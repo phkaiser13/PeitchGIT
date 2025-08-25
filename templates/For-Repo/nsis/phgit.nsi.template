@@ -1,12 +1,12 @@
 /* Copyright (C) 2025 Pedro Henrique / phkaiser13
 *
-* File: phgit.nsi
+* File: ph.nsi
 *
-* This NSIS script is the primary installer for the phgit application. It is the
+* This NSIS script is the primary installer for the ph application. It is the
 * single source of truth for all system integration tasks. Its responsibilities include:
 *
-* 1.  Extracting all application files, including the main executable (phgit.exe)
-*     and the C++ post-installation assistant (phgit-installer.exe).
+* 1.  Extracting all application files, including the main executable (ph.exe)
+*     and the C++ post-installation assistant (ph-installer.exe).
 * 2.  Creating the uninstaller and the necessary registry entries for a clean
 *     "Add/Remove Programs" experience.
 * 3.  Optionally adding the application's binary directory to the system PATH.
@@ -30,8 +30,8 @@ Unicode true
 ;--------------------------------
 ; Product Information
 ;--------------------------------
-!define PRODUCT_NAME "phgit"
-!define PRODUCT_VERSION "@PHGIT_VERSION@"
+!define PRODUCT_NAME "ph"
+!define PRODUCT_VERSION "@ph_VERSION@"
 !define PRODUCT_PUBLISHER "Pedro Henrique / phkaiser13"
 !define PRODUCT_WEBSITE "https://github.com/phkaiser13/peitchgit"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
@@ -41,7 +41,7 @@ Unicode true
 ; Installer Metadata
 ;--------------------------------
 Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
-OutFile "phgit-${PRODUCT_VERSION}-installer.exe"
+OutFile "ph-${PRODUCT_VERSION}-installer.exe"
 InstallDir "$PROGRAMFILES\${PRODUCT_NAME}"
 InstallDirRegKey HKLM "${PRODUCT_UNINST_KEY}" "InstallLocation"
 RequestExecutionLevel admin
@@ -64,8 +64,8 @@ BrandingText " "
 !define MUI_UNABORTWARNING
 
 ; Finish page configuration
-!define MUI_FINISHPAGE_RUN "$INSTDIR\bin\phgit.exe"
-!define MUI_FINISHPAGE_RUN_TEXT "Run phgit now"
+!define MUI_FINISHPAGE_RUN "$INSTDIR\bin\ph.exe"
+!define MUI_FINISHPAGE_RUN_TEXT "Run ph now"
 !define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
 !define MUI_FINISHPAGE_SHOWREADME "${PRODUCT_WEBSITE}"
 !define MUI_FINISHPAGE_SHOWREADME_TEXT "Visit project website"
@@ -206,12 +206,12 @@ FunctionEnd
 ; Installer Initialization
 ;--------------------------------
 Function .onInit
-    StrCpy $LogFile "$TEMP\phgit_installer.log"
+    StrCpy $LogFile "$TEMP\ph_installer.log"
     StrCpy $RemoveUserData "0"
     StrCpy $PathAdded "0"
     FileOpen $0 "$LogFile" w
     ${If} $0 != ""
-        FileWrite $0 "phgit Installer Log - Session Started$\r$\n"
+        FileWrite $0 "ph Installer Log - Session Started$\r$\n"
         FileClose $0
     ${EndIf}
     Push "Installer initialization completed."
@@ -220,7 +220,7 @@ Function .onInit
     ReadRegStr $0 HKLM "${PRODUCT_UNINST_KEY}" "InstallLocation"
     ${If} $0 != ""
         MessageBox MB_YESNO|MB_ICONQUESTION \
-            "phgit is already installed in '$0'.$\n$\nDo you want to continue and potentially overwrite the existing installation?" \
+            "ph is already installed in '$0'.$\n$\nDo you want to continue and potentially overwrite the existing installation?" \
             IDYES continue IDNO abort
         abort:
             Abort
@@ -232,15 +232,15 @@ FunctionEnd
 ; Installation Sections
 ;--------------------------------
 
-Section "phgit Core" SecCore
+Section "ph Core" SecCore
     SectionIn RO
     SetOutPath "$INSTDIR"
-    Push "Starting installation of core phgit application."
+    Push "Starting installation of core ph application."
     Call WriteLog
     CreateDirectory "$INSTDIR\bin"
     CreateDirectory "$INSTDIR\config"
-    File /oname=bin\phgit.exe "phgit.exe"
-    File /oname=bin\phgit-installer.exe "phgit-installer.exe"
+    File /oname=bin\ph.exe "ph.exe"
+    File /oname=bin\ph-installer.exe "ph-installer.exe"
     File /oname=config\config.json "config.json"
     File /oname=LICENSE.txt "LICENSE"
     File /oname=README.md "README.md"
@@ -263,10 +263,10 @@ Section "phgit Core" SecCore
     ; It will not install anything silently; it will guide the user if action is needed.
     DetailPrint "Running post-installation assistant to check for required dependencies..."
     DetailPrint "A console window will open to guide you through the process."
-    Push "Executing C++ assistant: $INSTDIR\bin\phgit-installer.exe"
+    Push "Executing C++ assistant: $INSTDIR\bin\ph-installer.exe"
     Call WriteLog
 
-    ExecWait '"$INSTDIR\bin\phgit-installer.exe"' $0
+    ExecWait '"$INSTDIR\bin\ph-installer.exe"' $0
     ${If} $0 != 0
         Push "C++ assistant reported an issue or was closed with exit code: $0"
         Call WriteLog
@@ -279,7 +279,7 @@ Section "phgit Core" SecCore
 SectionEnd
 
 Section "Add to System PATH" SecPath
-    Push "Adding phgit to system PATH."
+    Push "Adding ph to system PATH."
     Call WriteLog
     Push "$INSTDIR\bin"
     Call AddToPath
@@ -288,14 +288,14 @@ Section "Add to System PATH" SecPath
 SectionEnd
 
 Section /o "Create Desktop Shortcut" SecDesktop
-    CreateShortCut "$DESKTOP\phgit.lnk" "$INSTDIR\bin\phgit.exe" "" "$INSTDIR\bin\phgit.exe" 0
+    CreateShortCut "$DESKTOP\ph.lnk" "$INSTDIR\bin\ph.exe" "" "$INSTDIR\bin\ph.exe" 0
     Push "Desktop shortcut created."
     Call WriteLog
 SectionEnd
 
 Section "Create Start Menu Shortcuts" SecStartMenu
     CreateDirectory "$SMPROGRAMS\${PRODUCT_NAME}"
-    CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\phgit.lnk" "$INSTDIR\bin\phgit.exe"
+    CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\ph.lnk" "$INSTDIR\bin\ph.exe"
     CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\Uninstall ${PRODUCT_NAME}.lnk" "$INSTDIR\uninstall.exe"
     CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\Documentation.lnk" "$INSTDIR\README.md"
     Push "Start Menu shortcuts created."
@@ -306,9 +306,9 @@ SectionEnd
 ; Section Descriptions
 ;--------------------------------
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
-    !insertmacro MUI_DESCRIPTION_TEXT ${SecCore} "Installs the core phgit application and runs the dependency checker. (Required)"
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecCore} "Installs the core ph application and runs the dependency checker. (Required)"
     !insertmacro MUI_DESCRIPTION_TEXT ${SecPath} "Adds the application directory to the system PATH for easy command-line access."
-    !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop} "Creates a shortcut to phgit on your desktop."
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecDesktop} "Creates a shortcut to ph on your desktop."
     !insertmacro MUI_DESCRIPTION_TEXT ${SecStartMenu} "Creates shortcuts in the Start Menu."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
@@ -343,7 +343,7 @@ Function un.CustomUninstallPage
         Abort
     ${EndIf}
     ${NSD_CreateLabel} 0 0 100% 30u \
-        "The following phgit components will be removed:$\n$\n\
+        "The following ph components will be removed:$\n$\n\
         • Application files and binaries$\n\
         • Registry entries and Start Menu shortcuts$\n\
         • System PATH entry (if added by installer)"
@@ -391,10 +391,10 @@ FunctionEnd
 ; Uninstaller Section
 ;--------------------------------
 Function un.onInit
-    StrCpy $LogFile "$TEMP\phgit_uninstaller.log"
+    StrCpy $LogFile "$TEMP\ph_uninstaller.log"
     FileOpen $0 "$LogFile" w
     ${If} $0 != ""
-        FileWrite $0 "phgit Uninstaller Log - Session Started$\r$\n"
+        FileWrite $0 "ph Uninstaller Log - Session Started$\r$\n"
         FileClose $0
     ${EndIf}
     !insertmacro MUI_UNGETLANGUAGE
@@ -412,7 +412,7 @@ Section "Uninstall"
     ${EndIf}
     
     RMDir /r "$SMPROGRAMS\${PRODUCT_NAME}"
-    Delete "$DESKTOP\phgit.lnk"
+    Delete "$DESKTOP\ph.lnk"
     DetailPrint "Removing application files..."
     RMDir /r "$INSTDIR"
     
@@ -430,7 +430,7 @@ Section "Uninstall"
 SectionEnd
 
 Function un.onUninstSuccess
-    MessageBox MB_OK "phgit has been successfully removed from your system."
+    MessageBox MB_OK "ph has been successfully removed from your system."
     MessageBox MB_YESNO "Would you like to view the uninstall log?" IDNO cleanup
         ExecShell "open" "$LogFile"
     cleanup:
@@ -439,10 +439,10 @@ FunctionEnd
 ;--------------------------------
 ; Version Info
 ;--------------------------------
-VIProductVersion "@PHGIT_VERSION@.0"
+VIProductVersion "@ph_VERSION@.0"
 VIAddVersionKey "ProductName" "${PRODUCT_NAME}"
-VIAddVersionKey "ProductVersion" "@PHGIT_VERSION@"
+VIAddVersionKey "ProductVersion" "@ph_VERSION@"
 VIAddVersionKey "CompanyName" "${PRODUCT_PUBLISHER}"
 VIAddVersionKey "FileDescription" "${PRODUCT_NAME} Installer"
-VIAddVersionKey "FileVersion" "@PHGIT_VERSION@"
+VIAddVersionKey "FileVersion" "@ph_VERSION@"
 VIAddVersionKey "LegalCopyright" "Copyright (C) 2025 ${PRODUCT_PUBLISHER}"

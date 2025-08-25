@@ -90,7 +90,7 @@ static void initialize_args(CommandLineArgs *args)
 static void print_help(void)
 {
 	printf("PeitchGIT - The next-generation GitOps tool.\n\n");
-	printf("Usage: phgit <command> [<subcommand>] [options]\n\n");
+	printf("Usage: ph <command> [<subcommand>] [options]\n\n");
 	printf("Available Commands:\n");
 	printf("  preview <create|destroy|list>  Manage preview environments.\n");
 	printf("    --pr <id>                    Specify the Pull Request ID.\n");
@@ -260,7 +260,7 @@ bool cli_parse_args(int argc, char **argv, CommandLineArgs *parsed_args)
 		return true;
 	}
 
-	fprintf(stderr, "Error: Unknown command '%s'. Use 'phgit help' for a list of commands.\n",
+	fprintf(stderr, "Error: Unknown command '%s'. Use 'ph help' for a list of commands.\n",
 		command);
 	return false;
 }

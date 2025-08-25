@@ -24,7 +24,7 @@ name = "issue_tracker"
 version = "0.1.0"
 edition = "2021"
 authors = ["Pedro Henrique / phkaiser13 <pedro.garcia@vytruve.org>"]
-description = "A phgit module for interacting with issue tracking systems."
+description = "A ph module for interacting with issue tracking systems."
 
 [lib]
 crate-type = ["cdylib"]

@@ -1,4 +1,4 @@
-Source: phgit
+Source: ph
 Section: utils
 Priority: optional
 Maintainer: Pedro Henrique / phkaiser13 <you@example.com>
@@ -6,7 +6,7 @@ Build-Depends: debhelper (>= 11), cmake, pkg-config, libcurl4-openssl-dev, liblu
 Standards-Version: 4.1.4
 Homepage: https://github.com/phkaiser13/peitchgit
 
-Package: phgit
+Package: ph
 Architecture: any
 Depends: git (>= 1:2.20.0), libcurl4, liblua5.3-0, ${shlibs:Depends}, ${misc:Depends}
 Description: The Polyglot Assistant for Git & DevOps Workflows
@@ -15,6 +15,6 @@ Description: The Polyglot Assistant for Git & DevOps Workflows
  with Git, Terraform for infrastructure as code management, and HashiCorp
  Vault for secure secret handling.
  .
- This package provides the 'phgit' command-line tool and all necessary
+ This package provides the 'ph' command-line tool and all necessary
  components for its operation, including modules and plugins for extended
  functionality.

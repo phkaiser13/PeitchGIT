@@ -16,7 +16,7 @@ CMAKE ?= cmake
 # Diretório de compilação
 BUILD_DIR := build
 # Nome do executável final
-EXECUTABLE_NAME := phgit
+EXECUTABLE_NAME := ph
 # Caminho para o executável
 EXECUTABLE_PATH := ${BUILD_DIR}/bin/${EXECUTABLE_NAME}
 
@@ -52,17 +52,17 @@ rebuild: clean all
 # Constrói e executa a aplicação com quaisquer argumentos passados.
 # Exemplo: make run ARGS="--version"
 run: build
-	@echo "--- A executar o phgit ---"
+	@echo "--- A executar o ph ---"
 	@${EXECUTABLE_PATH} ${ARGS}
 
 # Instala a aplicação usando as regras definidas no CMake.
 install: build
-	@echo "--- A instalar o phgit ---"
+	@echo "--- A instalar o ph ---"
 	@${CMAKE} --install ${BUILD_DIR}
 
 # Exibe informações de ajuda.
 help:
-	@echo "Wrapper Makefile do phgit"
+	@echo "Wrapper Makefile do ph"
 	@echo "-------------------------"
 	@echo "Uso: make [alvo]"
 	@echo ""

@@ -18,11 +18,11 @@
 syntax = "proto3";
 
 // A package declaration to prevent naming conflicts with other .proto files.
-package phgit.ipc;
+package ph.ipc;
 
 // Option to generate code for Go in a specific path, aligning with our
 // project structure. This is a Go-specific directive.
-option go_package = "phgit/ipc/schemas";
+option go_package = "ph/ipc/schemas";
 
 
 // Represents a single step within a CI/CD job.

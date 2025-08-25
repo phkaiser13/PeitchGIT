@@ -1,14 +1,14 @@
 #
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
 #
-# File: phgit.io_phgitpipelines.yaml
+# File: ph.io_phpipelines.yaml
 #
-# This file defines the Custom Resource Definition (CRD) for the PhgitPipeline
+# This file defines the Custom Resource Definition (CRD) for the phPipeline
 # resource. This is the most comprehensive CRD, providing a declarative,
 # Kubernetes-native way to define entire CI/CD pipelines as code.
 #
 # Architecture:
-# - It establishes the 'PhgitPipeline' kind within the 'phgit.io' API group.
+# - It establishes the 'phPipeline' kind within the 'ph.io' API group.
 # - The schema is designed to be familiar to users of modern CI/CD systems,
 #   featuring concepts like 'stages' and 'steps'. A pipeline consists of one
 #   or more sequential stages, and each stage contains one or more parallel steps.
@@ -17,7 +17,7 @@
 #   reproducibility.
 # - The 'trigger' section allows pipelines to be initiated automatically from
 #   Git events (e.g., a push to the main branch) or manually.
-# - The Phgit Operator will be responsible for watching these resources and
+# - The ph Operator will be responsible for watching these resources and
 #   orchestrating the creation of Pods (or Jobs) to execute the defined steps.
 # - The `status` subresource provides detailed feedback on pipeline runs,
 #   allowing for easy monitoring and integration with other tools.
@@ -28,14 +28,14 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: phgitpipelines.phgit.io
+  name: phpipelines.ph.io
 spec:
-  group: phgit.io
+  group: ph.io
   scope: Namespaced
   names:
-    plural: phgitpipelines
-    singular: phgitpipeline
-    kind: PhgitPipeline
+    plural: phpipelines
+    singular: phpipeline
+    kind: phPipeline
     shortNames:
       - pgpipe
   versions:

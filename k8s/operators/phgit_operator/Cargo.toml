@@ -3,13 +3,13 @@
 #
 # File: Cargo.toml
 #
-# This file is the manifest for the phgit-operator Rust project. It defines the
+# This file is the manifest for the ph-operator Rust project. It defines the
 # package metadata, dependencies, and binary targets. The selection of
 # dependencies is critical for building a robust, production-grade Kubernetes
 # operator.
 #
 # Architecture:
-# - This project builds a single binary named 'phgit_operator', as defined in the
+# - This project builds a single binary named 'ph_operator', as defined in the
 #   [[bin]] section.
 # - It relies heavily on the 'kube' ecosystem of crates, which provide the
 #   foundational tools for interacting with the Kubernetes API.
@@ -24,13 +24,13 @@
 #
 
 [package]
-name = "phgit-operator"
+name = "ph-operator"
 version = "0.1.0"
 edition = "2021"
 
 # Defines the output binary for our operator.
 [[bin]]
-name = "phgit_operator"
+name = "ph_operator"
 path = "src/main.rs"
 
 [dependencies]

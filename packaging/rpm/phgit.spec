@@ -1,11 +1,11 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
 # SPDX-License-Identifier: Apache-2.0
 #
-# RPM spec template for phgit.
+# RPM spec template for ph.
 # Workflow must replace k8s-prerls-0.0.3-beta and/or https://github.com/phkaiser13/peitchgit/archive/refs/tags/vk8s-prerls-0.0.3-beta.tar.gz and can optionally fill Sun, 24 Aug 2025 22:28:35 +0000.
 # Keep comments in English and prefer using RPM macros (e.g. %{version}) inside the spec body.
 
-Name:       phgit
+Name:       ph
 # Workflow should replace this placeholder with the release version (e.g. 1.2.3)
 Version:    k8s-prerls-0.0.3-beta
 Release:    1%{?dist}
@@ -50,10 +50,10 @@ unify and streamline your development lifecycle.
 
 %files
 %license LICENSE
-%{_bindir}/phgit
-%dir %{_datadir}/phgit
-%{_datadir}/phgit/modules/
-%{_datadir}/phgit/plugins/
+%{_bindir}/ph
+%dir %{_datadir}/ph
+%{_datadir}/ph/modules/
+%{_datadir}/ph/plugins/
 
 %changelog
 # The workflow may add a changelog entry here. Example placeholder below:

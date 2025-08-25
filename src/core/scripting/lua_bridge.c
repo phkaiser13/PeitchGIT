@@ -8,7 +8,7 @@
  * plugins to register custom commands with complex logic, and implements a robust
  * hook system for extensibility.
  *
- * The core of the bridge is a global table named `phgit` that is injected
+ * The core of the bridge is a global table named `ph` that is injected
  * into the Lua state. This table contains functions that scripts can call,
  * including configuration access, command registration, and advanced Git operations.
  * This provides maximum extensibility while maintaining security and performance.
@@ -146,22 +146,22 @@ static lua_hook_registry_t* find_or_create_hook(const char* hook_name) {
  * @brief Enhanced Lua binding for the core logging function.
  *
  * Exposes `logger_log` to Lua scripts with additional formatting support.
- * Lua usage: `phgit.log("INFO", "My message from Lua", optional_context)`
+ * Lua usage: `ph.log("INFO", "My message from Lua", optional_context)`
  *
  * @param L The Lua state.
  * @return The number of return values pushed onto the stack (0).
  */
-static int l_phgit_log(lua_State* L) {
+static int l_ph_log(lua_State* L) {
     int n_args = lua_gettop(L);
     if (n_args < 2 || n_args > 3) {
-        return luaL_error(L, "phgit.log expects 2-3 arguments: level (string), message (string), [context (string)]");
+        return luaL_error(L, "ph.log expects 2-3 arguments: level (string), message (string), [context (string)]");
     }
 
     const char* level_str = luaL_checkstring(L, 1);
     const char* message = luaL_checkstring(L, 2);
     const char* context = n_args >= 3 ? luaL_checkstring(L, 3) : "LUA_PLUGIN";
 
-    phgitLogLevel level = LOG_LEVEL_INFO; // Default
+    phLogLevel level = LOG_LEVEL_INFO; // Default
     if (strcmp(level_str, "DEBUG") == 0) level = LOG_LEVEL_DEBUG;
     else if (strcmp(level_str, "WARN") == 0) level = LOG_LEVEL_WARN;
     else if (strcmp(level_str, "ERROR") == 0) level = LOG_LEVEL_ERROR;
@@ -175,22 +175,22 @@ static int l_phgit_log(lua_State* L) {
  * @brief Enhanced Lua binding for the core command dispatcher.
  *
  * Exposes `cli_dispatch_command` to Lua scripts with argument support.
- * Lua usage: `phgit.run_command("status", {"--porcelain", "-v"})`
+ * Lua usage: `ph.run_command("status", {"--porcelain", "-v"})`
  *
  * @param L The Lua state.
  * @return The number of return values pushed onto the stack (1 - success boolean).
  */
-static int l_phgit_run_command(lua_State* L) {
+static int l_ph_run_command(lua_State* L) {
     int n_args = lua_gettop(L);
     if (n_args < 1 || n_args > 2) {
-        return luaL_error(L, "phgit.run_command expects 1-2 arguments: command (string), [args (table)]");
+        return luaL_error(L, "ph.run_command expects 1-2 arguments: command (string), [args (table)]");
     }
     
     const char* command_str = luaL_checkstring(L, 1);
     
     // Build argc/argv from Lua arguments
     const char** argv = NULL;
-    int argc = 2; // "phgit", command
+    int argc = 2; // "ph", command
     
     if (n_args == 2) {
         luaL_checktype(L, 2, LUA_TTABLE);
@@ -205,7 +205,7 @@ static int l_phgit_run_command(lua_State* L) {
             return 1;
         }
         
-        argv[0] = "phgit";
+        argv[0] = "ph";
         argv[1] = command_str;
         
         // Extract arguments from table
@@ -221,15 +221,15 @@ static int l_phgit_run_command(lua_State* L) {
             lua_pushboolean(L, 0);
             return 1;
         }
-        argv[0] = "phgit";
+        argv[0] = "ph";
         argv[1] = command_str;
         argv[2] = NULL;
     }
     
-    phgitStatus result = cli_dispatch_command(argc, argv);
+    phStatus result = cli_dispatch_command(argc, argv);
     free(argv);
     
-    lua_pushboolean(L, result == phgit_SUCCESS ? 1 : 0);
+    lua_pushboolean(L, result == ph_SUCCESS ? 1 : 0);
     return 1;
 }
 
@@ -237,12 +237,12 @@ static int l_phgit_run_command(lua_State* L) {
  * @brief Lua binding for configuration value retrieval.
  *
  * Exposes `config_get_value` to Lua scripts.
- * Lua usage: `local value = phgit.config_get("user.name")`
+ * Lua usage: `local value = ph.config_get("user.name")`
  *
  * @param L The Lua state.
  * @return The number of return values pushed onto the stack (1 - value or nil).
  */
-static int l_phgit_config_get(lua_State* L) {
+static int l_ph_config_get(lua_State* L) {
     const char* key = luaL_checkstring(L, 1);
     
     char* value = config_get_value(key);
@@ -260,17 +260,17 @@ static int l_phgit_config_get(lua_State* L) {
  * @brief Lua binding for configuration value setting.
  *
  * Exposes `config_set_value` to Lua scripts.
- * Lua usage: `phgit.config_set("user.name", "John Doe")`
+ * Lua usage: `ph.config_set("user.name", "John Doe")`
  *
  * @param L The Lua state.
  * @return The number of return values pushed onto the stack (1 - success boolean).
  */
-static int l_phgit_config_set(lua_State* L) {
+static int l_ph_config_set(lua_State* L) {
     const char* key = luaL_checkstring(L, 1);
     const char* value = luaL_checkstring(L, 2);
     
-    phgitStatus result = config_set_value(key, value);
-    lua_pushboolean(L, result == phgit_SUCCESS ? 1 : 0);
+    phStatus result = config_set_value(key, value);
+    lua_pushboolean(L, result == ph_SUCCESS ? 1 : 0);
     
     return 1;
 }
@@ -279,15 +279,15 @@ static int l_phgit_config_set(lua_State* L) {
  * @brief Lua binding for dynamic command registration.
  *
  * Allows Lua scripts to register new commands with the CLI parser.
- * Lua usage: `phgit.register_command("mycommand", "my_lua_function", "Description", "Usage")`
+ * Lua usage: `ph.register_command("mycommand", "my_lua_function", "Description", "Usage")`
  *
  * @param L The Lua state.
  * @return The number of return values pushed onto the stack (1 - success boolean).
  */
-static int l_phgit_register_command(lua_State* L) {
+static int l_ph_register_command(lua_State* L) {
     int n_args = lua_gettop(L);
     if (n_args < 2 || n_args > 4) {
-        return luaL_error(L, "phgit.register_command expects 2-4 arguments: command (string), function (string), [description (string)], [usage (string)]");
+        return luaL_error(L, "ph.register_command expects 2-4 arguments: command (string), function (string), [description (string)], [usage (string)]");
     }
     
     const char* command_name = luaL_checkstring(L, 1);
@@ -335,12 +335,12 @@ static int l_phgit_register_command(lua_State* L) {
  * @brief Lua binding for hook registration.
  *
  * Allows Lua scripts to register functions to be called on specific hooks.
- * Lua usage: `phgit.register_hook("pre-commit", "my_pre_commit_function")`
+ * Lua usage: `ph.register_hook("pre-commit", "my_pre_commit_function")`
  *
  * @param L The Lua state.
  * @return The number of return values pushed onto the stack (1 - success boolean).
  */
-static int l_phgit_register_hook(lua_State* L) {
+static int l_ph_register_hook(lua_State* L) {
     const char* hook_name = luaL_checkstring(L, 1);
     const char* function_name = luaL_checkstring(L, 2);
     
@@ -379,12 +379,12 @@ static int l_phgit_register_hook(lua_State* L) {
 /**
  * @brief Lua binding for file existence checking.
  *
- * Lua usage: `local exists = phgit.file_exists("/path/to/file")`
+ * Lua usage: `local exists = ph.file_exists("/path/to/file")`
  *
  * @param L The Lua state.
  * @return The number of return values pushed onto the stack (1 - boolean).
  */
-static int l_phgit_file_exists(lua_State* L) {
+static int l_ph_file_exists(lua_State* L) {
     const char* path = luaL_checkstring(L, 1);
     
     FILE* f = fopen(path, "r");
@@ -401,12 +401,12 @@ static int l_phgit_file_exists(lua_State* L) {
 /**
  * @brief Lua binding for environment variable access.
  *
- * Lua usage: `local value = phgit.getenv("HOME")`
+ * Lua usage: `local value = ph.getenv("HOME")`
  *
  * @param L The Lua state.
  * @return The number of return values pushed onto the stack (1 - value or nil).
  */
-static int l_phgit_getenv(lua_State* L) {
+static int l_ph_getenv(lua_State* L) {
     const char* name = luaL_checkstring(L, 1);
     
     const char* value = getenv(name);
@@ -420,22 +420,22 @@ static int l_phgit_getenv(lua_State* L) {
 }
 
 // Enhanced function registry with comprehensive API
-static const struct luaL_Reg phgit_lib[] = {
+static const struct luaL_Reg ph_lib[] = {
     // Core functionality
-    {"log", l_phgit_log},
-    {"run_command", l_phgit_run_command},
+    {"log", l_ph_log},
+    {"run_command", l_ph_run_command},
     
     // Configuration management
-    {"config_get", l_phgit_config_get},
-    {"config_set", l_phgit_config_set},
+    {"config_get", l_ph_config_get},
+    {"config_set", l_ph_config_set},
     
     // Dynamic registration
-    {"register_command", l_phgit_register_command},
-    {"register_hook", l_phgit_register_hook},
+    {"register_command", l_ph_register_command},
+    {"register_hook", l_ph_register_hook},
     
     // Utility functions
-    {"file_exists", l_phgit_file_exists},
-    {"getenv", l_phgit_getenv},
+    {"file_exists", l_ph_file_exists},
+    {"getenv", l_ph_getenv},
     
     {NULL, NULL} // Sentinel
 };
@@ -445,26 +445,26 @@ static const struct luaL_Reg phgit_lib[] = {
 /**
  * @see lua_bridge.h
  */
-phgitStatus lua_bridge_init(void) {
+phStatus lua_bridge_init(void) {
     if (g_lua_state) {
         logger_log(LOG_LEVEL_WARN, "LUA_BRIDGE", "Lua bridge already initialized.");
-        return phgit_SUCCESS;
+        return ph_SUCCESS;
     }
 
     // 1. Create Lua state and load standard libraries
     g_lua_state = luaL_newstate();
     if (!g_lua_state) {
         logger_log(LOG_LEVEL_FATAL, "LUA_BRIDGE", "Failed to create Lua state.");
-        return phgit_ERROR_INIT_FAILED;
+        return ph_ERROR_INIT_FAILED;
     }
     luaL_openlibs(g_lua_state);
 
-    // 2. Create the `phgit` library table and register our enhanced C functions
-    luaL_newlib(g_lua_state, phgit_lib);
-    lua_setglobal(g_lua_state, "phgit");
+    // 2. Create the `ph` library table and register our enhanced C functions
+    luaL_newlib(g_lua_state, ph_lib);
+    lua_setglobal(g_lua_state, "ph");
 
-    // 3. Add version information to the phgit table
-    lua_getglobal(g_lua_state, "phgit");
+    // 3. Add version information to the ph table
+    lua_getglobal(g_lua_state, "ph");
     lua_pushstring(g_lua_state, "2.0.0");
     lua_setfield(g_lua_state, -2, "version");
     lua_pop(g_lua_state, 1);
@@ -514,17 +514,17 @@ phgitStatus lua_bridge_init(void) {
 
     logger_log_fmt(LOG_LEVEL_INFO, "LUA_BRIDGE", "Lua scripting engine initialized with %zu registered commands", 
                   g_lua_command_count);
-    return phgit_SUCCESS;
+    return ph_SUCCESS;
 }
 
 /**
  * @see lua_bridge.h
  */
-phgitStatus lua_bridge_execute_command(const char* command_name, int argc, const char** argv) {
-    if (!g_lua_state) return phgit_ERROR_GENERAL;
+phStatus lua_bridge_execute_command(const char* command_name, int argc, const char** argv) {
+    if (!g_lua_state) return ph_ERROR_GENERAL;
     
     lua_command_entry_t* cmd = find_lua_command(command_name);
-    if (!cmd) return phgit_ERROR_NOT_FOUND;
+    if (!cmd) return ph_ERROR_NOT_FOUND;
     
     // Get the Lua function
     lua_getglobal(g_lua_state, cmd->lua_function_name);
@@ -532,7 +532,7 @@ phgitStatus lua_bridge_execute_command(const char* command_name, int argc, const
         lua_pop(g_lua_state, 1);
         logger_log_fmt(LOG_LEVEL_ERROR, "LUA_BRIDGE", "Command function '%s' is no longer valid", 
                       cmd->lua_function_name);
-        return phgit_ERROR_EXEC_FAILED;
+        return ph_ERROR_EXEC_FAILED;
     }
     
     // Push arguments onto the stack
@@ -545,7 +545,7 @@ phgitStatus lua_bridge_execute_command(const char* command_name, int argc, const
         logger_log_fmt(LOG_LEVEL_ERROR, "LUA_BRIDGE", "Error executing command '%s': %s", 
                       command_name, lua_tostring(g_lua_state, -1));
         lua_pop(g_lua_state, 1); // Pop error message
-        return phgit_ERROR_EXEC_FAILED;
+        return ph_ERROR_EXEC_FAILED;
     }
     
     // Get return value (expected to be boolean or number indicating success)
@@ -557,14 +557,14 @@ phgitStatus lua_bridge_execute_command(const char* command_name, int argc, const
     }
     lua_pop(g_lua_state, 1); // Pop return value
     
-    return success ? phgit_SUCCESS : phgit_ERROR_EXEC_FAILED;
+    return success ? ph_SUCCESS : ph_ERROR_EXEC_FAILED;
 }
 
 /**
  * @see lua_bridge.h
  */
-phgitStatus lua_bridge_run_hook(const char* hook_name, int argc, const char** argv) {
-    if (!g_lua_state) return phgit_ERROR_GENERAL;
+phStatus lua_bridge_run_hook(const char* hook_name, int argc, const char** argv) {
+    if (!g_lua_state) return ph_ERROR_GENERAL;
     
     // Find the hook registry
     lua_hook_registry_t* hook = NULL;
@@ -576,11 +576,11 @@ phgitStatus lua_bridge_run_hook(const char* hook_name, int argc, const char** ar
     }
     
     if (!hook || hook->function_count == 0) {
-        return phgit_ERROR_NOT_FOUND; // No functions registered for this hook
+        return ph_ERROR_NOT_FOUND; // No functions registered for this hook
     }
     
     // Execute all functions registered for this hook
-    phgitStatus overall_result = phgit_SUCCESS;
+    phStatus overall_result = ph_SUCCESS;
     for (size_t i = 0; i < hook->function_count; i++) {
         lua_getglobal(g_lua_state, hook->function_names[i]);
         
@@ -601,7 +601,7 @@ phgitStatus lua_bridge_run_hook(const char* hook_name, int argc, const char** ar
             logger_log_fmt(LOG_LEVEL_ERROR, "LUA_BRIDGE", "Error running hook '%s' function '%s': %s", 
                           hook_name, hook->function_names[i], lua_tostring(g_lua_state, -1));
             lua_pop(g_lua_state, 1); // Pop error message
-            overall_result = phgit_ERROR_EXEC_FAILED;
+            overall_result = ph_ERROR_EXEC_FAILED;
         }
     }
     

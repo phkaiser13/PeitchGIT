@@ -75,7 +75,7 @@ impl ApiProvider for GitHubHandler {
 
         let response = self.client
             .get(&url)
-            .header("User-Agent", "phgit-rust-client")
+            .header("User-Agent", "ph-rust-client")
             .send()
             .await?;
 

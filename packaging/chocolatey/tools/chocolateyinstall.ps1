@@ -1,7 +1,7 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
 # SPDX-License-Identifier: Apache-2.0
 #
-# Chocolatey installation script template for phgit.
+# Chocolatey installation script template for ph.
 # Workflow must replace:
 #   - k8s-prerls-0.0.3-beta           -> package version (e.g. 1.2.3)
 #   -   -> sha256 checksum of the Windows installer .exe
@@ -13,8 +13,8 @@ $ErrorActionPreference = 'Stop'
 $version = 'k8s-prerls-0.0.3-beta'
 
 # installer file name and remote URL pattern
-# Workflow should ensure the installer named like: phgit-<version>-installer.exe exists in GitHub Releases
-$installerFileName = "phgit-$($version)-installer.exe"
+# Workflow should ensure the installer named like: ph-<version>-installer.exe exists in GitHub Releases
+$installerFileName = "ph-$($version)-installer.exe"
 $installerUrl = "https://github.com/phkaiser13/peitchgit/releases/download/v$($version)/$installerFileName"
 
 # checksum injected by the workflow (sha256)

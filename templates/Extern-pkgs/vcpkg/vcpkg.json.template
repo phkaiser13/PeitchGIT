@@ -1,6 +1,6 @@
 {
-  "name": "phgit",
-  "version": "@PHGIT_VERSION@",
+  "name": "ph",
+  "version": "@ph_VERSION@",
   "description": "The Polyglot Assistant for Git & DevOps Workflows",
   "homepage": "https://github.com/phkaiser13/peitchgit",
   "license": "Apache-2.0",

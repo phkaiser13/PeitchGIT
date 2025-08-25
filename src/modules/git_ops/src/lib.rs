@@ -4,7 +4,7 @@
  * This file serves as the main library entry point and the Foreign Function
  * Interface (FFI) layer for the `git_ops` module. It is responsible for
  * exposing a C-compatible API that adheres to the contract defined in the
- * core `phgit_core_api.h` header.
+ * core `ph_core_api.h` header.
  *
  * Key responsibilities:
  * - Defining C-compatible data structures (`#[repr(C)]`).
@@ -15,7 +15,7 @@
  * - Dispatching commands received from the core to the appropriate Rust
  *   functions within the `commands` submodule.
  * - Translating the specific Rust `CommandError` enum into the generic
- *   C-compatible `phgitStatus` enum for the core.
+ *   C-compatible `phStatus` enum for the core.
  *
  * SPDX-License-Identifier: Apache-2.0 */
 
@@ -29,10 +29,10 @@ mod commands;
 mod git_wrapper;
 
 // --- C API Data Structure Definitions ---
-// These must match the definitions in `phgit_core_api.h` exactly.
+// These must match the definitions in `ph_core_api.h` exactly.
 
 #[repr(C)]
-pub enum phgitStatus {
+pub enum phStatus {
     Success = 0,
     ErrorGeneral = -1,
     ErrorInvalidArgs = -2,
@@ -43,7 +43,7 @@ pub enum phgitStatus {
 
 #[repr(C)]
 #[derive(Debug)] // Add Debug for easier logging
-pub enum phgitLogLevel {
+pub enum phLogLevel {
     Debug,
     Info,
     Warn,
@@ -52,10 +52,10 @@ pub enum phgitLogLevel {
 }
 
 // A function pointer type for the logger callback from the C core.
-type LogFn = extern "C" fn(phgitLogLevel, *const c_char, *const c_char);
+type LogFn = extern "C" fn(phLogLevel, *const c_char, *const c_char);
 
 #[repr(C)]
-pub struct phgitCoreContext {
+pub struct phCoreContext {
     log: Option<LogFn>,
     _get_config_value: Option<extern "C" fn()>,
     _print_ui: Option<extern "C" fn()>,
@@ -63,11 +63,11 @@ pub struct phgitCoreContext {
 
 // Make the context globally and safely accessible within the Rust module.
 lazy_static::lazy_static! {
-    static ref CORE_CONTEXT: Mutex<Option<phgitCoreContext>> = Mutex::new(None);
+    static ref CORE_CONTEXT: Mutex<Option<phCoreContext>> = Mutex::new(None);
 }
 
 // Helper function to log messages back to the C core.
-fn log_to_core(level: phgitLogLevel, message: &str) {
+fn log_to_core(level: phLogLevel, message: &str) {
     if let Ok(guard) = CORE_CONTEXT.lock() {
         if let Some(context) = &*guard {
             if let Some(log_fn) = context.log {
@@ -82,15 +82,15 @@ fn log_to_core(level: phgitLogLevel, message: &str) {
 // --- C-compatible API Implementation ---
 
 #[repr(C)]
-pub struct phgitModuleInfo {
+pub struct phModuleInfo {
     name: *const c_char,
     version: *const c_char,
     description: *const c_char,
     commands: *const *const c_char,
 }
 
-// A wrapper to safely mark phgitModuleInfo as Sync.
-struct SafeModuleInfo(phgitModuleInfo);
+// A wrapper to safely mark phModuleInfo as Sync.
+struct SafeModuleInfo(phModuleInfo);
 unsafe impl Sync for SafeModuleInfo {}
 
 // Define the static data for our module's information.
@@ -106,7 +106,7 @@ const SUPPORTED_COMMANDS_PTRS: &[*const c_char] = &[
     std::ptr::null(), // Null terminator for the C array
 ];
 
-static MODULE_INFO: SafeModuleInfo = SafeModuleInfo(phgitModuleInfo {
+static MODULE_INFO: SafeModuleInfo = SafeModuleInfo(phModuleInfo {
     name: MODULE_NAME.as_ptr() as *const c_char,
     version: MODULE_VERSION.as_ptr() as *const c_char,
     description: MODULE_DESC.as_ptr() as *const c_char,
@@ -114,29 +114,29 @@ static MODULE_INFO: SafeModuleInfo = SafeModuleInfo(phgitModuleInfo {
 });
 
 #[no_mangle]
-pub extern "C" fn module_get_info() -> *const phgitModuleInfo {
+pub extern "C" fn module_get_info() -> *const phModuleInfo {
     &MODULE_INFO.0
 }
 
 #[no_mangle]
-pub extern "C" fn module_init(context: *const phgitCoreContext) -> phgitStatus {
+pub extern "C" fn module_init(context: *const phCoreContext) -> phStatus {
     if context.is_null() {
-        return phgitStatus::ErrorInitFailed;
+        return phStatus::ErrorInitFailed;
     }
     if let Ok(mut guard) = CORE_CONTEXT.lock() {
         *guard = Some(unsafe { std::ptr::read(context) });
     } else {
-        return phgitStatus::ErrorInitFailed;
+        return phStatus::ErrorInitFailed;
     }
     log_to_core(
-        phgitLogLevel::Info,
+        phLogLevel::Info,
         "git_ops module initialized successfully.",
     );
-    phgitStatus::Success
+    phStatus::Success
 }
 
 #[no_mangle]
-pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> phgitStatus {
+pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> phStatus {
     // Safely convert C-style arguments to a Rust `Vec<String>`.
     let args: Vec<String> = (0..argc as isize)
         .map(|i| unsafe {
@@ -147,16 +147,16 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> phgitS
 
     if args.is_empty() {
         log_to_core(
-            phgitLogLevel::Error,
+            phLogLevel::Error,
             "Execution called with no arguments.",
         );
-        return phgitStatus::ErrorInvalidArgs;
+        return phStatus::ErrorInvalidArgs;
     }
 
     // Dispatch to the correct command handler based on the first argument.
     let command = args[0].as_str();
     log_to_core(
-        phgitLogLevel::Debug,
+        phLogLevel::Debug,
         &format!("Executing command: {}", command),
     );
 
@@ -168,50 +168,50 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> phgitS
         "status" => commands::handle_status(None),
         _ => {
             let err_msg = format!("Unknown command '{}' for git_ops module.", command);
-            log_to_core(phgitLogLevel::Error, &err_msg);
+            log_to_core(phLogLevel::Error, &err_msg);
             // Use the GitError variant for unknown commands.
             Err(commands::CommandError::GitError(err_msg))
         }
     };
 
-    // Translate the specific CommandError into a generic phgitStatus for the C core.
+    // Translate the specific CommandError into a generic phStatus for the C core.
     match result {
         Ok(success_message) => {
             // Log the success message from the command handler.
-            log_to_core(phgitLogLevel::Info, &success_message);
+            log_to_core(phLogLevel::Info, &success_message);
             println!("{}", success_message); // Also print to user stdout
-            phgitStatus::Success
+            phStatus::Success
         }
         Err(e) => match e {
             commands::CommandError::GitError(msg) => {
-                log_to_core(phgitLogLevel::Error, &format!("Execution failed: {}", msg));
+                log_to_core(phLogLevel::Error, &format!("Execution failed: {}", msg));
                 println!("Error: {}", msg); // Print error to user stderr
-                phgitStatus::ErrorExecFailed
+                phStatus::ErrorExecFailed
             }
             commands::CommandError::MissingCommitMessage => {
-                let msg = "Missing commit message for 'SND' command. Usage: phgit SND <message>";
-                log_to_core(phgitLogLevel::Error, msg);
+                let msg = "Missing commit message for 'SND' command. Usage: ph SND <message>";
+                log_to_core(phLogLevel::Error, msg);
                 println!("{}", msg);
-                phgitStatus::ErrorInvalidArgs
+                phStatus::ErrorInvalidArgs
             }
             commands::CommandError::NoUpstreamConfigured => {
                 let msg = "Current branch has no upstream configured. Cannot push.\nHint: Use 'git push -u <remote> <branch>' to set the upstream.";
-                log_to_core(phgitLogLevel::Error, msg);
+                log_to_core(phLogLevel::Error, msg);
                 println!("{}", msg);
-                phgitStatus::ErrorExecFailed
+                phStatus::ErrorExecFailed
             }
             // These are not "errors" in the sense of failure, but successful "no-op" states.
             commands::CommandError::NoChanges => {
                 let msg = "Working tree clean. No changes to send.";
-                log_to_core(phgitLogLevel::Info, msg);
+                log_to_core(phLogLevel::Info, msg);
                 println!("{}", msg);
-                phgitStatus::Success
+                phStatus::Success
             }
             commands::CommandError::OperationAborted => {
                 let msg = "Operation aborted by user.";
-                log_to_core(phgitLogLevel::Info, msg);
+                log_to_core(phLogLevel::Info, msg);
                 println!("{}", msg);
-                phgitStatus::Success
+                phStatus::Success
             }
         },
     }
@@ -219,5 +219,5 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> phgitS
 
 #[no_mangle]
 pub extern "C" fn module_cleanup() {
-    log_to_core(phgitLogLevel::Info, "git_ops module cleaned up.");
+    log_to_core(phLogLevel::Info, "git_ops module cleaned up.");
 }

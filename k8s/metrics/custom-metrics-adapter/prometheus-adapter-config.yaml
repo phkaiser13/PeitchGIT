@@ -12,7 +12,7 @@
 #   external metric in Kubernetes.
 # - `seriesQuery`: This specifies the PromQL query used to discover the raw
 #   time series in Prometheus. We are looking for a metric named
-#   `phgit_build_queue_length_total`.
+#   `ph_build_queue_length_total`.
 # - `name`: This section defines how the Prometheus metric name is transformed
 #   into the Kubernetes custom metric name. We map it directly to
 #   `build-queue-length`.
@@ -36,7 +36,7 @@ data:
     # Rules for exposing metrics through the external.metrics.k8s.io API group.
     # These are metrics that are not tied to a specific Kubernetes object.
     external:
-      - seriesQuery: '{__name__=~"^phgit_build_queue_length_total$"}'
+      - seriesQuery: '{__name__=~"^ph_build_queue_length_total$"}'
         # Since our build queue is global and not tied to a specific k8s object,
         # we do not need to match on Kubernetes resources.
         resources:

@@ -28,7 +28,7 @@ void test_config_loading_and_retrieval() {
 
     // Load the config file.
     // In a real scenario, you might want to redirect logger output.
-    assert(config_load(test_filename) == phgit_SUCCESS);
+    assert(config_load(test_filename) == ph_SUCCESS);
 
     // Test successful key-value lookups
     const char* val1 = config_get_value("key1");

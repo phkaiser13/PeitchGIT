@@ -3,7 +3,7 @@
 * Unified FFI bridge and dispatcher for devops_automation.
 *
 * This file is the single entry point for the C core to interact with this
-* module. It implements the `phgit_core_api.h` contract and contains a
+* module. It implements the `ph_core_api.h` contract and contains a
 * central dispatcher (`module_exec`) that routes commands to the appropriate
 * handler function in the `commands.rs` module.
 *
@@ -152,7 +152,7 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> Status
     match result {
         Ok(_) => Status::Success,
         Err(e) => {
-            eprintln!("\n[phgit ERROR] Command failed: {}", e);
+            eprintln!("\n[ph ERROR] Command failed: {}", e);
             Status::ErrorExecFailed
         }
     }

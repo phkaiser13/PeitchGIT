@@ -15,7 +15,7 @@ env:
   AUR_PACKAGES_REPO: "phkaiser13/aur-packages"
 
   # Templates for EXTERNAL repositories (inside THIS repository)
-  TEMPLATE_HOMEBREW: "./templates/Extern-pkgs/homebrew/phgit.rb.template"
+  TEMPLATE_HOMEBREW: "./templates/Extern-pkgs/homebrew/ph.rb.template"
   TEMPLATE_VCPKG_PORTFILE: "./templates/Extern-pkgs/vcpkg/portfile.cmake.template"
   TEMPLATE_VCPKG_JSON: "./templates/Extern-pkgs/vcpkg/vcpkg.json.template"
   TEMPLATE_AUR_PKGBUILD: "./templates/Extern-pkgs/aur/PKGBUILD.template"
@@ -66,8 +66,8 @@ jobs:
           echo "Computed tarball SHA256: ${TARBALL_SHA256}"
           echo "Computed tarball SHA512: ${TARBALL_SHA512}"
           # export
-          echo "phgit_tarb_sha256=${TARBALL_SHA256}" >> $GITHUB_OUTPUT
-          echo "phgit_tarb_sha512=${TARBALL_SHA512}" >> $GITHUB_OUTPUT
+          echo "ph_tarb_sha256=${TARBALL_SHA256}" >> $GITHUB_OUTPUT
+          echo "ph_tarb_sha512=${TARBALL_SHA512}" >> $GITHUB_OUTPUT
           # keep tmp path in env in case other steps want to reuse
           echo "TARBALL_PATH=${TMP}" >> $GITHUB_ENV
 
@@ -76,7 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
-          INSTALLER_NAME="phgit-${VERSION}-installer.exe"
+          INSTALLER_NAME="ph-${VERSION}-installer.exe"
           INSTALLER_URL="https://github.com/phkaiser13/peitchgit/releases/download/v${VERSION}/${INSTALLER_NAME}"
           echo "Attempting to download installer: ${INSTALLER_URL}"
           TMP_INSTALLER="$(mktemp)"
@@ -99,8 +99,8 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
-          TARBALL_SHA256="${{ steps.checksums.outputs.phgit_tarb_sha256 }}"
-          TARBALL_SHA512="${{ steps.checksums.outputs.phgit_tarb_sha512 }}"
+          TARBALL_SHA256="${{ steps.checksums.outputs.ph_tarb_sha256 }}"
+          TARBALL_SHA512="${{ steps.checksums.outputs.ph_tarb_sha512 }}"
           INSTALLER_SHA256="${{ steps.installer.outputs.installer_sha256 }}"
           TAR_URL="https://github.com/phkaiser13/peitchgit/archive/refs/tags/v${VERSION}.tar.gz"
           TODAY="$(date -R)"
@@ -116,28 +116,28 @@ jobs:
 
           # === CHOCOLATEY ===
           # Render Chocolatey nuspec
-          if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/phgit.nuspec.template" ]]; then
-            sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
-                "${{ env.SHARED_TEMPLATES_DIR }}/phgit.nuspec.template" > packaging/chocolatey/phgit.nuspec
-            echo "✅ Rendered packaging/chocolatey/phgit.nuspec"
+          if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/ph.nuspec.template" ]]; then
+            sed -e "s/@ph_VERSION@/${VERSION}/g" \
+                "${{ env.SHARED_TEMPLATES_DIR }}/ph.nuspec.template" > packaging/chocolatey/ph.nuspec
+            echo "✅ Rendered packaging/chocolatey/ph.nuspec"
           fi
 
           # Render Chocolatey install script
           if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/chocolateyinstall.ps1.template" ]]; then
-            sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
-                -e "s/@PHGIT_INSTALLER_SHA256@/${INSTALLER_SHA256}/g" \
+            sed -e "s/@ph_VERSION@/${VERSION}/g" \
+                -e "s/@ph_INSTALLER_SHA256@/${INSTALLER_SHA256}/g" \
                 "${{ env.SHARED_TEMPLATES_DIR }}/chocolateyinstall.ps1.template" > packaging/chocolatey/tools/chocolateyinstall.ps1
             echo "✅ Rendered packaging/chocolatey/tools/chocolateyinstall.ps1"
           fi
 
           # === RPM ===
           # Render RPM spec
-          if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/phgit.spec.template" ]]; then
-            sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
-                -e "s,@PHGIT_TARBALL_URL@,${TAR_URL},g" \
-                -e "s/@PHGIT_RELEASE_DATE@/${TODAY}/g" \
-                "${{ env.SHARED_TEMPLATES_DIR }}/phgit.spec.template" > packaging/rpm/phgit.spec
-            echo "✅ Rendered packaging/rpm/phgit.spec"
+          if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/ph.spec.template" ]]; then
+            sed -e "s/@ph_VERSION@/${VERSION}/g" \
+                -e "s,@ph_TARBALL_URL@,${TAR_URL},g" \
+                -e "s/@ph_RELEASE_DATE@/${TODAY}/g" \
+                "${{ env.SHARED_TEMPLATES_DIR }}/ph.spec.template" > packaging/rpm/ph.spec
+            echo "✅ Rendered packaging/rpm/ph.spec"
           fi
 
           # === DEBIAN ===
@@ -163,8 +163,8 @@ jobs:
 
           # Render Debian changelog
           if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/debian/changelog.template" ]]; then
-            sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
-                -e "s/@PHGIT_RELEASE_DATE@/${TODAY}/g" \
+            sed -e "s/@ph_VERSION@/${VERSION}/g" \
+                -e "s/@ph_RELEASE_DATE@/${TODAY}/g" \
                 "${{ env.SHARED_TEMPLATES_DIR }}/debian/changelog.template" > packaging/debian/changelog
             echo "✅ Rendered packaging/debian/changelog"
           fi
@@ -172,17 +172,17 @@ jobs:
           # === SNAP ===
           # Render Snap snapcraft.yaml
           if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/snap/snapcraft.yaml.template" ]]; then
-            sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
+            sed -e "s/@ph_VERSION@/${VERSION}/g" \
                 "${{ env.SHARED_TEMPLATES_DIR }}/snap/snapcraft.yaml.template" > packaging/snap/snapcraft.yaml
             echo "✅ Rendered packaging/snap/snapcraft.yaml"
           fi
 
           # === NSIS ===
           # Render NSIS installer script
-          if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/nsis/phgit.nsi.template" ]]; then
-            sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
-                "${{ env.SHARED_TEMPLATES_DIR }}/nsis/phgit.nsi.template" > packaging/nsis/phgit.nsi
-            echo "✅ Rendered packaging/nsis/phgit.nsi"
+          if [[ -f "${{ env.SHARED_TEMPLATES_DIR }}/nsis/ph.nsi.template" ]]; then
+            sed -e "s/@ph_VERSION@/${VERSION}/g" \
+                "${{ env.SHARED_TEMPLATES_DIR }}/nsis/ph.nsi.template" > packaging/nsis/ph.nsi
+            echo "✅ Rendered packaging/nsis/ph.nsi"
           fi
 
           echo "🎯 All shared templates rendered successfully!"
@@ -197,7 +197,7 @@ jobs:
           if git diff --staged --quiet; then
             echo "ℹ️ No changes to commit in packaging/"
           else
-            git commit -m "chore(release): render packaging templates for phgit ${{ steps.version.outputs.version }}"
+            git commit -m "chore(release): render packaging templates for ph ${{ steps.version.outputs.version }}"
             git push origin HEAD:refs/heads/main
             echo "✅ Committed packaging files to repository"
           fi
@@ -217,7 +217,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
-          TARBALL_SHA256="${{ steps.checksums.outputs.phgit_tarb_sha256 }}"
+          TARBALL_SHA256="${{ steps.checksums.outputs.ph_tarb_sha256 }}"
           TEMPLATE="${{ env.TEMPLATE_HOMEBREW }}"
           
           if [[ ! -f "${TEMPLATE}" ]]; then
@@ -226,10 +226,10 @@ jobs:
           fi
           
           mkdir -p homebrew-tap/Formula
-          sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
-              -e "s/@PHGIT_SHA256@/${TARBALL_SHA256}/g" \
-              "${TEMPLATE}" > homebrew-tap/Formula/phgit.rb
-          echo "✅ Rendered homebrew-tap/Formula/phgit.rb"
+          sed -e "s/@ph_VERSION@/${VERSION}/g" \
+              -e "s/@ph_SHA256@/${TARBALL_SHA256}/g" \
+              "${TEMPLATE}" > homebrew-tap/Formula/ph.rb
+          echo "✅ Rendered homebrew-tap/Formula/ph.rb"
 
       - name: Commit & push Homebrew formula
         run: |
@@ -237,11 +237,11 @@ jobs:
           cd homebrew-tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/phgit.rb
+          git add Formula/ph.rb
           if git diff --staged --quiet; then
             echo "ℹ️ No changes to commit in homebrew-tap."
           else
-            git commit -m "chore(release): update phgit formula to ${{ steps.version.outputs.version }}"
+            git commit -m "chore(release): update ph formula to ${{ steps.version.outputs.version }}"
             git push origin HEAD:refs/heads/main
             echo "🍺 Updated Homebrew formula"
           fi
@@ -261,24 +261,24 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
-          TARBALL_SHA512="${{ steps.checksums.outputs.phgit_tarb_sha512 }}"
+          TARBALL_SHA512="${{ steps.checksums.outputs.ph_tarb_sha512 }}"
           
-          mkdir -p vcpkg-registry/ports/phgit
+          mkdir -p vcpkg-registry/ports/ph
 
           # Render portfile.cmake
           if [[ ! -f "${{ env.TEMPLATE_VCPKG_PORTFILE }}" ]]; then
             echo "❌ ERROR: vcpkg portfile template missing: ${{ env.TEMPLATE_VCPKG_PORTFILE }}"
             exit 1
           fi
-          sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
-              -e "s/@PHGIT_SHA512@/${TARBALL_SHA512}/g" \
-              "${{ env.TEMPLATE_VCPKG_PORTFILE }}" > vcpkg-registry/ports/phgit/portfile.cmake
+          sed -e "s/@ph_VERSION@/${VERSION}/g" \
+              -e "s/@ph_SHA512@/${TARBALL_SHA512}/g" \
+              "${{ env.TEMPLATE_VCPKG_PORTFILE }}" > vcpkg-registry/ports/ph/portfile.cmake
           echo "✅ Rendered portfile.cmake"
 
           # Render vcpkg.json
           if [[ -f "${{ env.TEMPLATE_VCPKG_JSON }}" ]]; then
-            sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
-                "${{ env.TEMPLATE_VCPKG_JSON }}" > vcpkg-registry/ports/phgit/vcpkg.json
+            sed -e "s/@ph_VERSION@/${VERSION}/g" \
+                "${{ env.TEMPLATE_VCPKG_JSON }}" > vcpkg-registry/ports/ph/vcpkg.json
             echo "✅ Rendered vcpkg.json"
           fi
 
@@ -288,11 +288,11 @@ jobs:
           cd vcpkg-registry
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add ports/phgit || true
+          git add ports/ph || true
           if git diff --staged --quiet; then
             echo "ℹ️ No changes to commit in vcpkg-registry."
           else
-            git commit -m "chore(release): update vcpkg port for phgit ${{ steps.version.outputs.version }}"
+            git commit -m "chore(release): update vcpkg port for ph ${{ steps.version.outputs.version }}"
             git push origin HEAD:refs/heads/main
             echo "📦 Updated vcpkg registry"
           fi
@@ -312,7 +312,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
-          TARBALL_SHA256="${{ steps.checksums.outputs.phgit_tarb_sha256 }}"
+          TARBALL_SHA256="${{ steps.checksums.outputs.ph_tarb_sha256 }}"
           TEMPLATE="${{ env.TEMPLATE_AUR_PKGBUILD }}"
           
           if [[ ! -f "${TEMPLATE}" ]]; then
@@ -320,11 +320,11 @@ jobs:
             exit 1
           fi
           
-          mkdir -p aur-packages/phgit
-          sed -e "s/@PHGIT_VERSION@/${VERSION}/g" \
-              -e "s/@PHGIT_SHA256@/${TARBALL_SHA256}/g" \
-              "${TEMPLATE}" > aur-packages/phgit/PKGBUILD
-          echo "✅ Rendered aur-packages/phgit/PKGBUILD"
+          mkdir -p aur-packages/ph
+          sed -e "s/@ph_VERSION@/${VERSION}/g" \
+              -e "s/@ph_SHA256@/${TARBALL_SHA256}/g" \
+              "${TEMPLATE}" > aur-packages/ph/PKGBUILD
+          echo "✅ Rendered aur-packages/ph/PKGBUILD"
 
       - name: Generate .SRCINFO for PKGBUILD (optional)
         run: |
@@ -332,11 +332,11 @@ jobs:
           if command -v docker >/dev/null 2>&1; then
             echo "🐳 Generating .SRCINFO with Docker..."
             mkdir -p /tmp/pkgbdir
-            cp aur-packages/phgit/PKGBUILD /tmp/pkgbdir/PKGBUILD
+            cp aur-packages/ph/PKGBUILD /tmp/pkgbdir/PKGBUILD
             docker run --rm -v /tmp/pkgbdir:/work -w /work archlinux:latest bash -lc "
               pacman -Sy --noconfirm --needed base-devel >/dev/null 2>&1 || true
               makepkg --printsrcinfo > .SRCINFO
-            " && mv /tmp/pkgbdir/.SRCINFO aur-packages/phgit/.SRCINFO
+            " && mv /tmp/pkgbdir/.SRCINFO aur-packages/ph/.SRCINFO
             echo "✅ Generated .SRCINFO"
           else
             echo "⚠️ Docker not available — skipping .SRCINFO generation"
@@ -348,11 +348,11 @@ jobs:
           cd aur-packages
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add phgit || true
+          git add ph || true
           if git diff --staged --quiet; then
             echo "ℹ️ No changes to commit in aur-packages."
           else
-            git commit -m "chore(release): update PKGBUILD for phgit ${{ steps.version.outputs.version }}"
+            git commit -m "chore(release): update PKGBUILD for ph ${{ steps.version.outputs.version }}"
             git push origin HEAD:refs/heads/main
             echo "🏛️ Updated AUR package"
           fi
@@ -360,11 +360,11 @@ jobs:
       - name: Summary
         run: |
           set -euo pipefail
-          echo "🎉 Release packaging completed for phgit ${{ steps.version.outputs.version }}"
+          echo "🎉 Release packaging completed for ph ${{ steps.version.outputs.version }}"
           echo ""
           echo "📊 Checksums:"
-          echo "  📄 Tarball SHA256: ${{ steps.checksums.outputs.phgit_tarb_sha256 }}"
-          echo "  📄 Tarball SHA512: ${{ steps.checksums.outputs.phgit_tarb_sha512 }}"
+          echo "  📄 Tarball SHA256: ${{ steps.checksums.outputs.ph_tarb_sha256 }}"
+          echo "  📄 Tarball SHA512: ${{ steps.checksums.outputs.ph_tarb_sha512 }}"
           if [[ -n "${{ steps.installer.outputs.installer_sha256 }}" ]]; then
             echo "  🪟 Installer SHA256: ${{ steps.installer.outputs.installer_sha256 }}"
           else

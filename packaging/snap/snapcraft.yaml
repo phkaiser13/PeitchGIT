@@ -1,4 +1,4 @@
-name: phgit
+name: ph
 version: 'k8s-prerls-0.0.3-beta'
 summary: The Polyglot Assistant for Git & DevOps Workflows
 description: |
@@ -13,7 +13,7 @@ confinement: classic
 base: core22
 
 parts:
-  phgit:
+  ph:
     plugin: cmake
     source: https://github.com/phkaiser13/peitchgit/archive/refs/tags/vk8s-prerls-0.0.3-beta.tar.gz
     cmake-parameters:
@@ -35,8 +35,8 @@ parts:
       - git
 
 apps:
-  phgit:
-    command: bin/phgit
+  ph:
+    command: bin/ph
     plugs:
       - home
       - network

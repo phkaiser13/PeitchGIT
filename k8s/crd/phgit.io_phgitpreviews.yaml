@@ -1,21 +1,21 @@
 #
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
 #
-# File: phgit.io_phgitpreviews.yaml
+# File: ph.io_phpreviews.yaml
 #
-# This file defines the Custom Resource Definition (CRD) for the PhgitPreview
+# This file defines the Custom Resource Definition (CRD) for the phPreview
 # resource. A CRD extends the Kubernetes API, creating a new, declarative API
 # endpoint that can be managed with standard tools like kubectl.
 #
 # Architecture:
-# - This CRD establishes the 'phgit.io' API group and defines a new 'PhgitPreview' kind.
+# - This CRD establishes the 'ph.io' API group and defines a new 'phPreview' kind.
 # - The schema is defined using OpenAPI v3 specifications. This enables server-side
-#   validation, ensuring that any created PhgitPreview object conforms to the
+#   validation, ensuring that any created phPreview object conforms to the
 #   defined structure.
 # - The `spec` field contains the desired state, provided by the user or CI system.
 #   It includes all information needed to create a preview environment, such as the
 #   PR number, repository URL, and commit SHA.
-# - The `status` field is populated and updated by the Phgit Operator. It reflects
+# - The `status` field is populated and updated by the ph Operator. It reflects
 #   the observed state of the world, providing crucial feedback on the environment's
 #   status (e.g., its URL, whether it's ready, or if an error occurred).
 # - This declarative approach is central to the Kubernetes philosophy and allows for
@@ -28,20 +28,20 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   # The name must follow the format: <plural>.<group>
-  name: phgitpreviews.phgit.io
+  name: phpreviews.ph.io
 spec:
   # The API group name for this CRD.
-  group: phgit.io
-  # Define the scope of the resource. 'Namespaced' means PhgitPreview objects
+  group: ph.io
+  # Define the scope of the resource. 'Namespaced' means phPreview objects
   # will exist within a specific Kubernetes namespace.
   scope: Namespaced
   names:
     # Plural name used in the API URL: /apis/<group>/<version>/<plural>
-    plural: phgitpreviews
+    plural: phpreviews
     # Singular name used for aliasing in kubectl.
-    singular: phgitpreview
+    singular: phpreview
     # The CamelCased name of the resource kind.
-    kind: PhgitPreview
+    kind: phPreview
     # A short, lowercase name for the resource, often used in CLI commands.
     shortNames:
       - pgprv
@@ -57,7 +57,7 @@ spec:
         openAPIV3Schema:
           type: object
           properties:
-            # The 'spec' field defines the desired state of the PhgitPreview.
+            # The 'spec' field defines the desired state of the phPreview.
             spec:
               type: object
               # The 'required' array lists fields that must be present in the spec.

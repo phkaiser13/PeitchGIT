@@ -1,6 +1,6 @@
-# Security Policy for phgit
+# Security Policy for ph
 
-The phgit team and community take the security of our software seriously. We appreciate your efforts to responsibly disclose your findings, and will make every effort to acknowledge your contributions.
+The ph team and community take the security of our software seriously. We appreciate your efforts to responsibly disclose your findings, and will make every effort to acknowledge your contributions.
 
 ## Reporting a Vulnerability
 
@@ -17,13 +17,13 @@ You should receive a confirmation of your report within 48 hours. If you do not,
 Please include the following information in your report:
 
 -   A clear description of the vulnerability and its potential impact.
--   The version of `phgit` affected.
+-   The version of `ph` affected.
 -   Steps to reproduce the vulnerability, including any specific commands, configurations, or code snippets.
 -   Any proof-of-concept code or exploit you have developed.
 
 ## Supported Versions
 
-Only the latest released version of `phgit` is actively supported with security patches. We encourage you to use the most recent version available.
+Only the latest released version of `ph` is actively supported with security patches. We encourage you to use the most recent version available.
 
 | Version | Supported          |
 | ------- | ------------------ |

@@ -101,11 +101,11 @@ bool Logger::init(const std::string& filename) {
 }
 
 /**
- * @brief Converts a phgitLogLevel enum to its human-readable string representation.
+ * @brief Converts a phLogLevel enum to its human-readable string representation.
  * @param level The log level enum.
  * @return A constant C-string representing the log level.
  */
-static const char* level_to_string(phgitLogLevel level) {
+static const char* level_to_string(phLogLevel level) {
     switch (level) {
         case LOG_LEVEL_DEBUG: return "DEBUG";
         case LOG_LEVEL_INFO:  return "INFO ";
@@ -123,7 +123,7 @@ static const char* level_to_string(phgitLogLevel level) {
  * log level, and message and writes them to the file stream. It assumes
  * that a mutex lock has already been acquired by the calling function.
  */
-void Logger::log_impl(phgitLogLevel level, const std::string& module_name, const std::string& message) {
+void Logger::log_impl(phLogLevel level, const std::string& module_name, const std::string& message) {
     if (!m_log_file.is_open()) {
         std::cerr << "LOGGER NOT INITIALIZED: [" << module_name << "] " << message << std::endl;
         return;
@@ -157,7 +157,7 @@ void Logger::log_impl(phgitLogLevel level, const std::string& module_name, const
  * mutex lock, ensuring exclusive access to the log file, and then calls
  * the internal implementation `log_impl` to perform the actual write.
  */
-void Logger::log(phgitLogLevel level, const std::string& module_name, const std::string& message) {
+void Logger::log(phLogLevel level, const std::string& module_name, const std::string& message) {
     std::lock_guard<std::mutex> lock(m_mutex);
     log_impl(level, module_name, message);
 }
@@ -171,7 +171,7 @@ void Logger::log(phgitLogLevel level, const std::string& module_name, const std:
  * locking and writing. This two-step process ensures both buffer safety and
  * thread safety.
  */
-void Logger::log(phgitLogLevel level, const std::string& module_name, const char* format, va_list args) {
+void Logger::log(phLogLevel level, const std::string& module_name, const char* format, va_list args) {
     // 1. Create a copy of va_list because vsnprintf can invalidate it.
     va_list args_copy;
     va_copy(args_copy, args);
@@ -213,7 +213,7 @@ int logger_init(const char* filename) {
 /**
  * @see logger.hpp
  */
-void logger_log(phgitLogLevel level, const char* module_name, const char* message) {
+void logger_log(phLogLevel level, const char* module_name, const char* message) {
     if (module_name == nullptr || message == nullptr) {
         return; // Basic null-pointer safety check.
     }
@@ -223,7 +223,7 @@ void logger_log(phgitLogLevel level, const char* module_name, const char* messag
 /**
  * @see logger.hpp
  */
-void logger_log_fmt(phgitLogLevel level, const char* module_name, const char* format, ...) {
+void logger_log_fmt(phLogLevel level, const char* module_name, const char* format, ...) {
     if (module_name == nullptr || format == nullptr) {
         return;
     }

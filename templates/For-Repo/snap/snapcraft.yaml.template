@@ -1,5 +1,5 @@
-name: phgit
-version: '@PHGIT_VERSION@'
+name: ph
+version: '@ph_VERSION@'
 summary: The Polyglot Assistant for Git & DevOps Workflows
 description: |
   A modern, extensible, and high-performance command-line tool designed to
@@ -13,9 +13,9 @@ confinement: classic
 base: core22
 
 parts:
-  phgit:
+  ph:
     plugin: cmake
-    source: https://github.com/phkaiser13/peitchgit/archive/refs/tags/v@PHGIT_VERSION@.tar.gz
+    source: https://github.com/phkaiser13/peitchgit/archive/refs/tags/v@ph_VERSION@.tar.gz
     cmake-parameters:
       - -DCMAKE_BUILD_TYPE=Release
       - -DBUILD_TESTING=OFF
@@ -35,8 +35,8 @@ parts:
       - git
 
 apps:
-  phgit:
-    command: bin/phgit
+  ph:
+    command: bin/ph
     plugs:
       - home
       - network

@@ -3,7 +3,7 @@
  *
  * File: main.rs
  *
- * This file is the main entry point for the Phgit Kubernetes Operator. It is
+ * This file is the main entry point for the ph Kubernetes Operator. It is
  * responsible for setting up and running the controller manager, which in turn
  * hosts and executes the reconciliation loops for all custom resources managed
  * by this operator.
@@ -14,8 +14,8 @@
  * provides the connection to the cluster's API server. Tracing (logging) is
  * also set up to provide structured, observable output.
  * 2.  **CRD Registration**: The `main` function discovers all three Custom
- * Resource Definitions (CRDs) that this operator manages: `PhgitPreview`,
- * `PhgitRelease`, and `PhgitPipeline`. This ensures the operator is aware of the
+ * Resource Definitions (CRDs) that this operator manages: `phPreview`,
+ * `phRelease`, and `phPipeline`. This ensures the operator is aware of the
  * custom APIs it needs to handle.
  * 3.  **Controller Manager**: A `Controller` from `kube-rs` is instantiated for
  * each CRD. The `Controller` is the core component that manages the "watch"
@@ -57,7 +57,7 @@ mod controllers {
 }
 
 // Re-exporting the CRDs for easier access.
-use crds::{PhgitPipeline, PhgitPreview, PhgitRelease};
+use crds::{phPipeline, phPreview, phRelease};
 
 // The shared context struct passed to all controllers.
 // It holds a Kubernetes client that can be cloned for each controller.
@@ -74,9 +74,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 2. Create APIs for our Custom Resources
     // These APIs are strongly-typed clients for our CRDs, scoped to all namespaces.
-    let previews = kube::Api::<PhgitPreview>::all(client.clone());
-    let releases = kube::Api::<PhgitRelease>::all(client.clone());
-    let pipelines = kube::Api::<PhgitPipeline>::all(client.clone());
+    let previews = kube::Api::<phPreview>::all(client.clone());
+    let releases = kube::Api::<phRelease>::all(client.clone());
+    let pipelines = kube::Api::<phPipeline>::all(client.clone());
 
     // 3. Create the shared context
     // This context will be shared across all controller loops. Arc is used for
@@ -85,7 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         client: client.clone(),
     });
 
-    println!("Phgit Operator starting...");
+    println!("ph Operator starting...");
 
     // 4. Set up and run the controllers concurrently
     // We use tokio::join! to run all three controllers in parallel. If any of
@@ -100,8 +100,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
             .for_each(|res| async move {
                 match res {
-                    Ok(o) => println!("Reconciled PhgitPreview: {:?}", o),
-                    Err(e) => eprintln!("PhgitPreview reconcile error: {}", e),
+                    Ok(o) => println!("Reconciled phPreview: {:?}", o),
+                    Err(e) => eprintln!("phPreview reconcile error: {}", e),
                 }
             }),
 
@@ -114,8 +114,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
             .for_each(|res| async move {
                 match res {
-                    Ok(o) => println!("Reconciled PhgitRelease: {:?}", o),
-                    Err(e) => eprintln!("PhgitRelease reconcile error: {}", e),
+                    Ok(o) => println!("Reconciled phRelease: {:?}", o),
+                    Err(e) => eprintln!("phRelease reconcile error: {}", e),
                 }
             }),
 
@@ -128,12 +128,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
             .for_each(|res| async move {
                 match res {
-                    Ok(o) => println!("Reconciled PhgitPipeline: {:?}", o),
-                    Err(e) => eprintln!("PhgitPipeline reconcile error: {}", e),
+                    Ok(o) => println!("Reconciled phPipeline: {:?}", o),
+                    Err(e) => eprintln!("phPipeline reconcile error: {}", e),
                 }
             })
     );
 
-    println!("Phgit Operator shutting down.");
+    println!("ph Operator shutting down.");
     Ok(())
 }

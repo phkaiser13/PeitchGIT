@@ -10,7 +10,7 @@
 # Architecture:
 # - It uses the `autoscaling/v2` API, which is essential for scaling based on
 #   custom or external metrics.
-# - The HPA targets the 'phgit-runner' Deployment, which is assumed to manage
+# - The HPA targets the 'ph-runner' Deployment, which is assumed to manage
 #   the runner Pods.
 # - A hybrid scaling strategy is employed for robustness and efficiency:
 #   1. CPU Utilization: A standard resource metric that provides a baseline for
@@ -31,14 +31,14 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: phgit-runner-autoscaler
-  namespace: phgit-runners # Runners should operate in a dedicated namespace.
+  name: ph-runner-autoscaler
+  namespace: ph-runners # Runners should operate in a dedicated namespace.
 spec:
   # The scaleTargetRef points to the workload that this HPA will manage.
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: phgit-runner
+    name: ph-runner
 
   # Defines the minimum and maximum number of replicas.
   minReplicas: 2

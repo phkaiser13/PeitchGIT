@@ -19,7 +19,7 @@
  * 1.  `CommandType` Enum: An enumeration of all primary commands supported by the CLI.
  * This is the first level of command dispatching.
  * 2.  `SubCommandType` Enum: An enumeration for subcommands, specifically for the new
- * Kubernetes-native operations, allowing for a structured command hierarchy (e.g., `phgit kube preview`).
+ * Kubernetes-native operations, allowing for a structured command hierarchy (e.g., `ph kube preview`).
  * 3.  Argument Structs: A series of structures (`PreviewArgs`, `KubeArgs`, `ReleaseArgs`)
  * that hold the parsed arguments for each specific command. This ensures type safety
  * and clarity when passing data to command handlers.
@@ -72,7 +72,7 @@ typedef enum
  * @brief Enumerates the subcommands, particularly for Kubernetes-native operations.
  *
  * This allows for a second level of dispatching, creating a more organized and
- * intuitive command structure (e.g., `phgit kube preview`). SUB_CMD_NONE is used when a
+ * intuitive command structure (e.g., `ph kube preview`). SUB_CMD_NONE is used when a
  * primary command does not have a subcommand.
  */
 typedef enum
@@ -106,7 +106,7 @@ typedef struct
  * @brief Holds the parsed arguments for the 'kube' command.
  *
  * Currently a placeholder for future Kubernetes-related command arguments.
- * It will be expanded as `phgit kube` functionality is implemented.
+ * It will be expanded as `ph kube` functionality is implemented.
  */
 typedef struct
 {

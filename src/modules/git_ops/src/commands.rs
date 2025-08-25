@@ -19,7 +19,7 @@
 
 use crate::git_wrapper; // Import our git wrapper module
 use crate::log_to_core; // Import the logging helper from lib.rs
-use crate::phgitLogLevel;
+use crate::phLogLevel;
 use std::io::{self, Write};
 
 /// Defines specific, structured errors for command logic.
@@ -53,7 +53,7 @@ type CommandResult = Result<String, CommandError>;
 /// # Arguments
 /// * `repo_path` - An optional path to the repository. If None, operates on the current directory.
 pub fn handle_status(repo_path: Option<&str>) -> CommandResult {
-    log_to_core(phgitLogLevel::Info, "Handling 'status' command.");
+    log_to_core(phLogLevel::Info, "Handling 'status' command.");
 
     match git_wrapper::git_status(repo_path) {
         Ok(output) => {
@@ -84,7 +84,7 @@ pub fn handle_send(
     args: &[String],
     skip_confirmation: bool,
 ) -> CommandResult {
-    log_to_core(phgitLogLevel::Info, "Handling 'SND' command.");
+    log_to_core(phLogLevel::Info, "Handling 'SND' command.");
 
     // 1. Get commit message from arguments.
     if args.len() <= 1 {
@@ -93,21 +93,21 @@ pub fn handle_send(
     let commit_message = args[1..].join(" ");
 
     // 2. Stage all changes.
-    log_to_core(phgitLogLevel::Debug, "Staging all changes.");
+    log_to_core(phLogLevel::Debug, "Staging all changes.");
     git_wrapper::git_add(repo_path, ".")?;
-    log_to_core(phgitLogLevel::Info, "Files staged successfully.");
+    log_to_core(phLogLevel::Info, "Files staged successfully.");
 
     // 3. Commit the changes.
     log_to_core(
-        phgitLogLevel::Debug,
+        phLogLevel::Debug,
         &format!("Committing with message: '{}'", commit_message),
     );
     match git_wrapper::git_commit(repo_path, &commit_message) {
-        Ok(_) => log_to_core(phgitLogLevel::Info, "Changes committed successfully."),
+        Ok(_) => log_to_core(phLogLevel::Info, "Changes committed successfully."),
         // Handle cases where there's nothing to commit. Git can return different messages.
         Err(e) if e.contains("nothing to commit") || e.contains("no changes added to commit") => {
             log_to_core(
-                phgitLogLevel::Info,
+                phLogLevel::Info,
                 "Working tree clean. No new commit created.",
             );
             return Err(CommandError::NoChanges);
@@ -118,7 +118,7 @@ pub fn handle_send(
     // 4. Dynamically determine remote and branch for push.
     let upstream_str = git_wrapper::git_get_upstream_branch(repo_path).map_err(|_| {
         log_to_core(
-            phgitLogLevel::Error,
+            phLogLevel::Error,
             "Could not determine upstream branch. Please set it with 'git push -u <remote> <branch>'.",
         );
         CommandError::NoUpstreamConfigured
@@ -141,11 +141,11 @@ pub fn handle_send(
 
     // 6. Push to the dynamically determined remote and branch.
     log_to_core(
-        phgitLogLevel::Debug,
+        phLogLevel::Debug,
         &format!("Pushing to {} {}", remote, branch),
     );
     git_wrapper::git_push(repo_path, remote, branch)?;
-    log_to_core(phgitLogLevel::Info, "Successfully pushed to remote.");
+    log_to_core(phLogLevel::Info, "Successfully pushed to remote.");
 
     Ok(format!(
         "Successfully sent changes to {}/{}",

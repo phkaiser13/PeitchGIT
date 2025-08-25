@@ -1,4 +1,4 @@
-name: Build phgit (Multi-Platform)
+name: Build ph (Multi-Platform)
 
 on:
   push:
@@ -94,24 +94,24 @@ jobs:
       - name: Compile Project
         run: cmake --build build --parallel
 
-      - name: Test phgit execution (Linux - ${{ matrix.distro }})
+      - name: Test ph execution (Linux - ${{ matrix.distro }})
         run: |
-          echo "Testing phgit executable..."
-          if [ -f build/phgit ]; then
-            echo "Found phgit executable at build/phgit"
+          echo "Testing ph executable..."
+          if [ -f build/ph ]; then
+            echo "Found ph executable at build/ph"
             # Test basic execution (--help or --version should work without errors)
-            timeout 10s ./build/phgit --help || echo "phgit --help failed or timed out"
-            timeout 10s ./build/phgit --version || echo "phgit --version failed or timed out"
-            echo "phgit execution test completed for ${{ matrix.distro }}"
-          elif [ -f build/bin/phgit ]; then
-            echo "Found phgit executable at build/bin/phgit"
-            timeout 10s ./build/bin/phgit --help || echo "phgit --help failed or timed out"
-            timeout 10s ./build/bin/phgit --version || echo "phgit --version failed or timed out"
-            echo "phgit execution test completed for ${{ matrix.distro }}"
+            timeout 10s ./build/ph --help || echo "ph --help failed or timed out"
+            timeout 10s ./build/ph --version || echo "ph --version failed or timed out"
+            echo "ph execution test completed for ${{ matrix.distro }}"
+          elif [ -f build/bin/ph ]; then
+            echo "Found ph executable at build/bin/ph"
+            timeout 10s ./build/bin/ph --help || echo "ph --help failed or timed out"
+            timeout 10s ./build/bin/ph --version || echo "ph --version failed or timed out"
+            echo "ph execution test completed for ${{ matrix.distro }}"
           else
-            echo "ERROR: phgit executable not found in expected locations!"
+            echo "ERROR: ph executable not found in expected locations!"
             echo "Listing build directory contents:"
-            find build -name "phgit*" -type f || true
+            find build -name "ph*" -type f || true
             exit 1
           fi
 
@@ -128,7 +128,7 @@ jobs:
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-build-artifacts-${{ matrix.distro }}
+          name: ph-build-artifacts-${{ matrix.distro }}
           path: |
             build/
             src/plugins/
@@ -169,24 +169,24 @@ jobs:
       - name: Compile Project
         run: cmake --build build --parallel
 
-      - name: Test phgit execution (Darwin - ${{ matrix.arch }})
+      - name: Test ph execution (Darwin - ${{ matrix.arch }})
         run: |
-          echo "Testing phgit executable on Darwin ${{ matrix.arch }}..."
-          if [ -f build/bin/phgit ]; then
-            echo "Found phgit executable at build/bin/phgit"
+          echo "Testing ph executable on Darwin ${{ matrix.arch }}..."
+          if [ -f build/bin/ph ]; then
+            echo "Found ph executable at build/bin/ph"
             # Test basic execution
-            timeout 10s ./build/bin/phgit --help || echo "phgit --help failed or timed out"
-            timeout 10s ./build/bin/phgit --version || echo "phgit --version failed or timed out"
-            echo "phgit execution test completed for Darwin ${{ matrix.arch }}"
-          elif [ -f build/phgit ]; then
-            echo "Found phgit executable at build/phgit"
-            timeout 10s ./build/phgit --help || echo "phgit --help failed or timed out"
-            timeout 10s ./build/phgit --version || echo "phgit --version failed or timed out"
-            echo "phgit execution test completed for Darwin ${{ matrix.arch }}"
+            timeout 10s ./build/bin/ph --help || echo "ph --help failed or timed out"
+            timeout 10s ./build/bin/ph --version || echo "ph --version failed or timed out"
+            echo "ph execution test completed for Darwin ${{ matrix.arch }}"
+          elif [ -f build/ph ]; then
+            echo "Found ph executable at build/ph"
+            timeout 10s ./build/ph --help || echo "ph --help failed or timed out"
+            timeout 10s ./build/ph --version || echo "ph --version failed or timed out"
+            echo "ph execution test completed for Darwin ${{ matrix.arch }}"
           else
-            echo "ERROR: phgit executable not found in expected locations!"
+            echo "ERROR: ph executable not found in expected locations!"
             echo "Listing build directory contents:"
-            find build -name "phgit*" -type f || true
+            find build -name "ph*" -type f || true
             exit 1
           fi
 
@@ -194,7 +194,7 @@ jobs:
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-build-artifacts-Darwin-${{ matrix.arch }}
+          name: ph-build-artifacts-Darwin-${{ matrix.arch }}
           path: |
             build/bin/
             src/plugins/
@@ -296,52 +296,52 @@ jobs:
           }
         shell: pwsh
 
-      - name: Test phgit execution (Windows x64)
+      - name: Test ph execution (Windows x64)
         run: |
-          Write-Host "Testing phgit executable on Windows x64..."
-          $exePath = "build\bin\Release\phgit.exe"
+          Write-Host "Testing ph executable on Windows x64..."
+          $exePath = "build\bin\Release\ph.exe"
           
           if (Test-Path $exePath) {
-              Write-Host "Found phgit executable at $exePath"
+              Write-Host "Found ph executable at $exePath"
               
               # Test basic execution with timeout (10 seconds)
               try {
-                  Write-Host "Testing phgit --help..."
-                  $process = Start-Process -FilePath $exePath -ArgumentList "--help" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "phgit_help_output.txt" -RedirectStandardError "phgit_help_error.txt"
+                  Write-Host "Testing ph --help..."
+                  $process = Start-Process -FilePath $exePath -ArgumentList "--help" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "ph_help_output.txt" -RedirectStandardError "ph_help_error.txt"
                   if ($process.ExitCode -eq 0) {
-                      Write-Host "phgit --help executed successfully"
+                      Write-Host "ph --help executed successfully"
                   } else {
-                      Write-Host "phgit --help returned exit code: $($process.ExitCode)"
-                      if (Test-Path "phgit_help_error.txt") {
+                      Write-Host "ph --help returned exit code: $($process.ExitCode)"
+                      if (Test-Path "ph_help_error.txt") {
                           Write-Host "Error output:"
-                          Get-Content "phgit_help_error.txt"
+                          Get-Content "ph_help_error.txt"
                       }
                   }
               } catch {
-                  Write-Host "phgit --help failed with exception: $($_.Exception.Message)"
+                  Write-Host "ph --help failed with exception: $($_.Exception.Message)"
               }
               
               try {
-                  Write-Host "Testing phgit --version..."
-                  $process = Start-Process -FilePath $exePath -ArgumentList "--version" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "phgit_version_output.txt" -RedirectStandardError "phgit_version_error.txt"
+                  Write-Host "Testing ph --version..."
+                  $process = Start-Process -FilePath $exePath -ArgumentList "--version" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "ph_version_output.txt" -RedirectStandardError "ph_version_error.txt"
                   if ($process.ExitCode -eq 0) {
-                      Write-Host "phgit --version executed successfully"
+                      Write-Host "ph --version executed successfully"
                   } else {
-                      Write-Host "phgit --version returned exit code: $($process.ExitCode)"
-                      if (Test-Path "phgit_version_error.txt") {
+                      Write-Host "ph --version returned exit code: $($process.ExitCode)"
+                      if (Test-Path "ph_version_error.txt") {
                           Write-Host "Error output:"
-                          Get-Content "phgit_version_error.txt"
+                          Get-Content "ph_version_error.txt"
                       }
                   }
               } catch {
-                  Write-Host "phgit --version failed with exception: $($_.Exception.Message)"
+                  Write-Host "ph --version failed with exception: $($_.Exception.Message)"
               }
               
-              Write-Host "phgit execution test completed for Windows x64"
+              Write-Host "ph execution test completed for Windows x64"
           } else {
-              Write-Host "ERROR: phgit executable not found at $exePath!"
+              Write-Host "ERROR: ph executable not found at $exePath!"
               Write-Host "Listing build directory contents:"
-              Get-ChildItem -Path "build" -Recurse -Filter "*phgit*" | ForEach-Object { Write-Host $_.FullName }
+              Get-ChildItem -Path "build" -Recurse -Filter "*ph*" | ForEach-Object { Write-Host $_.FullName }
               exit 1
           }
         shell: pwsh
@@ -350,7 +350,7 @@ jobs:
         if: "!startsWith(github.ref, 'refs/tags/')"
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-build-artifacts-windows-x64
+          name: ph-build-artifacts-windows-x64
           path: |
             build/bin/
             src/plugins/
@@ -359,12 +359,12 @@ jobs:
       - name: Create Release Package
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          $releaseDir = "phgit-release"
+          $releaseDir = "ph-release"
           $buildBinDir = "build/bin/Release"
           $pluginsDir = "src/plugins"
           $licenseFile = "LICENSE"
           $tagVersion = "${{ github.ref_name }}"
-          $zipFileName = "phgit-windows-x64-$tagVersion.zip"
+          $zipFileName = "ph-windows-x64-$tagVersion.zip"
 
           Write-Host "Preparing release package for version: $tagVersion"
           Write-Host "Output ZIP file: $zipFileName"
@@ -391,5 +391,5 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
-          name: phgit-release-windows-x64-${{ github.ref_name }}
-          path: phgit-windows-x64-*.zip
+          name: ph-release-windows-x64-${{ github.ref_name }}
+          path: ph-windows-x64-*.zip

@@ -1,12 +1,12 @@
 #!/bin/bash
-# integration_test.sh - End-to-end test script for phgit.
+# integration_test.sh - End-to-end test script for ph.
 
 set -e # Exit immediately if a command fails.
 set -x # Print each command before executing it.
 
 # --- Setup ---
 BUILD_DIR="build"
-phgit_BIN="${BUILD_DIR}/bin/phgit"
+ph_BIN="${BUILD_DIR}/bin/ph"
 TEST_REPO_DIR="test_repo"
 
 # Ensure the project is built.
@@ -23,7 +23,7 @@ cd "${TEST_REPO_DIR}"
 echo "--- Testing 'status' on a clean repo ---"
 git init
 # Capture output and check for the expected message.
-output=$("../${phgit_BIN}" status)
+output=$("../${ph_BIN}" status)
 if [[ ! "$output" == *"Working tree clean"* ]]; then
     echo "FAIL: 'status' command did not report a clean working tree."
     exit 1
@@ -35,10 +35,10 @@ echo "--- Testing 'SND' command ---"
 echo "test content" > new_file.txt
 
 # Run the SND command.
-"../${phgit_BIN}" SND
+"../${ph_BIN}" SND
 
 # Verify that the commit was created.
-git log --oneline | grep "Automated commit from phgit"
+git log --oneline | grep "Automated commit from ph"
 echo "PASS: 'SND' command created a commit."
 
 # --- Cleanup ---

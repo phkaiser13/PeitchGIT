@@ -52,7 +52,7 @@ pub fn execute_git_command(
 
     let command_log = format!("Executing: git {}", args.join(" "));
     // Log the command execution at the debug level.
-    super::log_to_core(super::phgitLogLevel::Debug, &command_log);
+    super::log_to_core(super::phLogLevel::Debug, &command_log);
 
     command.args(args);
 
@@ -70,7 +70,7 @@ pub fn execute_git_command(
                 "Failed to spawn git command. Is Git installed and in your PATH? Error: {}",
                 e
             );
-            super::log_to_core(super::phgitLogLevel::Fatal, &error_msg);
+            super::log_to_core(super::phLogLevel::Fatal, &error_msg);
             return Err(error_msg);
         }
     };
@@ -79,7 +79,7 @@ pub fn execute_git_command(
         if let Some(mut stdin) = child.stdin.take() {
             if let Err(e) = stdin.write_all(data.as_bytes()) {
                 let error_msg = format!("Failed to write to git stdin: {}", e);
-                super::log_to_core(super::phgitLogLevel::Error, &error_msg);
+                super::log_to_core(super::phLogLevel::Error, &error_msg);
                 return Err(error_msg);
             }
         }
@@ -89,7 +89,7 @@ pub fn execute_git_command(
         Ok(output) => output,
         Err(e) => {
             let error_msg = format!("Failed to wait for git command to finish: {}", e);
-            super::log_to_core(super::phgitLogLevel::Error, &error_msg);
+            super::log_to_core(super::phLogLevel::Error, &error_msg);
             return Err(error_msg);
         }
     };

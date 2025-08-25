@@ -1,12 +1,12 @@
-phgit (@PHGIT_VERSION@-1) unstable; urgency=medium
+ph (@ph_VERSION@-1) unstable; urgency=medium
 
-  * New upstream release @PHGIT_VERSION@
+  * New upstream release @ph_VERSION@
   * Updated dependencies and build requirements
   * Improved performance and stability
 
- -- Pedro Henrique / phkaiser13 <you@example.com>  @PHGIT_RELEASE_DATE@
+ -- Pedro Henrique / phkaiser13 <you@example.com>  @ph_RELEASE_DATE@
 
-phgit (1.0.0-1) unstable; urgency=low
+ph (1.0.0-1) unstable; urgency=low
 
   * Initial Release.
 

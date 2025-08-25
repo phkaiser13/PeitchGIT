@@ -1,6 +1,6 @@
-# Contributing to phgit
+# Contributing to ph
 
-First off, thank you for considering contributing to `phgit`. It's people like you that make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+First off, thank you for considering contributing to `ph`. It's people like you that make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
 
 ## How to Contribute
 

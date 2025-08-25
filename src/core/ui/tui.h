@@ -2,7 +2,7 @@
  * tui.h - Interface for the Text-based User Interface.
  *
  * This header defines the functions for managing the interactive console
- * interface of phgit. The TUI is the primary mode of operation when the user
+ * interface of ph. The TUI is the primary mode of operation when the user
  * runs the application without any command-line arguments.
  *
  * Its responsibilities include:

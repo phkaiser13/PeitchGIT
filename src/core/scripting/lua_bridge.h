@@ -11,7 +11,7 @@
 #ifndef LUA_BRIDGE_H
 #define LUA_BRIDGE_H
 
-#include "../../ipc/include/phgit_core_api.h" // For phgitStatus
+#include "../../ipc/include/ph_core_api.h" // For phStatus
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -22,12 +22,12 @@ extern "C" {
 /**
  * @brief Initializes the Lua scripting engine.
  *
- * Creates the Lua state, loads standard libraries, exposes the 'phgit'
+ * Creates the Lua state, loads standard libraries, exposes the 'ph'
  * C API, and loads all *.lua scripts from the 'plugins' directory.
  *
- * @return phgit_SUCCESS on success, or an error code on failure.
+ * @return ph_SUCCESS on success, or an error code on failure.
  */
-phgitStatus lua_bridge_init(void);
+phStatus lua_bridge_init(void);
 
 /**
  * @brief Executes a command previously registered by a Lua script.
@@ -35,10 +35,10 @@ phgitStatus lua_bridge_init(void);
  * @param command_name The name of the command to execute.
  * @param argc The number of arguments.
  * @param argv The argument vector.
- * @return phgit_SUCCESS if the Lua function returns a truthy value,
- * phgit_ERROR_EXEC_FAILED otherwise.
+ * @return ph_SUCCESS if the Lua function returns a truthy value,
+ * ph_ERROR_EXEC_FAILED otherwise.
  */
-phgitStatus lua_bridge_execute_command(const char* command_name, int argc, const char** argv);
+phStatus lua_bridge_execute_command(const char* command_name, int argc, const char** argv);
 
 /**
  * @brief Runs all Lua functions registered for a specific lifecycle hook.
@@ -46,10 +46,10 @@ phgitStatus lua_bridge_execute_command(const char* command_name, int argc, const
  * @param hook_name The name of the hook to run (e.g., "pre-commit").
  * @param argc The number of arguments to pass to the hook functions.
  * @param argv The argument vector.
- * @return phgit_SUCCESS if all hook functions execute successfully,
- * phgit_ERROR_EXEC_FAILED if any of them fails.
+ * @return ph_SUCCESS if all hook functions execute successfully,
+ * ph_ERROR_EXEC_FAILED if any of them fails.
  */
-phgitStatus lua_bridge_run_hook(const char* hook_name, int argc, const char** argv);
+phStatus lua_bridge_run_hook(const char* hook_name, int argc, const char** argv);
 
 /**
  * @brief Checks if a command is registered by the Lua bridge.

@@ -86,6 +86,6 @@ jobs:
           export KUBECONFIG="$KUBECONFIG_FILE"
 
           echo "Executing git_sync module..."
-          ./target/release/phgit_git_sync
+          ./target/release/ph_git_sync
 
           rm "$KUBECONFIG_FILE"

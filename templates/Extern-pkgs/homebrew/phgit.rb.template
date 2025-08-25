@@ -1,11 +1,11 @@
 # Copyright (C) 2025 Pedro Henrique / phkaiser13
 # SPDX-License-Identifier: Apache-2.0
 
-class Phgit < Formula
+class ph < Formula
   desc "The Polyglot Assistant for Git & DevOps Workflows"
   homepage "https://github.com/phkaiser13/peitchgit"
-  url "https://github.com/phkaiser13/peitchgit/archive/refs/tags/v@PHGIT_VERSION@.tar.gz"
-  sha256 "@PHGIT_SHA256@"
+  url "https://github.com/phkaiser13/peitchgit/archive/refs/tags/v@ph_VERSION@.tar.gz"
+  sha256 "@ph_SHA256@"
   license "Apache-2.0"
 
   # Build-time dependencies
@@ -31,6 +31,6 @@ class Phgit < Formula
 
   test do
     # Basic smoke test: verify the binary responds to --version
-    assert_match "phgit version", shell_output("#{bin}/phgit --version")
+    assert_match "ph version", shell_output("#{bin}/ph --version")
   end
 end

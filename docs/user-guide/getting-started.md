@@ -1,33 +1,33 @@
-# Getting Started with phgit
+# Getting Started with ph
 
-This guide will walk you through the basic usage of `phgit`, from running your first command to using its powerful interactive mode.
+This guide will walk you through the basic usage of `ph`, from running your first command to using its powerful interactive mode.
 
 ## Command Structure
 
-`phgit` follows a standard command-line structure:
+`ph` follows a standard command-line structure:
 
 ```
-phgit [COMMAND] [ARGUMENTS...]
+ph [COMMAND] [ARGUMENTS...]
 ```
 
 - `COMMAND`: The name of the action you want to perform (e.g., `SND`, `status`, `vault-read`).
 - `ARGUMENTS`: Additional information required by the command (e.g., a commit message, a file path).
 
-You can see a list of all available commands by running `phgit --help` or by launching the interactive TUI.
+You can see a list of all available commands by running `ph --help` or by launching the interactive TUI.
 
 ## Interactive TUI Mode
 
-If you run `phgit` without any arguments, you will enter a Text-based User Interface (TUI).
+If you run `ph` without any arguments, you will enter a Text-based User Interface (TUI).
 
 ```bash
-phgit
+ph
 ```
 
-This mode is a great way to explore `phgit`'s capabilities. It provides a menu of all loaded commands from every module, with descriptions of what they do. You can navigate the menu with your arrow keys and press `Enter` to execute a command. The TUI will then prompt you for any required arguments.
+This mode is a great way to explore `ph`'s capabilities. It provides a menu of all loaded commands from every module, with descriptions of what they do. You can navigate the menu with your arrow keys and press `Enter` to execute a command. The TUI will then prompt you for any required arguments.
 
 ## Core Commands Showcase
 
-Here are a few examples of `phgit`'s key features in action.
+Here are a few examples of `ph`'s key features in action.
 
 ### The "One-Shot" Send (`SND`)
 
@@ -36,12 +36,12 @@ The `SND` command is a powerful workflow enhancement that automates the standard
 **Usage:**
 
 ```bash
-phgit SND "Your commit message here"
+ph SND "Your commit message here"
 ```
 
 **How it works:**
 
-1.  `phgit` stages all unstaged changes in your current directory (`git add .`).
+1.  `ph` stages all unstaged changes in your current directory (`git add .`).
 2.  It commits the staged changes with the message you provided.
 3.  It pushes the commit to the configured upstream branch.
 4.  If there are no changes to commit, it will inform you and exit gracefully.
@@ -50,17 +50,17 @@ This single command saves you time and streamlines the process of getting your l
 
 ### Securely Read Secrets (`vault-read`)
 
-The `devops_automation` module allows `phgit` to interact with other command-line tools and parse their output. A great example is the `vault-read` command, which securely reads a secret from HashiCorp Vault and displays it in a clean, human-readable format.
+The `devops_automation` module allows `ph` to interact with other command-line tools and parse their output. A great example is the `vault-read` command, which securely reads a secret from HashiCorp Vault and displays it in a clean, human-readable format.
 
 **Usage:**
 
 ```bash
-phgit vault-read secret/data/prod/api-keys
+ph vault-read secret/data/prod/api-keys
 ```
 
 **How it works:**
 
-- Instead of just running `vault kv get -format=json ...` and giving you raw JSON, `phgit` captures the output.
+- Instead of just running `vault kv get -format=json ...` and giving you raw JSON, `ph` captures the output.
 - It parses the JSON data internally and displays the secret's key-value pairs, making it easy to find the information you need without piping the output to tools like `jq`.
 
 ### Safe Repository Synchronization (`sync-run`)
@@ -70,7 +70,7 @@ The `sync-engine` provides a stateful, bi-directional synchronization mechanism 
 **Usage:**
 
 ```bash
-phgit sync-run /path/to/source-repo /path/to/target-repo
+ph sync-run /path/to/source-repo /path/to/target-repo
 ```
 
 **How it works:**

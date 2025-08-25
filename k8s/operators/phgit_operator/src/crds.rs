@@ -10,7 +10,7 @@
  *
  * Architecture:
  * - Each top-level struct decorated with `#[derive(CustomResource)]` (e.g.,
- * `PhgitPreview`, `PhgitRelease`, `PhgitPipeline`) represents a single API Kind.
+ * `phPreview`, `phRelease`, `phPipeline`) represents a single API Kind.
  * - The `#[kube(...)]` attribute provides the necessary metadata to map the Rust
  * struct to its corresponding CRD in the cluster (group, version, kind). This
  * metadata MUST exactly match the definitions in the YAML CRD files.
@@ -22,7 +22,7 @@
  * Rust types, which is embedded into the CRD manifest for server-side validation.
  *
  * This version includes the complete, production-ready definitions for the
- * `PhgitPipeline` resource, which defines a series of stages and steps to be
+ * `phPipeline` resource, which defines a series of stages and steps to be
  * executed by the `pipeline_controller`.
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -32,21 +32,21 @@ use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-// --- PhgitPreview Custom Resource Definition ---
+// --- phPreview Custom Resource Definition ---
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
 #[kube(
-    group = "phgit.io",
+    group = "ph.io",
     version = "v1alpha1",
-    kind = "PhgitPreview",
+    kind = "phPreview",
     namespaced,
-    status = "PhgitPreviewStatus",
+    status = "phPreviewStatus",
     printcolumn = r#"{"name":"Status", "type":"string", "jsonPath":".status.conditions[-1:].type"}"#,
     printcolumn = r#"{"name":"Namespace", "type":"string", "jsonPath":".status.namespace"}"#,
     printcolumn = r#"{"name":"Age", "type":"date", "jsonPath":".metadata.creationTimestamp"}"#,
     shortname = "pgprv"
 )]
-pub struct PhgitPreviewSpec {
+pub struct phPreviewSpec {
     pub repo_url: String,
     pub branch: String,
     pub manifest_path: String,
@@ -54,7 +54,7 @@ pub struct PhgitPreviewSpec {
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
-pub struct PhgitPreviewStatus {
+pub struct phPreviewStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub namespace: Option<String>,
     pub conditions: Vec<StatusCondition>,
@@ -74,18 +74,18 @@ impl StatusCondition {
 }
 
 
-// --- PhgitRelease Custom Resource Definition ---
+// --- phRelease Custom Resource Definition ---
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
 #[kube(
-    group = "phgit.io",
+    group = "ph.io",
     version = "v1alpha1",
-    kind = "PhgitRelease",
+    kind = "phRelease",
     namespaced,
-    status = "PhgitReleaseStatus",
+    status = "phReleaseStatus",
     shortname = "pgrls"
 )]
-pub struct PhgitReleaseSpec {
+pub struct phReleaseSpec {
     #[serde(rename = "appName")]
     pub app_name: String,
     pub version: String,
@@ -123,7 +123,7 @@ pub struct BlueGreenStrategy {
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
-pub struct PhgitReleaseStatus {
+pub struct phReleaseStatus {
     pub phase: String,
     #[serde(rename = "stableVersion", skip_serializing_if = "Option::is_none")]
     pub stable_version: Option<String>,
@@ -134,24 +134,24 @@ pub struct PhgitReleaseStatus {
 }
 
 
-// --- PhgitPipeline Custom Resource Definition ---
+// --- phPipeline Custom Resource Definition ---
 
-/// # PhgitPipeline
+/// # phPipeline
 /// Represents a declarative CI/CD pipeline.
-/// Creating a `PhgitPipeline` resource defines a pipeline that the operator
+/// Creating a `phPipeline` resource defines a pipeline that the operator
 /// can trigger and execute based on Git events or manual requests.
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
 #[kube(
-    group = "phgit.io",
+    group = "ph.io",
     version = "v1alpha1",
-    kind = "PhgitPipeline",
+    kind = "phPipeline",
     namespaced,
-    status = "PhgitPipelineStatus",
+    status = "phPipelineStatus",
     printcolumn = r#"{"name":"Status", "type":"string", "jsonPath":".status.phase"}"#,
     printcolumn = r#"{"name":"Age", "type":"date", "jsonPath":".metadata.creationTimestamp"}"#,
     shortname = "pgpipe"
 )]
-pub struct PhgitPipelineSpec {
+pub struct phPipelineSpec {
     /// A list of stages to be executed sequentially.
     pub stages: Vec<PipelineStage>,
 }
@@ -180,9 +180,9 @@ pub struct PipelineStep {
     pub args: Vec<String>,
 }
 
-/// The observed state of the PhgitPipeline resource.
+/// The observed state of the phPipeline resource.
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
-pub struct PhgitPipelineStatus {
+pub struct phPipelineStatus {
     /// The current phase of the pipeline.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phase: Option<PipelinePhase>,

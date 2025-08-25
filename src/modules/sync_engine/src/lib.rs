@@ -28,7 +28,7 @@ mod sync;
 // --- FFI Type Definitions (matching the core C API) ---
 
 #[repr(C)]
-pub enum phgitStatus {
+pub enum phStatus {
     Success = 0,
     ErrorInvalidArgs = -2,
     ErrorInitFailed = -4,
@@ -36,7 +36,7 @@ pub enum phgitStatus {
 }
 
 #[repr(C)]
-pub enum phgitLogLevel {
+pub enum phLogLevel {
     Debug,
     Info,
     Warn,
@@ -45,10 +45,10 @@ pub enum phgitLogLevel {
 }
 
 // Function pointer type for the core logger callback.
-type LogFn = extern "C" fn(phgitLogLevel, *const c_char, *const c_char);
+type LogFn = extern "C" fn(phLogLevel, *const c_char, *const c_char);
 
 #[repr(C)]
-pub struct phgitCoreContext {
+pub struct phCoreContext {
     log: Option<LogFn>,
 }
 
@@ -63,11 +63,11 @@ lazy_static! {
 
     // The core context is stored globally to allow logging from anywhere.
     // A Mutex is necessary here because it's written to once during initialization.
-    static ref CORE_CONTEXT: Mutex<Option<phgitCoreContext>> = Mutex::new(None);
+    static ref CORE_CONTEXT: Mutex<Option<phCoreContext>> = Mutex::new(None);
 }
 
 /// Logs a message back to the core application using the provided callback.
-fn log_to_core(level: phgitLogLevel, message: &str) {
+fn log_to_core(level: phLogLevel, message: &str) {
     if let Ok(guard) = CORE_CONTEXT.lock() {
         if let Some(context) = &*guard {
             if let Some(log_fn) = context.log {
@@ -84,15 +84,15 @@ fn log_to_core(level: phgitLogLevel, message: &str) {
 // --- Module Metadata ---
 
 #[repr(C)]
-pub struct phgitModuleInfo {
+pub struct phModuleInfo {
     name: *const c_char,
     version: *const c_char,
     description: *const c_char,
     commands: *const *const c_char,
 }
 
-// A wrapper to safely mark phgitModuleInfo as Sync.
-struct SafeModuleInfo(phgitModuleInfo);
+// A wrapper to safely mark phModuleInfo as Sync.
+struct SafeModuleInfo(phModuleInfo);
 unsafe impl Sync for SafeModuleInfo {}
 
 // Static C-strings for module information. The null terminator is included.
@@ -108,7 +108,7 @@ const SUPPORTED_COMMANDS_PTRS: &[*const c_char] = &[
     std::ptr::null(),
 ];
 
-static MODULE_INFO: SafeModuleInfo = SafeModuleInfo(phgitModuleInfo {
+static MODULE_INFO: SafeModuleInfo = SafeModuleInfo(phModuleInfo {
     name: MODULE_NAME.as_ptr() as *const c_char,
     version: MODULE_VERSION.as_ptr() as *const c_char,
     description: MODULE_DESC.as_ptr() as *const c_char,
@@ -118,15 +118,15 @@ static MODULE_INFO: SafeModuleInfo = SafeModuleInfo(phgitModuleInfo {
 // --- FFI Function Implementations ---
 
 #[no_mangle]
-pub extern "C" fn module_get_info() -> *const phgitModuleInfo {
+pub extern "C" fn module_get_info() -> *const phModuleInfo {
     &MODULE_INFO.0
 }
 
 #[no_mangle]
-pub extern "C" fn module_init(context: *const phgitCoreContext) -> phgitStatus {
+pub extern "C" fn module_init(context: *const phCoreContext) -> phStatus {
     if context.is_null() {
         // Cannot log here as context is not available.
-        return phgitStatus::ErrorInitFailed;
+        return phStatus::ErrorInitFailed;
     }
 
     // Safely store the context provided by the core.
@@ -134,7 +134,7 @@ pub extern "C" fn module_init(context: *const phgitCoreContext) -> phgitStatus {
         *guard = Some(unsafe { std::ptr::read(context) });
     } else {
         // Mutex is poisoned, a panic occurred while it was locked.
-        return phgitStatus::ErrorInitFailed;
+        return phStatus::ErrorInitFailed;
     }
 
     // Eagerly initialize the runtime and enter its context.
@@ -142,15 +142,15 @@ pub extern "C" fn module_init(context: *const phgitCoreContext) -> phgitStatus {
     // The returned guard must be kept in scope for the duration of the context.
     let _enter = RUNTIME.enter();
 
-    log_to_core(phgitLogLevel::Info, "sync_engine module initialized successfully.");
-    phgitStatus::Success
+    log_to_core(phLogLevel::Info, "sync_engine module initialized successfully.");
+    phStatus::Success
 }
 
 #[no_mangle]
-pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> phgitStatus {
+pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> phStatus {
     if argv.is_null() || argc < 1 {
-        log_to_core(phgitLogLevel::Error, "Execution failed: No command provided.");
-        return phgitStatus::ErrorInvalidArgs;
+        log_to_core(phLogLevel::Error, "Execution failed: No command provided.");
+        return phStatus::ErrorInvalidArgs;
     }
 
     // Safely parse arguments from C into a Vec<String>.
@@ -176,24 +176,24 @@ pub extern "C" fn module_exec(argc: c_int, argv: *const *const c_char) -> phgitS
 
     match result {
         Ok(success_message) => {
-            log_to_core(phgitLogLevel::Info, &success_message);
+            log_to_core(phLogLevel::Info, &success_message);
             // For CLI tools, printing to stdout is often expected on success.
             println!("{}", success_message);
-            phgitStatus::Success
+            phStatus::Success
         }
         Err(e) => {
             let error_message = format!("Command failed: {}", e);
-            log_to_core(phgitLogLevel::Error, &error_message);
+            log_to_core(phLogLevel::Error, &error_message);
             // Printing to stderr is standard for errors.
-            eprintln!("[phgit SYNC ERROR] {}", e);
-            phgitStatus::ErrorExecFailed
+            eprintln!("[ph SYNC ERROR] {}", e);
+            phStatus::ErrorExecFailed
         }
     }
 }
 
 #[no_mangle]
 pub extern "C" fn module_cleanup() {
-    log_to_core(phgitLogLevel::Info, "sync_engine module cleaned up.");
+    log_to_core(phLogLevel::Info, "sync_engine module cleaned up.");
     // The RUNTIME will be dropped automatically when the program exits.
     // No explicit cleanup is required for lazy_static variables.
 }

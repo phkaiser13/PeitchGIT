@@ -1,4 +1,4 @@
-phgit (k8s-prerls-0.0.3-beta-1) unstable; urgency=medium
+ph (k8s-prerls-0.0.3-beta-1) unstable; urgency=medium
 
   * New upstream release k8s-prerls-0.0.3-beta
   * Updated dependencies and build requirements
@@ -6,7 +6,7 @@ phgit (k8s-prerls-0.0.3-beta-1) unstable; urgency=medium
 
  -- Pedro Henrique / phkaiser13 <you@example.com>  Sun, 24 Aug 2025 22:28:35 +0000
 
-phgit (1.0.0-1) unstable; urgency=low
+ph (1.0.0-1) unstable; urgency=low
 
   * Initial Release.
 

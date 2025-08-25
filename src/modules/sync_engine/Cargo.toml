@@ -22,7 +22,7 @@ name = "sync_engine"
 version = "0.1.0"
 edition = "2021"
 authors = ["Pedro Henrique / phkaiser13 <seu-email@exemplo.com>"]
-description = "A phgit module for bi-directional repository synchronization."
+description = "A ph module for bi-directional repository synchronization."
 
 [lib]
 crate-type = ["cdylib"]

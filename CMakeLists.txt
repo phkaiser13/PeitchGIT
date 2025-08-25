@@ -1,9 +1,9 @@
 # /* Copyright (C) 2025 Pedro Henrique / phkaiser13
-# * CMakeLists.txt - Main build script for the phgit project.
+# * CMakeLists.txt - Main build script for the ph project.
 # *
 # * This file orchestrates the entire build process, including:
 # * 1. Finding and configuring all C/C++ dependencies (Lua, libcurl).
-# * 2. Compiling the main C/C++ core application (`phgit`).
+# * 2. Compiling the main C/C++ core application (`ph`).
 # * 3. Compiling all polyglot modules (Rust and C++) into shared libraries.
 # * 4. Placing all build artifacts into a clean `bin` directory structure.
 # * 5. Defining installation rules.
@@ -16,7 +16,7 @@
 
 cmake_minimum_required(VERSION 3.15)
 
-project(phgit LANGUAGES C CXX VERSION 1.0.0)
+project(ph LANGUAGES C CXX VERSION 1.0.0)
 
 # --- Global Settings and Options ---
 set(CMAKE_CXX_STANDARD 17)
@@ -193,14 +193,14 @@ file(GLOB_RECURSE CORE_SOURCES
 "src/core/ui/*.c"
 "src/libs/libcommon/*.c"
 )
-add_executable(phgit ${CORE_SOURCES})
+add_executable(ph ${CORE_SOURCES})
 
 # ==============================================================================
 # Link platform-specific libraries
 # ==============================================================================
 if(UNIX AND NOT APPLE)
     # For Linux, link the dynamic linking library (-ldl) required for FFI.
-    target_link_libraries(phgit PRIVATE dl)
+    target_link_libraries(ph PRIVATE dl)
 endif()
 
 # --- FIX: Correctly add all necessary include directories to the target ---
@@ -208,7 +208,7 @@ endif()
 # automatically add their include directories when you link them. However, for
 # maximum compatibility with older find modules, it's safest to add them
 # explicitly if the variables are defined. This also includes internal project headers.
-target_include_directories(phgit PUBLIC
+target_include_directories(ph PUBLIC
 ${CMAKE_SOURCE_DIR}/src
 ${CMAKE_SOURCE_DIR}/src/core
 ${CMAKE_SOURCE_DIR}/src/ipc/include
@@ -222,14 +222,14 @@ ${CURL_PKG_INCLUDE_DIRS}
 
 # Link core executable against its dependencies
 # This part was already correct, using the modern target names.
-target_link_libraries(phgit
+target_link_libraries(ph
 PRIVATE
 logger
 ${CURL_TARGET_NAME}
 ${LUA_TARGET_NAME}
 )
 if(UNIX AND NOT APPLE)
-target_link_libraries(phgit PRIVATE dl m)
+target_link_libraries(ph PRIVATE dl m)
 endif()
 
 
@@ -283,7 +283,7 @@ LIBRARY_OUTPUT_DIRECTORY "${MODULE_OUTPUT_PATH}"
 # Build Rust FFI Modules using Cargo
 # ==============================================================================
 # This custom target will execute 'cargo build' on the k8s_preview module.
-# The C core executable (`phgit`) is made dependent on this target, ensuring
+# The C core executable (`ph`) is made dependent on this target, ensuring
 # that the Rust modules are always compiled before the C code.
 
 # Path to the Rust module
@@ -297,4 +297,4 @@ add_custom_target(
 )
 
 # Make the main executable depend on the Rust modules
-add_dependencies(phgit build_rust_modules)
+add_dependencies(ph build_rust_modules)

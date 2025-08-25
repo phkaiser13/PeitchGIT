@@ -35,9 +35,9 @@
 #ifndef LOGGER_HPP
 #define LOGGER_HPP
 
-// We need the core API header to use the consistent phgitLogLevel enum.
+// We need the core API header to use the consistent phLogLevel enum.
 // This demonstrates how even C++ modules adhere to the core contracts.
-#include "../../ipc/include/phgit_core_api.h"
+#include "../../ipc/include/ph_core_api.h"
 
 #ifdef __cplusplus
 
@@ -71,7 +71,7 @@ public:
      * @param module_name The name of the module originating the log entry.
      * @param message The log message content.
      */
-    void log(phgitLogLevel level, const std::string& module_name, const std::string& message);
+    void log(phLogLevel level, const std::string& module_name, const std::string& message);
 
     /**
      * @brief Writes a message to the log file using a va_list.
@@ -81,7 +81,7 @@ public:
      * @param format The printf-style format string.
      * @param args The va_list of arguments.
      */
-    void log(phgitLogLevel level, const std::string& module_name, const char* format, va_list args);
+    void log(phLogLevel level, const std::string& module_name, const char* format, va_list args);
 
     // Delete copy constructor and assignment operator to enforce singleton property.
     Logger(const Logger&) = delete;
@@ -104,7 +104,7 @@ private:
      * @param module_name The name of the module originating the log entry.
      * @param message The log message content to write.
      */
-    void log_impl(phgitLogLevel level, const std::string& module_name, const std::string& message);
+    void log_impl(phLogLevel level, const std::string& module_name, const std::string& message);
 
 
     std::ofstream m_log_file; // The output file stream.
@@ -144,7 +144,7 @@ int logger_init(const char* filename);
  * @param module_name The name of the calling module (e.g., "MAIN", "GIT_OPS").
  * @param message The message to be logged.
  */
-void logger_log(phgitLogLevel level, const char* module_name, const char* message);
+void logger_log(phLogLevel level, const char* module_name, const char* message);
 
 /**
  * @brief Logs a formatted message safely, preventing buffer overflows.
@@ -161,7 +161,7 @@ void logger_log(phgitLogLevel level, const char* module_name, const char* messag
  * @param format The printf-style format string.
  * @param ... The variable arguments corresponding to the format string.
  */
-void logger_log_fmt(phgitLogLevel level, const char* module_name, const char* format, ...);
+void logger_log_fmt(phLogLevel level, const char* module_name, const char* format, ...);
 
 /**
  * @brief Cleans up the logging system.

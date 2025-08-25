@@ -1,16 +1,16 @@
 # Lua API Reference
 
-This document provides a technical reference for the API exposed to Lua scripts by the `phgit` core.
+This document provides a technical reference for the API exposed to Lua scripts by the `ph` core.
 
-## The `phgit` Table
+## The `ph` Table
 
-All core functions are exposed through a single global table named `phgit`.
+All core functions are exposed through a single global table named `ph`.
 
 ---
 
-### `phgit.log(level, message)`
+### `ph.log(level, message)`
 
-Writes a message to the main `phgit` log file.
+Writes a message to the main `ph` log file.
 
 - **Parameters:**
   - `level` (string): The log level. Must be one of `"DEBUG"`, `"INFO"`, `"WARN"`, `"ERROR"`, or `"FATAL"`.
@@ -20,38 +20,38 @@ Writes a message to the main `phgit` log file.
 
 - **Example:**
   ```lua
-  phgit.log("INFO", "My plugin has started.")
+  ph.log("INFO", "My plugin has started.")
   ```
 
 ---
 
-### `phgit.register_alias(alias, original_command)`
+### `ph.register_alias(alias, original_command)`
 
 Creates a new command that serves as an alias for an existing command. This must be called during the initial script load.
 
 - **Parameters:**
   - `alias` (string): The new, shorter command name you want to create.
-  - `original_command` (string): The name of the existing `phgit` command that the alias should execute.
+  - `original_command` (string): The name of the existing `ph` command that the alias should execute.
 
 - **Returns:** `nil`
 
 - **Example:**
   ```lua
-  -- Allows 'phgit st' to run the 'status' command.
-  phgit.register_alias("st", "status")
+  -- Allows 'ph st' to run the 'status' command.
+  ph.register_alias("st", "status")
   ```
 
 ---
 
 ## Global Hook Functions
 
-`phgit` can be configured to call specific, globally-defined functions in your Lua scripts at certain points in its lifecycle. You implement a hook by simply defining a global function with the correct name and parameters.
+`ph` can be configured to call specific, globally-defined functions in your Lua scripts at certain points in its lifecycle. You implement a hook by simply defining a global function with the correct name and parameters.
 
 ---
 
 ### `on_pre_push(remote, branch)`
 
-This function, if defined, is called just before a `git push` operation is executed by a `phgit` command (e.g., `SND`). It allows you to cancel the push.
+This function, if defined, is called just before a `git push` operation is executed by a `ph` command (e.g., `SND`). It allows you to cancel the push.
 
 - **Parameters:**
   - `remote` (string): The name of the remote target (e.g., `"origin"`).
